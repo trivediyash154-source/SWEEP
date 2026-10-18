@@ -28,6 +28,8 @@ function client(app: App) {
     const res = await app.request(`http://localhost/api${path}`, { method, headers, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
     store(res);
     const json = res.headers.get('content-type')?.includes('json') ? await res.json() : await res.text();
+    // Response bodies are asserted field by field in each test, so they are left untyped here.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return { status: res.status, json: json as any, res };
   };
   return { req, jar, init: () => req('GET', '/auth/csrf') };

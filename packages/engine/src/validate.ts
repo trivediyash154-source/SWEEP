@@ -15,7 +15,7 @@ export const DEFAULT_LIMITS: Limits = {
   maxOddVertices: 600,
 };
 
-const ID_PATTERN = /^[A-Za-z0-9_.:\-]{1,64}$/;
+const ID_PATTERN = /^[A-Za-z0-9_.:-]{1,64}$/;
 const COORD_LIMIT = 1e9;
 
 function isFiniteNumber(x: unknown): x is number {

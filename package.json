@@ -2,7 +2,7 @@
   "name": "sweep",
   "private": true,
   "version": "1.0.0",
-  "description": "SWEEP \u2014 urban route intelligence: Chinese Postman optimization with a cinematic, explainable interface.",
+  "description": "SWEEP — urban route intelligence: Chinese Postman optimization with a cinematic, explainable interface.",
   "type": "module",
   "packageManager": "pnpm@10.28.0",
   "engines": {
@@ -18,14 +18,20 @@
     "test:oracle": "python3 -I oracle/run_oracle.py",
     "test:e2e": "playwright test",
     "bench": "pnpm --filter @sweep/engine bench",
-    "verify": "pnpm typecheck && pnpm test && pnpm test:oracle && pnpm build && pnpm test:e2e"
+    "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm test:oracle && pnpm build && pnpm test:e2e",
+    "lint": "eslint . --max-warnings=0"
   },
   "devDependencies": {
-    "@playwright/test": "1.56.1",
     "@axe-core/playwright": "4.11.0",
-    "typescript": "5.9.3",
+    "@eslint/js": "9.39.5",
+    "@playwright/test": "1.56.1",
     "@types/node": "22.18.12",
-    "tsx": "4.20.6"
+    "eslint": "9.39.5",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.2"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

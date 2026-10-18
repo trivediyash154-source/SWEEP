@@ -6,3 +6,9 @@ test-results
 playwright-report
 data
 .git
+.env
+.env.*
+!.env.example
+docs/screenshots
+**/__pycache__
+**/.vite

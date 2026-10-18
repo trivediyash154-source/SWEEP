@@ -55,6 +55,8 @@ export function NetworkCanvas() {
     const availH = Math.max(120, size.h - inset.top - inset.bottom);
     const k = Math.max(MIN_K, Math.min(MAX_K, Math.min(availW / bw, availH / bh)));
     setView({ k, tx: inset.left + availW / 2 - ((b.minX + b.maxX) / 2) * k, ty: inset.top + availH / 2 - ((b.minY + b.maxY) / 2) * k });
+    // Refit only on resize, view change or an explicit request (fitNonce), never on every edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [size.w, size.h, ws.fitNonce, wsView]);
   useEffect(() => {
     fit();

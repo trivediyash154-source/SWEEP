@@ -1,0 +1,219 @@
+/* Network marks shared by the workspace canvas, editorial figures and reports. */
+/* ---- network marks (constant on-screen size) ---- */
+.net path,
+.net line,
+.net circle {
+  vector-effect: non-scaling-stroke;
+}
+.net-edge__line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke var(--dur-fast), opacity var(--dur-med);
+}
+.net-edge.is-required .net-edge__line {
+  stroke: var(--required);
+  stroke-width: 3.2;
+}
+.net-edge.is-optional .net-edge__line {
+  stroke: var(--optional);
+  stroke-width: 1.8;
+  opacity: 0.85;
+}
+.net-edges.is-dim .net-edge__line {
+  opacity: 0.35;
+}
+.net-edge__halo {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 11;
+  stroke-linecap: round;
+  opacity: 0.28;
+}
+:root[data-theme='porcelain'] .net-edge__halo {
+  stroke: var(--focus);
+  opacity: 0.22;
+}
+.net-edge.is-hover .net-edge__halo {
+  opacity: 0.16;
+}
+.net-edge__hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16;
+  stroke-linecap: round;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.net-tint__edge {
+  fill: none;
+  stroke-width: 14;
+  stroke-linecap: round;
+  opacity: 0.22;
+}
+.net-connector {
+  fill: none;
+  stroke: var(--match);
+  stroke-width: 3;
+  stroke-dasharray: 2 7;
+  stroke-linecap: round;
+  animation: march 1.4s linear infinite;
+}
+@keyframes march {
+  to {
+    stroke-dashoffset: -18;
+  }
+}
+.net-route {
+  filter: drop-shadow(0 0 5px var(--route-glow));
+}
+:root[data-theme='porcelain'] .net-route {
+  filter: none;
+}
+.net-route__edge {
+  fill: none;
+  stroke: var(--route);
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.85;
+}
+.net-route__edge.is-deadhead {
+  opacity: 0.5;
+}
+.net-repeat__edge {
+  fill: none;
+  stroke: var(--repeat);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+.net-repeat__edge.is-deadhead {
+  stroke-dasharray: 8 6;
+  stroke-width: 2.8;
+}
+.net-repeat {
+  filter: drop-shadow(0 0 3px var(--repeat-glow));
+}
+.net-chord {
+  stroke: var(--match);
+  stroke-width: 1;
+  stroke-dasharray: 3 6;
+  opacity: 0.6;
+}
+.net-match {
+  stroke: var(--match);
+  stroke-width: 2.6;
+  stroke-dasharray: 10 6;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--match) 60%, transparent));
+}
+.net-trail {
+  fill: none;
+  stroke: var(--route);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 6px var(--route-glow));
+}
+.net-vehicle__glow {
+  fill: var(--route-glow);
+}
+.net-vehicle__body {
+  fill: var(--text);
+  stroke: var(--route);
+  stroke-width: 1.4;
+}
+.net-ghost {
+  stroke: var(--focus);
+  stroke-width: 1.6;
+  stroke-dasharray: 6 5;
+}
+.net-vertex__dot {
+  fill: var(--surface);
+  stroke: var(--required);
+  stroke-width: 1.8;
+}
+.net-vertex.is-isolated .net-vertex__dot {
+  stroke: var(--optional);
+  stroke-dasharray: 2 2;
+}
+.net-vertex__odd {
+  fill: color-mix(in srgb, var(--odd) 14%, transparent);
+  stroke: var(--odd);
+  stroke-width: 1.4;
+  opacity: 0.75;
+}
+.net-vertex__odd.is-strong {
+  opacity: 1;
+  stroke-width: 2.2;
+  filter: drop-shadow(0 0 5px var(--odd-glow));
+  animation: odd-pulse 1.8s var(--ease-in-out) infinite;
+}
+@keyframes odd-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+.net-vertex__halo {
+  fill: none;
+  stroke: var(--focus);
+  stroke-width: 2;
+}
+.net-vertex.is-pending .net-vertex__halo {
+  stroke-dasharray: 3 3;
+}
+.net-vertex.is-flagged .net-vertex__halo {
+  stroke: var(--danger);
+}
+.net-vertex__hit {
+  fill: transparent;
+  cursor: pointer;
+}
+.net-depot path {
+  fill: var(--depot);
+  stroke: var(--bg);
+  stroke-width: 1.5;
+}
+.net-label {
+  font-family: var(--font-mono);
+  fill: var(--text-muted);
+  paint-order: stroke;
+  stroke: var(--bg-deep);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+.net-label--vertex {
+  text-anchor: start;
+  fill: var(--text-faint);
+}
+.net-label--weight.is-optional {
+  fill: var(--text-faint);
+  opacity: 0.8;
+}
+.net-label__count {
+  fill: var(--repeat);
+  font-weight: 600;
+}
+.net-label--degree {
+  font-weight: 600;
+  fill: var(--text);
+}
+.net-label--degree.is-odd {
+  fill: var(--odd);
+}
+.net-label--chord {
+  fill: var(--match);
+}
+.net-label--match {
+  fill: var(--match);
+  font-weight: 600;
+}
+.net-label--depot {
+  fill: var(--depot);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+

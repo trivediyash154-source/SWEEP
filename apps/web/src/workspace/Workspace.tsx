@@ -23,6 +23,9 @@ import '../styles/workspace.css';
 
 const Route3D = lazy(() => import('./Route3D'));
 
+/** Account scenarios fetched from the server during this page session. */
+const loadedRemote = new Set<string>();
+
 const VIEWS: Array<{ id: View; label: string; key: string }> = [
   { id: 'compose', label: 'Compose', key: '1' },
   { id: 'explain', label: 'Explain', key: '2' },
@@ -49,7 +52,10 @@ export default function Workspace() {
       return;
     }
     if (!scenarioId) return;
-    if (ws.ref?.id === scenarioId) return;
+    // Local and example scenarios already in memory need no reload; account scenarios are always
+    // re-read from the server, which is authoritative and enforces ownership.
+    if (ws.ref?.id === scenarioId && ws.ref.kind !== 'remote') return;
+    if (ws.ref?.id === scenarioId && ws.ref.kind === 'remote' && loadedRemote.has(scenarioId)) return;
     if (scenarioId.startsWith('local-')) {
       const s = listLocalScenarios().find((x) => x.id === scenarioId);
       if (s) ws.loadGraph(s.graph, { kind: 'local', id: s.id }, s.name);
@@ -60,9 +66,13 @@ export default function Workspace() {
     api<{ id: string; name: string; graph: Graph }>(`/scenarios/${scenarioId}`)
       .then((s) => {
         setLoadError(null);
+        loadedRemote.add(s.id);
         ws.loadGraph(s.graph, { kind: 'remote', id: s.id }, s.name);
       })
-      .catch((e: ApiRequestError) => setLoadError(e.status === 401 ? 'Sign in to open this scenario.' : e.status === 404 ? 'Scenario not found, or it belongs to another account.' : e.message));
+      .catch((e: ApiRequestError) => {
+        if (useWorkspace.getState().ref?.kind === 'remote') useWorkspace.getState().loadExample('old-town-grid');
+        setLoadError(e.status === 401 ? 'Sign in to open this scenario.' : e.status === 404 ? 'Scenario not found, or it belongs to another account.' : e.message);
+      });
     // eslint-disable-next-line
   }, [scenarioId, search, auth.status]);
 
@@ -141,6 +151,7 @@ export default function Workspace() {
         } else {
           const created = await api<{ id: string }>('/scenarios', { method: 'POST', body: { name: st.name, graph } });
           st.markSaved({ kind: 'remote', id: created.id });
+          loadedRemote.add(created.id);
           navigate(`/workspace/${created.id}`, { replace: true });
         }
         toast.success('Saved to your account', st.name);

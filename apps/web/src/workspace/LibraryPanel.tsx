@@ -74,7 +74,8 @@ export function LibraryPanel({ refreshKey }: { refreshKey: number }) {
       </div>
 
       {tab === 'examples' && (
-        <ul className="library__list" role="tabpanel" aria-label="Example networks">
+        <div role="tabpanel" aria-label="Example networks" className="library__panel">
+        <ul className="library__list">
           {EXAMPLES.map((ex) => {
             const active = ws.ref?.kind === 'example' && ws.ref.id === ex.id;
             return (
@@ -98,6 +99,7 @@ export function LibraryPanel({ refreshKey }: { refreshKey: number }) {
             );
           })}
         </ul>
+        </div>
       )}
 
       {tab === 'saved' && (

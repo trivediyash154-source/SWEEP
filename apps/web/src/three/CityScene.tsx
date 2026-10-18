@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { OrbitControls, PerformanceMonitor } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import type { CityModel } from './cityModel';
@@ -338,17 +338,20 @@ export interface CitySceneProps {
 export function CityScene({ model, theme, mode, paused = false, getProgress, coloring, showOdd = false }: CitySceneProps) {
   const pal = PALETTE[theme];
   const ext = model.extent;
+  // Degrade gracefully on slow GPUs / software rendering: drop resolution and post-processing.
+  const [lowPower, setLowPower] = useState(false);
   return (
     <Canvas
-      dpr={[1, 1.75]}
+      dpr={lowPower ? 1 : [1, 1.75]}
       gl={{ antialias: true, powerPreference: 'high-performance', alpha: false }}
-      camera={{ fov: mode === 'hero' ? 34 : 40, near: 1, far: ext * 8, position: mode === 'hero' ? [ext * -0.6, ext * 0.6, ext * 0.7] : [ext * -0.35, ext * 0.75, ext * 0.75] }}
+      camera={{ fov: mode === 'hero' ? 34 : 40, near: 1, far: ext * 8, position: mode === 'hero' ? [ext * -0.6, ext * 0.6, ext * 0.7] : [ext * -0.5, ext * 0.95, ext * 1.05] }}
       frameloop={paused ? 'demand' : 'always'}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = theme === 'velvet' ? 1.05 : 1.0;
       }}
     >
+      <PerformanceMonitor onDecline={() => setLowPower(true)} flipflops={2} onFallback={() => setLowPower(true)} />
       <color attach="background" args={[pal.background]} />
       <fog attach="fog" args={[pal.fog, ext * (mode === 'hero' ? 0.9 : 1.2), ext * (mode === 'hero' ? 2.3 : 3.4)]} />
       <hemisphereLight args={[pal.hemiSky, pal.hemiGround, theme === 'velvet' ? 0.9 : 1.5]} />
@@ -363,10 +366,12 @@ export function CityScene({ model, theme, mode, paused = false, getProgress, col
       <RouteRunner model={model} theme={theme} coloring={coloring} getProgress={getProgress} />
       {mode === 'hero' && <Petals3D spread={ext * 0.9} height={ext * 0.5} />}
       {mode === 'hero' ? <HeroCameraRig extent={ext} paused={paused} /> : <OrbitControls makeDefault enableDamping dampingFactor={0.08} maxPolarAngle={Math.PI * 0.46} minDistance={ext * 0.15} maxDistance={ext * 2.2} target={[0, 0, 0]} />}
-      <EffectComposer multisampling={0}>
-        <Bloom intensity={theme === 'velvet' ? 0.85 : 0.25} luminanceThreshold={theme === 'velvet' ? 0.55 : 0.85} luminanceSmoothing={0.2} mipmapBlur />
-        <Vignette eskil={false} offset={0.25} darkness={theme === 'velvet' ? 0.55 : 0.2} />
-      </EffectComposer>
+      {!lowPower && (
+        <EffectComposer multisampling={0}>
+          <Bloom intensity={theme === 'velvet' ? 0.85 : 0.25} luminanceThreshold={theme === 'velvet' ? 0.55 : 0.85} luminanceSmoothing={0.2} mipmapBlur />
+          <Vignette eskil={false} offset={0.25} darkness={theme === 'velvet' ? 0.55 : 0.2} />
+        </EffectComposer>
+      )}
     </Canvas>
   );
 }

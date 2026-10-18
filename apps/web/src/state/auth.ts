@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api, ApiRequestError, serverAvailable } from '../lib/api';
+import { useWorkspace } from './workspace';
 
 export interface User {
   id: string;
@@ -46,6 +47,8 @@ export const useAuth = create<AuthState>((set, get) => ({
     try {
       await api('/auth/logout', { method: 'POST', body: {} });
     } finally {
+      // Do not leave an account scenario on screen (or in the local draft) for the next person.
+      if (useWorkspace.getState().ref?.kind === 'remote') useWorkspace.getState().loadExample('old-town-grid');
       set({ user: null, status: 'signed-out' });
     }
   },

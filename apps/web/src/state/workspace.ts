@@ -3,6 +3,8 @@ import { validateGraph, type Edge, type Graph, type OptimizationRecord, type Val
 import { EXAMPLES, getExample } from '@sweep/engine/examples';
 import { edgePoints, polylineLength, vertexMap } from '../lib/geometry';
 import { optimize, type EngineSource } from '../lib/engineClient';
+import { api } from '../lib/api';
+import type { OptimizationResult } from '@sweep/engine';
 import { readJson, writeJson } from '../lib/storage';
 
 export type Tool = 'select' | 'add' | 'connect' | 'required' | 'delete' | 'depot';
@@ -30,6 +32,10 @@ interface WorkspaceState {
   result: OptimizationRecord | null;
   resultGraph: Graph | null;
   resultSource: EngineSource | null;
+  /** id of the stored run when the result was saved to the user's account */
+  runId: string | null;
+  runsNonce: number;
+  showRun: (run: { id: string; graph: Graph; record: OptimizationRecord }) => void;
   stale: boolean;
   failure: ValidationReport | null;
   optimizing: boolean;
@@ -150,6 +156,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     result: null,
     resultGraph: null,
     resultSource: null,
+    runId: null,
+    runsNonce: 0,
     stale: false,
     failure: null,
     optimizing: false,
@@ -176,6 +184,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         result: null,
         resultGraph: null,
         resultSource: null,
+        runId: null,
         stale: false,
         failure: null,
         error: null,
@@ -309,14 +318,25 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       set({ optimizing: true, error: null, playing: false });
       const graphSnapshot = structuredClone(s.graph);
       try {
-        const { result, source } = await optimize(graphSnapshot, graphSnapshot.depotId ?? null);
+        let result: OptimizationResult;
+        let source: EngineSource;
+        let runId: string | null = null;
+        if (s.ref?.kind === 'remote' && !s.dirty) {
+          // Saved account scenario: run on the server and store the run for later.
+          const d = await api<{ run: { id: string } | null; result: OptimizationResult }>(`/scenarios/${s.ref.id}/runs`, { method: 'POST', body: { depotId: graphSnapshot.depotId ?? null } });
+          result = d.result;
+          source = 'server';
+          runId = d.run?.id ?? null;
+        } else {
+          ({ result, source } = await optimize(graphSnapshot, graphSnapshot.depotId ?? null));
+        }
         // Ignore the answer if the network changed while computing.
         if (get().graph !== s.graph) {
           set({ optimizing: false });
           return;
         }
         if (result.ok) {
-          set({ result, resultGraph: graphSnapshot, resultSource: source, failure: null, stale: false, optimizing: false, explainStep: 0 });
+          set({ result, resultGraph: graphSnapshot, resultSource: source, runId, runsNonce: get().runsNonce + 1, failure: null, stale: false, optimizing: false, explainStep: 0 });
         } else {
           set({ failure: result.validation, result: null, resultGraph: null, optimizing: false, stale: false });
         }
@@ -324,6 +344,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         set({ optimizing: false, error: err instanceof Error ? err.message : String(err) });
       }
     },
+    showRun: (run) =>
+      set({ result: run.record, resultGraph: run.graph, resultSource: 'server', runId: run.id, stale: JSON.stringify(run.graph.edges) !== JSON.stringify(get().graph.edges), failure: null, playing: false, explainStep: 0 }),
     setExplainStep: (i) => set({ explainStep: Math.max(0, Math.min(EXPLAIN_STEPS.length - 1, i)) }),
     setPlaying: (playing) => set({ playing }),
     setSpeed: (speed) => set({ speed }),

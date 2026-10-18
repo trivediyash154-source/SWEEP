@@ -217,3 +217,21 @@
   letter-spacing: 0.12em;
 }
 
+
+/* Overlays are purely visual: never let them steal clicks from streets and intersections. */
+.net-tint,
+.net-connectors,
+.net-route,
+.net-repeat,
+.net-chords,
+.net-matching,
+.net-weights,
+.net-depot,
+.net-anim,
+.net-ghost,
+.net-label,
+.net-vertex__odd,
+.net-vertex__halo,
+.net-edge__halo {
+  pointer-events: none;
+}

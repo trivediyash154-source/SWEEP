@@ -1,4 +1,7 @@
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import type { Graph } from '@sweep/engine';
+import { api } from '../lib/api';
 import { edgesToCsv, routeToCsv, type OptimizationRecord } from '@sweep/engine';
 import { useWorkspace } from '../state/workspace';
 import { formatDistance, formatMs, formatNumber, formatPercent, plural } from '../lib/format';
@@ -30,6 +33,50 @@ function BaselineBars({ record }: { record: OptimizationRecord }) {
         </div>
       ))}
     </div>
+  );
+}
+
+interface RunSummary {
+  id: string;
+  createdAt: number;
+  summary: { totalDistance: number; optimal: boolean; checksPassed: boolean };
+}
+
+/** Stored runs for an account scenario: reopen any previous optimisation. */
+function RunHistory() {
+  const ref = useWorkspace((s) => s.ref);
+  const runsNonce = useWorkspace((s) => s.runsNonce);
+  const runId = useWorkspace((s) => s.runId);
+  const showRun = useWorkspace((s) => s.showRun);
+  const [runs, setRuns] = useState<RunSummary[] | null>(null);
+  useEffect(() => {
+    if (ref?.kind !== 'remote') return;
+    api<RunSummary[]>(`/scenarios/${ref.id}/runs`)
+      .then(setRuns)
+      .catch(() => setRuns(null));
+  }, [ref, runsNonce]);
+  if (ref?.kind !== 'remote' || !runs || runs.length === 0) return null;
+  return (
+    <>
+      <h3 className="panel-subtitle">Stored runs</h3>
+      <ul className="runs" data-testid="run-history">
+        {runs.slice(0, 8).map((r) => (
+          <li key={r.id} className={r.id === runId ? 'is-current' : ''}>
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() => void api<{ id: string; graph: Graph; record: OptimizationRecord }>(`/runs/${r.id}`).then(showRun)}
+            >
+              {new Date(r.createdAt).toLocaleString()}
+            </button>
+            <span className="num small">{formatDistance(r.summary.totalDistance)}</span>
+            <Link to={`/report/${r.id}`} className="small">
+              report
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -104,6 +151,10 @@ export function ResultsPanel() {
     );
 
   const openReport = (): void => {
+    if (ws.runId) {
+      navigate(`/report/${ws.runId}`);
+      return;
+    }
     writeJson(REPORT_KEY, { name: ws.name, graph: resultGraph, result, source: resultSource, savedAt: Date.now() });
     navigate('/report');
   };
@@ -209,6 +260,8 @@ export function ResultsPanel() {
         </span>
         <span title={result.input.graphHash}>input {result.input.graphHash.slice(0, 12)}…</span>
       </div>
+
+      <RunHistory />
 
       <div className="btn-row btn-row--wrap">
         <button type="button" className="btn btn--quiet btn--sm" onClick={exportJson} data-testid="export-json">

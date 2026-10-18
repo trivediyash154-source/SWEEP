@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+
 export interface ServerConfig {
   port: number;
   host: string;
@@ -22,7 +24,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     port: Number(env.PORT ?? 8787),
     host: env.HOST ?? '0.0.0.0',
     dbPath: env.SWEEP_DB_PATH ?? 'data/sweep.db',
-    staticDir: env.SWEEP_STATIC_DIR ?? null,
+    // Serve the built web app automatically when it exists next to the server (pnpm start).
+    staticDir: env.SWEEP_STATIC_DIR ?? (existsSync('apps/web/dist/index.html') ? 'apps/web/dist' : null),
     secureCookies: env.COOKIE_SECURE ? env.COOKIE_SECURE === 'true' : production,
     trustProxy: env.TRUST_PROXY === 'true',
     solverMode: env.SWEEP_SOLVER_MODE === 'inline' ? 'inline' : 'worker',

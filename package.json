@@ -24,7 +24,8 @@
     "@playwright/test": "1.56.1",
     "@axe-core/playwright": "4.11.0",
     "typescript": "5.9.3",
-    "@types/node": "22.18.12"
+    "@types/node": "22.18.12",
+    "tsx": "4.20.6"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

@@ -13,3 +13,4 @@ playwright-report/
 __pycache__/
 *.pyc
 .DS_Store
+apps/web/dist-static/

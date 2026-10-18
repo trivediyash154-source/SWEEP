@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: |
+          pnpm install --frozen-lockfile
+          pip install -r oracle/requirements.txt
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit, property and integration tests
+        run: pnpm test
+      - name: Python oracle (networkx + brute force)
+        run: pnpm test:oracle
+      - name: Build
+        run: pnpm build
+      - name: Install Chromium for Playwright
+        run: pnpm exec playwright install --with-deps chromium
+      - name: End-to-end and accessibility tests
+        run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: test-results/

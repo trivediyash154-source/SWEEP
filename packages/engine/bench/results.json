@@ -5,7 +5,7 @@
     "node": "v22.22.0",
     "platform": "linux 6.18.44-fc-v139"
   },
-  "measuredAt": "2026-10-18T22:03:08.653Z",
+  "measuredAt": "2026-10-18T22:56:26.972Z",
   "rows": [
     {
       "name": "Königsberg, 1736",
@@ -13,7 +13,7 @@
       "edges": 7,
       "odd": 4,
       "medianMs": 0.71,
-      "minMs": 0.45,
+      "minMs": 0.59,
       "runs": 9
     },
     {
@@ -21,8 +21,8 @@
       "vertices": 7,
       "edges": 8,
       "odd": 0,
-      "medianMs": 0.43,
-      "minMs": 0.38,
+      "medianMs": 0.42,
+      "minMs": 0.37,
       "runs": 9
     },
     {
@@ -31,7 +31,7 @@
       "edges": 7,
       "odd": 2,
       "medianMs": 0.46,
-      "minMs": 0.39,
+      "minMs": 0.38,
       "runs": 9
     },
     {
@@ -39,8 +39,8 @@
       "vertices": 16,
       "edges": 24,
       "odd": 8,
-      "medianMs": 1.92,
-      "minMs": 1.23,
+      "medianMs": 1.82,
+      "minMs": 1.02,
       "runs": 9
     },
     {
@@ -49,7 +49,7 @@
       "edges": 6,
       "odd": 4,
       "medianMs": 0.46,
-      "minMs": 0.31,
+      "minMs": 0.39,
       "runs": 9
     },
     {
@@ -57,8 +57,8 @@
       "vertices": 4,
       "edges": 6,
       "odd": 4,
-      "medianMs": 0.2,
-      "minMs": 0.18,
+      "medianMs": 0.37,
+      "minMs": 0.34,
       "runs": 9
     },
     {
@@ -66,8 +66,8 @@
       "vertices": 6,
       "edges": 7,
       "odd": 2,
-      "medianMs": 0.18,
-      "minMs": 0.15,
+      "medianMs": 0.37,
+      "minMs": 0.34,
       "runs": 9
     },
     {
@@ -75,8 +75,8 @@
       "vertices": 20,
       "edges": 31,
       "odd": 2,
-      "medianMs": 0.45,
-      "minMs": 0.41,
+      "medianMs": 0.39,
+      "minMs": 0.34,
       "runs": 9
     },
     {
@@ -84,8 +84,8 @@
       "vertices": 351,
       "edges": 595,
       "odd": 148,
-      "medianMs": 103.58,
-      "minMs": 84.99,
+      "medianMs": 43.06,
+      "minMs": 37.94,
       "runs": 9
     },
     {
@@ -93,8 +93,8 @@
       "vertices": 660,
       "edges": 1121,
       "odd": 284,
-      "medianMs": 494.89,
-      "minMs": 469.15,
+      "medianMs": 188.07,
+      "minMs": 181.58,
       "runs": 3
     },
     {
@@ -102,8 +102,8 @@
       "vertices": 1199,
       "edges": 2052,
       "odd": 458,
-      "medianMs": 1780.12,
-      "minMs": 1742.67,
+      "medianMs": 709.36,
+      "minMs": 700.53,
       "runs": 3
     },
     {
@@ -111,8 +111,8 @@
       "vertices": 1800,
       "edges": 3110,
       "odd": 696,
-      "medianMs": 8524.42,
-      "minMs": 8415.76,
+      "medianMs": 2304.98,
+      "minMs": 2158.02,
       "runs": 3
     },
     {
@@ -120,8 +120,8 @@
       "vertices": 2640,
       "edges": 4574,
       "odd": 958,
-      "medianMs": 25831,
-      "minMs": 25800.04,
+      "medianMs": 5898.96,
+      "minMs": 5611.08,
       "runs": 3
     }
   ]

@@ -534,17 +534,13 @@
 :root[data-theme='porcelain'] .explain-steps button[aria-current='step'] {
   color: #f4dcab;
 }
-.explain-title {
-  font-size: var(--text-md);
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.explain-title .mono {
+.explain-count {
   font-size: 11px;
-  font-weight: 400;
-  margin-right: 6px;
+}
+.explain-text strong {
+  color: var(--text);
+  font-family: var(--font-display);
+  font-weight: 600;
 }
 .explain-text {
   font-size: var(--text-sm);
@@ -964,7 +960,7 @@
   .explain-head {
     grid-template-columns: 1fr auto;
   }
-  .explain-title {
+  .explain-count {
     display: none;
   }
   .explain-controls .segmented {

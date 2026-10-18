@@ -153,8 +153,10 @@ def main() -> int:
         graphs.append(random_graph(rng, 7, 11, 0.25))
     for i in range(150):
         graphs.append(random_graph(rng, 40, 90, 0.2))
+    local_tsx = os.path.join(ROOT, "node_modules", ".bin", "tsx")
+    runner = [local_tsx] if os.path.exists(local_tsx) else ["npx", "--yes", "tsx"]
     proc = subprocess.run(
-        ["npx", "--yes", "tsx", os.path.join(HERE, "solve_batch.ts")],
+        runner + [os.path.join(HERE, "solve_batch.ts")],
         input=json.dumps({"graphs": graphs, "includeExamples": True}).encode(),
         capture_output=True,
         cwd=ROOT,

@@ -144,6 +144,9 @@ p {
   color: transparent;
   animation: spectral-flow 9s linear infinite;
 }
+:root[data-theme='porcelain'] .spectral-text {
+  background-image: linear-gradient(100deg, #b8467a 0%, #9a6d1f 25%, #0a7ea6 50%, #6148d1 75%, #b8467a 100%);
+}
 @keyframes spectral-flow {
   from {
     background-position: 0% 50%;

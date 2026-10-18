@@ -96,9 +96,7 @@ export function ExplainBar() {
             </li>
           ))}
         </ol>
-        <h3 className="explain-title">
-          <span className="faint mono">{String(explainStep + 1).padStart(2, '0')} / 07</span> {EXPLAIN_STEPS[explainStep]}
-        </h3>
+        <span className="explain-count faint mono">{String(explainStep + 1).padStart(2, '0')} / 07</span>
         <div className="explain-controls" role="group" aria-label="Playback">
           <button type="button" className="btn btn--quiet btn--icon btn--sm" onClick={() => { ws.setPlaying(false); ws.setExplainStep(0); }} aria-label="Restart">
             <Icon name="restart" size={15} />
@@ -116,7 +114,7 @@ export function ExplainBar() {
         </div>
       </div>
       <p className="explain-text" aria-live="polite" data-testid="explain-text">
-        {describe(explainStep, result)}
+        <strong>{EXPLAIN_STEPS[explainStep]}.</strong> {describe(explainStep, result)}
       </p>
     </div>
   );

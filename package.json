@@ -1,0 +1,34 @@
+{
+  "name": "sweep",
+  "private": true,
+  "version": "1.0.0",
+  "description": "SWEEP \u2014 urban route intelligence: Chinese Postman optimization with a cinematic, explainable interface.",
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @sweep/server --filter @sweep/web dev",
+    "build": "pnpm --filter @sweep/engine build && pnpm --filter @sweep/web build && pnpm --filter @sweep/server build",
+    "build:static": "pnpm --filter @sweep/engine build && pnpm --filter @sweep/web build:static",
+    "start": "node --disable-warning=ExperimentalWarning apps/server/dist/index.js",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:oracle": "python3 -I oracle/run_oracle.py",
+    "test:e2e": "playwright test",
+    "bench": "pnpm --filter @sweep/engine bench",
+    "verify": "pnpm typecheck && pnpm test && pnpm test:oracle && pnpm build && pnpm test:e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@axe-core/playwright": "4.11.0",
+    "typescript": "5.9.3",
+    "@types/node": "22.18.12"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

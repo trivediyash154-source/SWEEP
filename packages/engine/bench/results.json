@@ -1,0 +1,128 @@
+{
+  "machine": {
+    "cpus": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "cores": 4,
+    "node": "v22.22.0",
+    "platform": "linux 6.18.44-fc-v139"
+  },
+  "measuredAt": "2026-10-18T22:03:08.653Z",
+  "rows": [
+    {
+      "name": "Königsberg, 1736",
+      "vertices": 4,
+      "edges": 7,
+      "odd": 4,
+      "medianMs": 0.71,
+      "minMs": 0.45,
+      "runs": 9
+    },
+    {
+      "name": "Heritage Loop",
+      "vertices": 7,
+      "edges": 8,
+      "odd": 0,
+      "medianMs": 0.43,
+      "minMs": 0.38,
+      "runs": 9
+    },
+    {
+      "name": "Riverside Ladder",
+      "vertices": 6,
+      "edges": 7,
+      "odd": 2,
+      "medianMs": 0.46,
+      "minMs": 0.39,
+      "runs": 9
+    },
+    {
+      "name": "Old Town Grid",
+      "vertices": 16,
+      "edges": 24,
+      "odd": 8,
+      "medianMs": 1.92,
+      "minMs": 1.23,
+      "runs": 9
+    },
+    {
+      "name": "Crescent Quay",
+      "vertices": 6,
+      "edges": 6,
+      "odd": 4,
+      "medianMs": 0.46,
+      "minMs": 0.31,
+      "runs": 9
+    },
+    {
+      "name": "Four Corners",
+      "vertices": 4,
+      "edges": 6,
+      "odd": 4,
+      "medianMs": 0.2,
+      "minMs": 0.18,
+      "runs": 9
+    },
+    {
+      "name": "Plaza Crossing",
+      "vertices": 6,
+      "edges": 7,
+      "odd": 2,
+      "medianMs": 0.18,
+      "minMs": 0.15,
+      "runs": 9
+    },
+    {
+      "name": "Market Avenues",
+      "vertices": 20,
+      "edges": 31,
+      "odd": 2,
+      "medianMs": 0.45,
+      "minMs": 0.41,
+      "runs": 9
+    },
+    {
+      "name": "Meridian District",
+      "vertices": 351,
+      "edges": 595,
+      "odd": 148,
+      "medianMs": 103.58,
+      "minMs": 84.99,
+      "runs": 9
+    },
+    {
+      "name": "synthetic 30×22",
+      "vertices": 660,
+      "edges": 1121,
+      "odd": 284,
+      "medianMs": 494.89,
+      "minMs": 469.15,
+      "runs": 3
+    },
+    {
+      "name": "synthetic 40×30",
+      "vertices": 1199,
+      "edges": 2052,
+      "odd": 458,
+      "medianMs": 1780.12,
+      "minMs": 1742.67,
+      "runs": 3
+    },
+    {
+      "name": "synthetic 50×36",
+      "vertices": 1800,
+      "edges": 3110,
+      "odd": 696,
+      "medianMs": 8524.42,
+      "minMs": 8415.76,
+      "runs": 3
+    },
+    {
+      "name": "synthetic 60×44",
+      "vertices": 2640,
+      "edges": 4574,
+      "odd": 958,
+      "medianMs": 25831,
+      "minMs": 25800.04,
+      "runs": 3
+    }
+  ]
+}

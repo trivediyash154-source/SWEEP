@@ -1,0 +1,23 @@
+{
+  "name": "@sweep/engine",
+  "version": "1.0.0",
+  "description": "SWEEP mathematical engine: validated graph model and exact Chinese Postman solver.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./examples": "./src/examples/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "bench": "tsx bench/bench.ts"
+  },
+  "devDependencies": {
+    "fast-check": "4.3.0",
+    "tsx": "4.20.6",
+    "vitest": "4.1.12"
+  }
+}

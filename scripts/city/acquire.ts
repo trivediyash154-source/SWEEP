@@ -49,6 +49,8 @@ export interface ManifestEntry {
   fetchedAt?: string;
   attempts: number;
   lastError?: string;
+  /** Number of sub-queries the tile was fetched in (quadrant fallback), when more than one. */
+  parts?: number;
 }
 
 export interface Manifest {
@@ -176,6 +178,50 @@ async function fetchOne(r: RegionConfig, query: string, log: (s: string) => void
   return { error: lastError, attempts: MAX_ATTEMPTS };
 }
 
+const queryFor = (r: RegionConfig, kind: TileKind, bbox: readonly number[]): string => (kind === 'streets' ? streetQuery(bbox, r.roadClasses) : kind === 'buildings' ? buildingQuery(bbox) : restrictionQuery(bbox));
+
+/** The four quadrants of a (south, west, north, east) box. */
+export function quadrants(b: readonly number[]): [number, number, number, number][] {
+  const [s, w, n, e] = b as [number, number, number, number];
+  const ms = +((s + n) / 2).toFixed(6);
+  const mw = +((w + e) / 2).toFixed(6);
+  return [
+    [s, w, ms, mw],
+    [s, mw, ms, e],
+    [ms, w, n, mw],
+    [ms, mw, n, e],
+  ];
+}
+
+/**
+ * Fallback for a tile the mirror keeps timing out on (dense areas): fetch its four
+ * quadrants one after another, recursing once more if needed, and merge their
+ * elements into one response. Features crossing quadrant borders appear more than
+ * once; the bundle builder already de-duplicates by OSM id.
+ */
+async function fetchSplit(r: RegionConfig, kind: TileKind, bbox: readonly number[], depth: number, log: (s: string) => void): Promise<{ text: string; endpoint: string; osmBase?: string; parts: number } | { error: string; attempts: number }> {
+  let attempts = 0;
+  const parts: { elements: unknown[]; header: Record<string, unknown>; endpoint: string; osmBase?: string }[] = [];
+  let count = 0;
+  for (const q of quadrants(bbox)) {
+    log(`      quadrant ${q.join(',')}`);
+    await sleep(MIN_INTERVAL_MS);
+    let res: { text: string; endpoint: string; osmBase?: string; parts?: number } | { error: string; attempts: number } = await fetchOne(r, queryFor(r, kind, q), log);
+    if ('error' in res && depth > 0) {
+      attempts += res.attempts;
+      res = await fetchSplit(r, kind, q, depth - 1, log);
+    }
+    if ('error' in res) return { error: res.error, attempts: attempts + res.attempts };
+    const j = JSON.parse(res.text) as { elements: unknown[] } & Record<string, unknown>;
+    const { elements, ...header } = j;
+    parts.push({ elements, header, endpoint: res.endpoint, ...(res.osmBase ? { osmBase: res.osmBase } : {}) });
+    count += res.parts ?? 1;
+  }
+  const bases = parts.map((p) => p.osmBase).filter((x): x is string => !!x).sort();
+  const merged = { ...parts[0]!.header, elements: parts.flatMap((p) => p.elements) };
+  return { text: JSON.stringify(merged), endpoint: parts[0]!.endpoint, ...(bases.length ? { osmBase: bases[0]! } : {}), parts: count };
+}
+
 export async function acquire(id: string, log: (s: string) => void = console.log): Promise<Manifest> {
   const r = loadRegion(id);
   mkdirSync(join(cacheDir(id), 'tiles'), { recursive: true });
@@ -195,11 +241,19 @@ export async function acquire(id: string, log: (s: string) => void = console.log
     }
     const t0 = Date.now();
     log(`[${done + 1}/${jobs.length}] ${j.kind} ${j.key} ${j.bbox.join(',')}`);
-    const res = await fetchOne(r, j.query, log);
+    // A tile that already failed in an earlier run goes straight to quadrants; otherwise try it whole first.
+    const failedBefore = m.entries[k]?.status === 'failed';
+    let res: { text: string; endpoint: string; osmBase?: string; parts?: number } | { error: string; attempts: number } = failedBefore ? { error: 'failed in an earlier run', attempts: 0 } : await fetchOne(r, j.query, log);
+    if ('error' in res) {
+      log(`    splitting into quadrants (${res.error})`);
+      const prior = res.attempts;
+      res = await fetchSplit(r, j.kind, j.bbox, 1, log);
+      if ('error' in res) res = { error: res.error, attempts: res.attempts + prior };
+    }
     const file = `${j.key}_${j.kind}.json`;
     if ('text' in res) {
       writeFileSync(join(cacheDir(id), 'tiles', file), res.text);
-      m.entries[k] = { key: j.key, kind: j.kind, bbox: j.bbox, status: 'ok', file, bytes: Buffer.byteLength(res.text), ...(res.osmBase ? { osmBase: res.osmBase } : {}), endpoint: res.endpoint, fetchedAt: new Date().toISOString(), attempts: (m.entries[k]?.attempts ?? 0) + 1 };
+      m.entries[k] = { key: j.key, kind: j.kind, bbox: j.bbox, status: 'ok', file, bytes: Buffer.byteLength(res.text), ...(res.osmBase ? { osmBase: res.osmBase } : {}), endpoint: res.endpoint, fetchedAt: new Date().toISOString(), attempts: (m.entries[k]?.attempts ?? 0) + 1, ...(res.parts && res.parts > 1 ? { parts: res.parts } : {}) };
       log(`    ok ${(Buffer.byteLength(res.text) / 1024).toFixed(0)} KB in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
     } else {
       m.entries[k] = { key: j.key, kind: j.kind, bbox: j.bbox, status: 'failed', file, attempts: (m.entries[k]?.attempts ?? 0) + res.attempts, lastError: res.error };

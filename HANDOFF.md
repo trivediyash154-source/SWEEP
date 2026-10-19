@@ -2,6 +2,8 @@
 
 This file is written for a Claude Code session that takes over the city-scale redesign of SWEEP. Read it fully before changing anything.
 
+**Start with `docs/FINAL_REPORT.md`.** It is the latest consolidated state: dataset, counts, guarantees, tests, performance and blockers.
+
 * Read `IMPLEMENTATION_STATUS.md` next. It is the factual record of what has been verified.
 * The original product brief is in `PROJECT_BRIEF.md` and `PRD.md`; the earlier engine maths is in `MATHEMATICAL_SPEC.md`.
 

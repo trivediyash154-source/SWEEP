@@ -169,7 +169,7 @@ Raw results are in `packages/engine/bench/results.json`.
 
 The dataset is the bundled partial extract (50 of 85 tiles): 4,160 intersections, 5,000 segments, 290.97 km.
 
-**Point-to-point routing.** Median per-query times over random origin–destination pairs. Every algorithm returns the same optimum (asserted in the tests).
+**Point-to-point routing.** Median per-query times over 200 seeded random origin–destination pairs. Every algorithm returns the same optimum (asserted in the tests).
 
 | Profile, objective | Directed arcs | ALT prep | CH prep (shortcuts) | Dijkstra | A* | Bidirectional | ALT | CH |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|

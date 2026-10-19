@@ -242,7 +242,15 @@ export async function acquire(id: string, log: (s: string) => void = console.log
   mkdirSync(join(cacheDir(id), 'tiles'), { recursive: true });
   const m = loadManifest(r);
   const jobs: { key: string; kind: TileKind; bbox: [number, number, number, number]; query: string }[] = [];
-  for (const t of tilesOf(r)) {
+  // Tiles nearest the region's focus point first (e.g. the campus the region is built around), so a partial
+  // download still covers the most important area; streets before buildings within a tile.
+  const tiles = tilesOf(r);
+  if (r.focus) {
+    const [flon, flat] = r.focus.lonlat;
+    const d = (b: readonly number[]) => Math.hypot((b[0]! + b[2]!) / 2 - flat, ((b[1]! + b[3]!) / 2 - flon) * Math.cos((flat * Math.PI) / 180));
+    tiles.sort((a, b) => d(a.bbox) - d(b.bbox));
+  }
+  for (const t of tiles) {
     jobs.push({ ...t, kind: 'streets', query: streetQuery(t.bbox, r.roadClasses) });
     jobs.push({ ...t, kind: 'buildings', query: buildingQuery(t.bbox) });
   }

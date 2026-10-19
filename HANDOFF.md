@@ -215,7 +215,8 @@ Helpers: `e2e/png.ts` decodes screenshots for pixel measurements; `e2e/engine.ts
 
 * `pnpm typecheck` ✓ and `pnpm lint` ✓ (0 warnings).
 * Unit tests: engine 156/156, server 38/38, web 29/29 (after the exports were added; see TEST_PLAN for the run figures).
-* E2E: **51 of 51 passed** in a full local run (10.9 min, one worker), on the 47-tile bundle.
+* E2E: **52 of 52 passed** in a full local run after the merge (one worker), on the 51-tile bundle, and in CI on `e233ff5`.
+* Latest `pnpm verify` (after the merge, docs-only changes since): typecheck, lint, unit tests, both oracles and the build passed; it was stopped at the owner's request after 39 of 52 browser tests, all passed.
 * Last `pnpm verify` (final code of the second session): typecheck, lint, unit tests, both oracles and the build passed; the browser suite had **50 of 51**. The one failure was the known intermittent page-load freeze (§4.1) in "every algorithm returns the engine optimum"; that test and the whole city spec then passed when rerun. So `pnpm verify` did **not** exit 0 on that run.
 
 ### Bundled dataset
@@ -249,23 +250,23 @@ pnpm city:build pune-bibwewadi                                                  
 * **In the second session the proxy refused every Overpass mirror (HTTP 403 on CONNECT)**, so no tiles were added. The owner must allow the mirror host (for example `maps.mail.ru`) in the environment's network settings before the acquisition can continue. When it works, `maps.mail.ru` is slow but reliable.
 * Do **not** hammer the servers, and commit the cache once per run, not per tile.
 
-### Benchmarks (47-tile bundle, second session; full tables in TEST_PLAN §5)
+### Benchmarks (51-tile bundle, after the merge; full tables in TEST_PLAN §5)
 
-* P2P, car by time, median of 200 queries: Dijkstra 0.42 ms, A* 0.47 ms, bidirectional 0.21 ms, ALT 0.08 ms, CH 0.026 ms. CH preprocessing 415–772 ms across profiles.
-* Coverage, whole network: directed exact 503.00 km in 0.3 s. Undirected heuristic 409.40 km against a lower bound of 384.48 km (gap 6.48 %) in **9.4 s, 6.2 s of it the fractional-matching lower bound**. Before the second session's speed-up it took 20.2 s (17.5 s for the bound) with the identical result.
+* P2P, car by time, median of 200 queries: Dijkstra 0.46 ms, A* 0.56 ms, bidirectional 0.29 ms, ALT 0.18 ms, CH 0.041 ms. CH preprocessing 583–818 ms across profiles.
+* Coverage, whole network: directed exact 547.68 km in 0.3 s. Undirected heuristic 445.67 km against a lower bound of 419.08 km (gap 6.35 %) in **9.0 s, 6.1 s of it the fractional-matching lower bound**. On the 47-tile bundle the second session's speed-up took this from 20.2 s (17.5 s for the bound) to 9.4 s with the identical result.
 
 ### Phase status
 
 | Phase | Status |
 |---|---|
 | 1 Audit | done |
-| 2 Real Pune data | partial: 47 of 85 tile files; acquisition blocked by the environment's network policy in the second session |
+| 2 Real Pune data | partial: 51 of 85 tile files; acquisition blocked by the environment's network policy in the second session |
 | 3 Renderer and themes | done for the workspace; same-camera screenshots of both themes in `docs/screenshots/city-*.png` |
 | 4–6 Routing, profiles, reachability | done and tested; printable Route lab report with route sheet done and tested |
 | 7 Coverage | done: rectangle, circle and polygon zones; engine and UI tested against each other |
 | 8 Fleet, scenarios, cost, report | done: multi-vehicle plans with honest over-fleet diagnosis, scenario plan overrides (depot, vehicles, shift, costs) with baseline comparison, cost from the routes actually driven, printable coverage report |
 | 9 Shift timeline | done, including multi-vehicle plans (e2e) |
-| 10 Docs, full verify, final report | docs updated (README, ARCHITECTURE, MATHEMATICAL_SPEC §12–14, SECURITY, IMPLEMENTATION_STATUS, this file); final report still to write |
+| 10 Docs, full verify, final report | docs updated (README, ARCHITECTURE, MATHEMATICAL_SPEC §12–14, SECURITY, IMPLEMENTATION_STATUS, this file); final report in `docs/FINAL_REPORT.md`, reconciled with the merged state |
 
 ---
 
@@ -290,7 +291,7 @@ Profiled on the whole 47-tile network (3,032 odd intersections): the optional op
 ### 4.4 Screenshots and the final report
 
 * Same-camera screenshots of `/workspace` in both themes, the Route lab and a coverage plan are in `docs/screenshots/city-*.png` (second session) and in README. Recapture them after the data changes.
-* Write the final report for the owner: files changed, dataset extent and partiality, road and building counts, theme verification with the screenshots, algorithms and guarantees, test results, performance, Docker and CI status, run commands, blockers (Overpass access; the reference repository was never received).
+* The final report for the owner is `docs/FINAL_REPORT.md`. It was reconciled with the merged state (51-tile bundle, re-measured contrast and benchmarks, test results after the merge). Update it whenever the data or the test figures change.
 
 ### 4.5 Possible next features (not started)
 

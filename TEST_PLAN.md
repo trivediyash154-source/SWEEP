@@ -158,33 +158,33 @@ Fleets (`solveFleet`, base solve + split + verification):
 
 Raw results are in `packages/engine/bench/results.json`.
 
-### City workspace engine (real Pune bundle, 47 of 85 tile files: 3,776 intersections, 4,517 segments, 267.2 km)
+### City workspace engine (real Pune bundle, 51 of 85 tile files: 4,160 intersections, 5,000 segments, 290.97 km)
 
-Measured in the second session with `npx tsx packages/engine/bench/p2p.ts` and `npx tsx packages/engine/bench/coverage.ts` on a 4-core Xeon at 2.80 GHz, Node 22.22.
+Measured after the two sessions' work was merged (2026-10-19) with `npx tsx packages/engine/bench/p2p.ts` and `npx tsx packages/engine/bench/coverage.ts` on a 4-core Xeon at 2.80 GHz, Node 22.22.
 
 Point-to-point, median over 200 random queries (arcs settled in brackets):
 
 | Profile, objective | Dijkstra | A* | Bidirectional | ALT | CH | Preprocessing (ALT / CH) |
 |---|---:|---:|---:|---:|---:|---|
-| car, time | 0.424 ms (3,370) | 0.469 ms (1,814) | 0.210 ms (1,287) | 0.079 ms (296) | 0.026 ms (93) | 49.5 ms / 661 ms |
-| car, distance | 0.406 ms (3,662) | 0.198 ms (849) | 0.268 ms (1,878) | 0.178 ms (710) | 0.021 ms (96) | 26 ms / 640 ms |
-| truck, time | 0.503 ms (3,504) | 0.600 ms (2,064) | 0.249 ms (1,428) | 0.151 ms (410) | 0.017 ms (91) | 15.3 ms / 679 ms |
-| foot, time | 0.484 ms (3,467) | 0.214 ms (743) | 0.333 ms (2,174) | 0.067 ms (241) | 0.028 ms (134) | 22.8 ms / 676 ms |
+| car, time | 0.459 ms (3,524) | 0.557 ms (1,963) | 0.288 ms (1,562) | 0.184 ms (483) | 0.041 ms (102) | 51.3 ms / 713 ms |
+| car, distance | 0.411 ms (3,581) | 0.207 ms (891) | 0.287 ms (2,084) | 0.201 ms (724) | 0.026 ms (101) | 29.2 ms / 648 ms |
+| truck, time | 0.501 ms (3,462) | 0.597 ms (2,249) | 0.261 ms (1,691) | 0.249 ms (622) | 0.029 ms (96) | 18.0 ms / 622 ms |
+| foot, time | 0.472 ms (3,604) | 0.331 ms (1,009) | 0.376 ms (2,438) | 0.090 ms (348) | 0.029 ms (132) | 26.8 ms / 818 ms |
 
-For the time objective A* settles fewer arcs than Dijkstra but is not always faster here (car and truck). Its straight-line bound is divided by the fastest speed in the graph, so it is loose on slower streets, and each settled arc costs a heuristic evaluation; this explanation has not been profiled.
+For the time objective A* settles fewer arcs than Dijkstra but is not always faster here (car and truck). Its straight-line bound is divided by the fastest speed in the graph, so it is loose on slower streets, and each settled arc costs a heuristic evaluation; this explanation has not been profiled. The benchmark also prints the bicycle profile and the distance objective for truck and foot.
 
 Coverage (zone, solve, bound and verification):
 
 | Zone | Model | Method | Route | Lower bound | Gap | Time |
 |---|---|---|---:|---:|---:|---:|
-| circle r = 400 m (13.3 km required) | directed | exact min-cost flow, connectors added | 32.37 km | 26.65 km | 21.45 % | 0.8 s |
-| circle r = 400 m | undirected | exact Edmonds–Johnson, connectors added | 24.54 km | 21.38 km | 14.76 % | 0.8 s |
-| circle r = 800 m (53.9 km required) | directed | exact min-cost flow, connectors added | 111.52 km | 106.93 km | 4.29 % | 0.3 s |
-| circle r = 800 m | undirected | candidate-matching heuristic | 86.73 km | 77.27 km | 12.24 % | 0.6 s |
-| whole network (267.2 km) | directed | exact min-cost flow (optimal; 26 one-way segments unserviceable) | 503.00 km | 503.00 km | 0 % | 0.3 s |
-| whole network | undirected | candidate-matching heuristic | 409.40 km | 384.48 km | 6.48 % | 9.4 s (6.2 s of it the lower bound) |
+| circle r = 400 m (13.3 km required) | directed | exact min-cost flow, connectors added | 32.37 km | 26.65 km | 21.45 % | 0.7 s |
+| circle r = 400 m | undirected | exact Edmonds–Johnson, connectors added | 24.54 km | 21.38 km | 14.76 % | 0.9 s |
+| circle r = 800 m (54.5 km required) | directed | exact min-cost flow, connectors added | 112.75 km | 108.16 km | 4.24 % | 0.2 s |
+| circle r = 800 m | undirected | candidate-matching heuristic | 87.02 km | 77.38 km | 12.46 % | 0.6 s |
+| whole network (290.97 km) | directed | exact min-cost flow (optimal; 28 one-way segments unserviceable) | 547.68 km | 547.68 km | 0 % | 0.3 s |
+| whole network | undirected | candidate-matching heuristic | 445.67 km | 419.08 km | 6.35 % | 9.0 s (6.1 s of it the lower bound) |
 
-The undirected times are after the heap and flow speed-up of the second session (whole network before: 20.2 s, 17.5 s of it the bound; identical route, bound and gap). The lower bound does not include the cost of joining separate street groups (6 and 10 connector paths in the circle zones), so there the gap is an upper limit on the distance from the optimum, not an estimate of it. Fleet plans for these zones take 0.4–3.5 s (distance table, split and local search); the benchmark prints each one.
+The undirected times are after the heap and flow speed-up of the second session. On the 47-tile bundle that speed-up took the whole network from 20.2 s (17.5 s of it the bound) to 9.4 s, with an identical route, bound and gap. The lower bound does not include the cost of joining separate street groups (6 and 10 connector paths in the circle zones), so there the gap is an upper limit on the distance from the optimum, not an estimate of it. Fleet plans for these zones take 0.2–3.2 s (distance table, split and local search); the benchmark prints each one.
 
 ### Frontend (headless Chromium, software WebGL via SwiftShader, local server)
 

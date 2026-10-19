@@ -84,6 +84,20 @@ The image (multi-stage: cached dependency install, build, slim `node:22-bookworm
 
 **One manual step:** in the repository settings, open *Pages* and set *Source* to **GitHub Actions**. Then run the workflow, or push to `main`.
 
+## Static build on Vercel (https://sweep-ashy.vercel.app)
+
+The Vercel project is "sweep". The static build needs no server, no environment variables and no rewrites: it uses hash routes, so the city workspace is at `https://sweep-ashy.vercel.app/#/workspace`. From a machine whose Vercel CLI is logged in to the project's team:
+
+```bash
+pnpm install
+pnpm build:static                                   # → apps/web/dist-static (checked: city, Route lab and coverage run from a plain file server)
+npx vercel deploy apps/web/dist-static --prod       # uploads the built files as they are
+```
+
+On the first run the CLI asks which project to use: link it to the existing "sweep" project, not a new one. The build empties `dist-static` each time, which also removes that link, so the question comes back after every build; the answer stays the same.
+
+Then open `/#/workspace`, check that the "Pune · Bibwewadi & VIT" header appears, and run one Route lab comparison. These Vercel commands have not been run from the Claude sessions: the fourth session's Vercel connector was refused (HTTP 403) for the project's team. Re-authorising that connector for the team would let a session deploy the same folder.
+
 ## Hosting the full app (server + accounts)
 
 Any host that runs a Docker image or a Node 22 process with a persistent disk works, for example Render, Fly.io, Railway or a VM. Each needs **an account created by the owner** and a persistent volume for `/data`. These steps cannot be performed from this environment.

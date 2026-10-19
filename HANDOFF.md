@@ -94,6 +94,7 @@ Run `pnpm dev`, or build and then run `node scripts/e2e-server.mjs 8790` to serv
 
 ### Gotchas
 
+* **`.gitignore` has a repo-wide `coverage/` rule** (test-coverage output). It once silently dropped `packages/engine/src/coverage/` from a commit. A negation now re-includes it. After adding a new source folder, check `git status --ignored`.
 * **Do not run `pkill -f <pattern>`** in a command line that itself contains the pattern. It kills its own shell (exit 144).
 * **Headless Chromium uses SwiftShader** (software WebGL). The app detects this and starts the 3D scene in low-power mode (`lib/webgl.ts` → `startInLowPower`; demand frameloop, DPR 1, no shadows). Two browsers in parallel on four cores make the real-data tests slow, so the city spec has a 180 s describe timeout. The assertions were not changed.
 

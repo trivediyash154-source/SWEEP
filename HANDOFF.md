@@ -280,7 +280,7 @@ Measured with `pnpm bench` on the partial bundle:
 | 3 Renderer and themes | done for the workspace; recapture the same-camera screenshots in both themes for the report |
 | 4–6 Routing, profiles, reachability | done and tested |
 | 7 Coverage | engine done and tested; Coverage & fleet UI done, with an e2e test against the engine (rectangle zones) |
-| 8 Fleet in UI, scenarios for coverage, cost model, report | fleet planning, the cost model and the coverage-vs-baseline comparison are in the coverage panel; the printable report is **not built** |
+| 8 Fleet in UI, scenarios for coverage, cost model, report | fleet planning, the cost model, the coverage-vs-baseline comparison and a printable coverage report are done |
 | 9 Shift timeline | **done** (coverage plans); e2e-checked against the engine route timed at the set speeds |
 | 10 Docs, full verify, final report | **not started** |
 
@@ -402,7 +402,9 @@ Original plan, for reference:
 * Extend `scenario.ts` so a scenario also holds depot, fleet size, profile and cost assumptions.
 * Comparing with the baseline must rerun both coverage plans. Show the deltas in km, hours, vehicles and estimated cost and CO₂.
 
-### 4.6 Printable report
+### 4.6 Printable report: DONE for coverage plans (`panels/CoverageReport.tsx`, print CSS in `city.css`; e2e-checked). Still to do: a Route Lab report.
+
+Original plan, for reference:
 
 * Generate it from the **actual** active scenario: dataset provenance, zone, method, guarantee, LB and gap, fleet table, assumptions, validation checks, and the timeline summary.
 * The old `apps/web/src/report/Report.tsx` is a pattern to follow, with print CSS.

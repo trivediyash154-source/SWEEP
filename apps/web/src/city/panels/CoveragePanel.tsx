@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { CityModel } from '@sweep/engine';
 import { Icon } from '../../components/Icon';
 import { useCity } from '../store';
@@ -6,8 +6,9 @@ import { coverageKey, useCoverage, type PlanSummary } from '../coverageStore';
 import { useScenarios } from '../scenario';
 import { fmtDist, fmtTime, nodeLabel } from './RouteLab';
 import { estimateCost } from '../costModel';
+import { CoverageReport } from './CoverageReport';
 
-const METHOD_LABEL = {
+export const METHOD_LABEL = {
   'exact-directed-min-cost-flow': 'Exact · directed min-cost flow',
   'exact-undirected-edmonds-johnson': 'Exact · undirected matching (Edmonds–Johnson)',
   'heuristic-candidate-matching': 'Heuristic · candidate matching',
@@ -27,8 +28,8 @@ function useClasses(city: CityModel) {
   }, [city]);
 }
 
-const inr = (x: number | null) => (x === null ? '–' : `₹${Math.round(x).toLocaleString('en-IN')}`);
-const pct = (x: number | null) => (x === null ? '–' : `${(x * 100).toFixed(2)} %`);
+export const inr = (x: number | null) => (x === null ? '–' : `₹${Math.round(x).toLocaleString('en-IN')}`);
+export const pct = (x: number | null) => (x === null ? '–' : `${(x * 100).toFixed(2)} %`);
 
 function NumberField({ label, value, onChange, min, max, step, placeholder, testid, unit }: { label: string; value: number | null; onChange: (v: number | null) => void; min: number; max: number; step: number; placeholder?: string; testid: string; unit?: string }) {
   return (
@@ -105,6 +106,7 @@ export function CoveragePanel() {
   const activeScenario = useScenarios((s) => s.scenarios.find((x) => x.id === s.activeId));
   useScenarios((s) => s.activeId + s.scenarios.length); // re-render when the scenario changes (stale flag)
   const classes = useClasses(city);
+  const [report, setReport] = useState(false);
   const pick = (t: 'zone-a' | 'depot' | 'dump') => useCity.getState().setPickTarget(pickTarget === t || (t === 'zone-a' && pickTarget === 'zone-b') ? null : t);
   const zoneW = cv.zone ? cv.zone.maxX - cv.zone.minX : 0;
   const zoneH = cv.zone ? cv.zone.maxY - cv.zone.minY : 0;
@@ -397,6 +399,11 @@ export function CoveragePanel() {
               </>
             )}
           </section>
+
+          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setReport(true)} data-testid="cov-open-report">
+            <Icon name="table" size={13} /> Printable report
+          </button>
+          {report && <CoverageReport onClose={() => setReport(false)} />}
 
           <details className="cv-checks" data-testid="cov-checks">
             <summary>

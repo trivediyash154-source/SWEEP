@@ -275,6 +275,12 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     if (exp2.method === 'heuristic-candidate-matching') await expect(page.getByTestId('cov-optimal')).toContainText('Within');
     if (st2.result!.lowerBoundM !== null) expect(st2.result!.lowerBoundM).toBeLessThanOrEqual(st2.result!.totals.distanceM + 1e-6);
 
+    // Printable report reads the same plan.
+    await page.getByTestId('cov-open-report').click();
+    await expect(page.getByTestId('rep-total')).toHaveText(await page.getByTestId('cov-total').innerText());
+    await expect(page.getByTestId('rep-tiles')).toContainText(`${city.provenance.tiles.ok} of ${city.provenance.tiles.total}`);
+    await page.getByTestId('cov-report-close').click();
+
     // Scenario: close one required street in the zone; both plans are recomputed and match the engine.
     const seg = zg2.edgeSegment[zg2.graph.edges.findIndex((e) => e.required && e.u !== depotId && e.v !== depotId)]!;
     await page.evaluate((sg) => {

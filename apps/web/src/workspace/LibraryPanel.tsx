@@ -85,7 +85,7 @@ export function LibraryPanel({ refreshKey }: { refreshKey: number }) {
                   className={`lib-item${active ? ' is-active' : ''}`}
                   onClick={() => {
                     ws.loadExample(ex.id);
-                    navigate(`/workspace?example=${ex.id}`, { replace: true });
+                    navigate(`/lab?example=${ex.id}`, { replace: true });
                   }}
                   data-testid={`example-${ex.id}`}
                 >
@@ -111,7 +111,7 @@ export function LibraryPanel({ refreshKey }: { refreshKey: number }) {
             <ul className="library__list">
               {local.map((s) => (
                 <li key={s.id} className="lib-row">
-                  <button type="button" className="lib-item" onClick={() => { ws.loadGraph(s.graph, { kind: 'local', id: s.id }, s.name); navigate(`/workspace/${s.id}`, { replace: true }); }}>
+                  <button type="button" className="lib-item" onClick={() => { ws.loadGraph(s.graph, { kind: 'local', id: s.id }, s.name); navigate(`/lab/${s.id}`, { replace: true }); }}>
                     <span className="lib-item__title">{s.name}</span>
                     <span className="lib-item__sub">
                       {s.graph.vertices.length} intersections · {new Date(s.updatedAt).toLocaleDateString()}
@@ -150,7 +150,7 @@ export function LibraryPanel({ refreshKey }: { refreshKey: number }) {
             <ul className="library__list">
               {remote.map((s) => (
                 <li key={s.id} className="lib-row">
-                  <button type="button" className={`lib-item${ws.ref?.kind === 'remote' && ws.ref.id === s.id ? ' is-active' : ''}`} onClick={() => navigate(`/workspace/${s.id}`)}>
+                  <button type="button" className={`lib-item${ws.ref?.kind === 'remote' && ws.ref.id === s.id ? ' is-active' : ''}`} onClick={() => navigate(`/lab/${s.id}`)}>
                     <span className="lib-item__title">{s.name}</span>
                     <span className="lib-item__sub">
                       {s.vertexCount} intersections · {new Date(s.updatedAt).toLocaleDateString()}

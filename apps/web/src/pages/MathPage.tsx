@@ -170,7 +170,7 @@ export default function MathPage() {
             </li>
           </ul>
           <p>
-            <Link to="/workspace?example=greedy-trap" className="btn btn--primary">
+            <Link to="/lab?example=greedy-trap" className="btn btn--primary">
               Try Crescent Quay in the workspace
             </Link>
           </p>

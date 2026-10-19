@@ -7,7 +7,9 @@ export default defineConfig({
   timeout: 90_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
-  workers: 2,
+  // One browser at a time: headless Chromium rasterises WebGL in software (SwiftShader), and two
+  // real-city scenes rendering at once starve each other's main thread on a 4-core runner.
+  workers: 1,
   reporter: [['list'], ['json', { outputFile: 'test-results/e2e-report.json' }]],
   use: {
     baseURL: `http://localhost:${PORT}`,

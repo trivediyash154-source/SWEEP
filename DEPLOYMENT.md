@@ -9,7 +9,8 @@
 | Docker image (`docker build`, `docker compose`) | **Verified** in the development container: image built (343 MB, non-root `node` user), container healthy, `/api/health` and `/workspace` answer, optimise/register/scenario/run smoke test passes, data survives `docker restart` and `compose down`/`up`, and the `tests` profile runs the unit and integration suites inside the image |
 | GitHub Actions CI | **Verified on GitHub**: the `verify` job (typecheck, lint, unit/integration/property tests, Python oracle, build, Playwright end-to-end and axe in both themes) and the `docker` job (build, health check, smoke test, restart persistence, test target) pass |
 | GitHub Pages workflow | Committed; needs Pages enabled once in the repository settings (below) |
-| Public hosting | **Not deployed.** This needs an account on a hosting provider, which this environment does not have. |
+| Public hosting | A static build of an **earlier version** (before the city workspace) was deployed to Vercel at the owner's request: https://sweep-ashy.vercel.app. It has **not** been redeployed since; redeploy only with the owner's go-ahead. |
+| City workspace in the static build | The city bundle is a static file (`apps/web/public/cities/`), and all city routing and coverage run in browser workers, so `/workspace` needs no server API. Verified with the production server and the e2e suite. The static build at a sub-path relies on `cityUrl()` honouring `BASE_URL`. |
 
 ## Run locally (or on any Node 22 host)
 

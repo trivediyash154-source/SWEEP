@@ -5,7 +5,7 @@ This file is written for a Claude Code session that takes over the city-scale re
 * Read `IMPLEMENTATION_STATUS.md` next. It is the factual record of what has been verified.
 * The original product brief is in `PROJECT_BRIEF.md` and `PRD.md`; the earlier engine maths is in `MATHEMATICAL_SPEC.md`.
 
-Snapshot: 2026-10-19 (second session). Work continues on branch `claude/peaceful-cray-qmjciz`, which is based on the first session's branch `claude/laughing-ramanujan-wg70al` (draft PR trivediyash154-source/SWEEP#1). The commit that updates this file holds all work up to that point.
+Snapshot: 2026-10-19 (second session). Work continues on branch `claude/peaceful-cray-qmjciz` (draft PR trivediyash154-source/SWEEP#2), stacked on `claude/laughing-ramanujan-wg70al` (draft PR trivediyash154-source/SWEEP#1). **Two sessions worked in parallel** that afternoon; the second session's branch merged PR #1's branch in at 17:15 UTC, keeping the fuller implementation of each overlapping feature. `docs/FINAL_REPORT.md` was written by the other session before that merge, so check its figures against this file. The commit that updates this file holds all work up to that point.
 
 ---
 
@@ -220,22 +220,22 @@ Helpers: `e2e/png.ts` decodes screenshots for pixel measurements; `e2e/engine.ts
 
 ### Bundled dataset
 
-`apps/web/public/cities/pune-bibwewadi.json` is real but **partial**: built from 47 of 85 tile files (`pnpm city:build pune-bibwewadi`, 1.24 MB).
+`apps/web/public/cities/pune-bibwewadi.json` is real but **partial**: built from 51 of 85 tile files (`pnpm city:build pune-bibwewadi`, 1.33 MB).
 
 | Item | Value |
 |---|---|
 | Area | 16.04 km² |
-| Nodes | 3,776 |
-| Segments | 4,517 (267.2 km) |
-| One-way segments | 466 |
-| Buildings | 10,412 (height tag 1, `building:levels` 11, estimated 10,400) |
+| Nodes | 4,160 |
+| Segments | 5,000 (291.0 km) |
+| One-way segments | 493 |
+| Buildings | 11,092 |
 | Turn restrictions | 0 (the region-wide restriction query has not been fetched) |
 
 The UI shows a "partial" chip and lists the missing tiles in provenance.
 
 ### Raw tile cache
 
-Committed under `data/cache/osm/pune-bibwewadi/`: **47 tile files OK, 2 failed (`t2_4:buildings`, `t3_3:streets`), 36 never fetched**, out of 85 (42 tiles × {streets, buildings} + 1 restrictions query).
+Committed under `data/cache/osm/pune-bibwewadi/`: **51 tile files OK** out of 85 after the merge (run `pnpm city:acquire pune-bibwewadi --status` for the exact failed and missing list) (42 tiles × {streets, buildings} + 1 restrictions query).
 
 To continue, rerun the acquisition; it resumes from the manifest:
 

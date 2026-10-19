@@ -13,15 +13,15 @@ No account is needed for any of it.
 
 ## City workspace: real Pune (`/workspace`)
 
-The city workspace runs on real OpenStreetMap data for Pune, Bibwewadi and the VIT area (about 4 × 4 km). The bundled extract is **partial**: it was built from 47 of the 85 tile downloads, and the app lists the missing tiles in its provenance dialog.
+The city workspace runs on real OpenStreetMap data for Pune, Bibwewadi and the VIT area (about 4 × 4 km). The bundled extract is **partial**: it was built from 51 of the 85 tile downloads, and the app lists the missing tiles in its provenance dialog.
 
 | Item | Count |
 |---|---|
-| Intersections | 3,776 |
-| Street segments | 4,517 (267.2 km; 466 one-way) |
-| Building footprints | 10,412 |
+| Intersections | 4,160 |
+| Street segments | 5,000 (291.0 km; 493 one-way) |
+| Building footprints | 11,092 |
 
-Building heights come from the OSM `height` tag (1 building), `building:levels` (11), or otherwise an estimate (10,400). Estimates are flagged as such, and the camera toolbar can tint them.
+Building heights come from the OSM `height` tag or `building:levels` for a handful of buildings; all others are estimates. Estimates are flagged as such, and the camera toolbar can tint them.
 
 * **Route lab: who reaches first, and why.**
   * Five algorithms answer the same turn-aware query on the same graph with the same cost: Dijkstra, A*, bidirectional Dijkstra, ALT and contraction hierarchies.
@@ -166,6 +166,6 @@ Street data acquired or bundled from OpenStreetMap is © OpenStreetMap contribut
 * **Fleets.** In the lab, fleet plans split one certified route and come with the stated bound; there are no capacities or time windows. In the city workspace, fleet plans handle capacity, a shift limit and a disposal site; they are heuristics reported with valid lower bounds and gaps, not proven optima. Coverage plans do not model turn costs or time windows.
 * **Size.** Exact undirected matching is limited to 600 odd intersections in interactive use, and a map acquisition to 4 km².
 * **3D context.** In the lab (`/lab`), buildings are procedural context generated from the streets. In the city workspace (`/workspace`) they are real OSM footprints, but most heights are flagged estimates.
-* **Pune extract.** The bundled Pune data is partial: 47 of 85 tile downloads, because the public Overpass mirrors often time out and some environments block them. The region-wide turn-restriction query is among the missing downloads, so no turn restrictions are applied yet; when present, only via-node restrictions are supported.
+* **Pune extract.** The bundled Pune data is partial: 51 of 85 tile downloads, because the public Overpass mirrors often time out and some environments block them. The region-wide turn-restriction query is among the missing downloads, so no turn restrictions are applied yet; when present, only via-node restrictions are supported.
 * **Accounts.** There is no password reset, because no email service is configured.
 * **Hosting.** There is no public deployment yet; see [DEPLOYMENT.md](DEPLOYMENT.md).

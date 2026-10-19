@@ -14,9 +14,13 @@ const city = decodeCityBundle(JSON.parse(readFileSync(new URL('../apps/web/publi
  * request interrupts running JavaScript. With no breakpoints the enabled debugger does not stop the page.
  * Every call here is time-bounded; the original failure is kept.
  */
-async function attachFreezeDiagnosis(cdp: CDPSession): Promise<void> {
+async function attachFreezeDiagnosis(cdp: CDPSession, crashed: boolean): Promise<void> {
   const within = <T,>(p: Promise<T>, ms: number) => Promise.race([p, new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), ms))]);
   let report: string;
+  if (crashed) {
+    await test.info().attach('freeze-diagnosis', { body: 'The renderer process crashed.', contentType: 'text/plain' });
+    return;
+  }
   try {
     const paused = new Promise<string>((resolve) =>
       cdp.on('Debugger.paused', (e) => resolve(e.callFrames.slice(0, 15).map((f) => `${f.functionName || '(anonymous)'} ${f.url.split('/').pop() || '(eval)'}:${f.location.lineNumber + 1}:${(f.location.columnNumber ?? 0) + 1}`).join('\n'))),
@@ -31,6 +35,8 @@ async function attachFreezeDiagnosis(cdp: CDPSession): Promise<void> {
 }
 
 async function openCity(page: Page, theme: 'velvet' | 'porcelain' = 'velvet'): Promise<void> {
+  let crashed = false;
+  page.on('crash', () => (crashed = true));
   await page.addInitScript((t) => localStorage.setItem('sweep.theme', t), theme);
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Debugger.enable');
@@ -38,7 +44,7 @@ async function openCity(page: Page, theme: 'velvet' | 'porcelain' = 'velvet'): P
   try {
     await expect(page.getByTestId('city-name')).toContainText('Pune', { timeout: 60_000 });
   } catch (e) {
-    await attachFreezeDiagnosis(cdp);
+    await attachFreezeDiagnosis(cdp, crashed);
     throw e;
   }
   await cdp.detach();
@@ -140,6 +146,8 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     const before = await routeState(page);
     await page.getByTestId('mode-scenarios').click();
     await page.getByTestId('tool-close-road').click();
+    // Close the inspector card left by the endpoint search so it cannot cover the street to click.
+    await page.evaluate(() => (window as unknown as { __sweepCity: { state: () => { select: (p: null) => void } } }).__sweepCity.state().select(null));
     const box = (await page.getByTestId('city-stage').boundingBox())!;
     // A street of the route that is visible on the map (not under the 420 px side panel or the tool rail).
     const target = await page.evaluate(
@@ -160,7 +168,8 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
           if (!p) continue;
           const px = ((p[0] + 1) / 2) * w0;
           const py = ((1 - p[1]) / 2) * h0;
-          if (px > 450 && px < w0 - 100 && py > 120 && py < h0 - 120) return { s, p };
+          // Open map: right of the side panel, left of the tool rail, clear of the top bar, the legend and the inspector corner.
+          if (px > 450 && px < w0 - 100 && py > 120 && py < h0 - 120 && !(px > w0 - 420 && py < 320)) return { s, p };
         }
         return null;
       },
@@ -172,7 +181,10 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     await page.getByTestId('compare-baseline').click();
     await expect(page.getByTestId('scenario-comparison')).toBeVisible();
     const s = await routeState(page);
-    const engine = new RoutingEngine(city, 'car', { closedSegments: [target!.s] });
+    // The street the UI actually closed (the picker snaps to the nearest street under the pointer).
+    const closed = await page.evaluate(() => (window as unknown as { __sweepCity: { scenarios: () => { active: () => { closed: number[] } } } }).__sweepCity.scenarios().active().closed);
+    expect(closed.length).toBe(1);
+    const engine = new RoutingEngine(city, 'car', { closedSegments: closed });
     const exp = engine.query('dijkstra', { origin: s.origin, destination: s.destination, objective: 'time' }).result;
     expect(Math.abs(s.runs[0]!.cost - exp.cost) / exp.cost).toBeLessThan(1e-9);
     expect(s.runs[0]!.cost).toBeGreaterThanOrEqual(before.runs[0]!.cost); // a closure never makes the trip faster
@@ -608,5 +620,77 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     if (!exp3.ok) throw new Error(exp3.message);
     expect(Math.abs(cmp.baseline.distanceM - exp2.route.totalDistance)).toBeLessThan(1e-6);
     expect(Math.abs(cmp.scenario.distanceM - exp3.route.totalDistance)).toBeLessThan(1e-6);
+
+    // Operational change in the same scenario: two vehicles instead of one; both sides re-planned.
+    await page.getByTestId('mode-scenarios').click();
+    await page.getByTestId('scenario-vehicles').fill('2');
+    await page.getByTestId('mode-coverage').click();
+    await page.getByTestId('cov-compare').click();
+    await expect(page.getByTestId('cov-comparison')).toContainText('Vehicles used', { timeout: 90_000 });
+    const cmp2 = await page.evaluate(() => (window as unknown as { __sweepCity: { coverage: () => { comparison: { baseline: { distanceM: number; vehiclesUsed: number }; scenario: { distanceM: number; makespanS: number; vehiclesUsed: number } } } } }).__sweepCity.coverage().comparison);
+    const fp2 = planFleet(exp3.graph, { vehicles: 2, depotId, direction: 'undirected', objective: 'min-makespan', capacity: null, demandPerKm: 0, shiftSeconds: null, serviceSpeedKmh: 8, deadheadSpeedKmh: 20, dumpSeconds: 0, coverage: exp3 });
+    if (!fp2.ok) throw new Error(fp2.message);
+    expect(Math.abs(cmp2.baseline.distanceM - exp2.route.totalDistance)).toBeLessThan(1e-6);
+    expect(Math.abs(cmp2.scenario.distanceM - fp2.totals.distance)).toBeLessThan(1e-6);
+    expect(Math.abs(cmp2.scenario.makespanS - fp2.totals.makespanSeconds)).toBeLessThan(1e-6);
+    expect(cmp2.scenario.vehiclesUsed).toBe(fp2.totals.vehiclesUsed);
+  });
+
+  test('circle zone with a three-vehicle fleet and shift limit: the UI shows the engine plan and its bounds', async ({ page }) => {
+    await openCity(page);
+    await page.getByTestId('mode-coverage').click();
+    await page.getByTestId('cam-top').click();
+    await waitForCamera(page);
+    const box = (await page.getByTestId('city-stage').boundingBox())!;
+    type W = { __sweepCity: { project: (x: number, y: number, h: number) => [number, number] | null; state: () => { city: { focus: { xy: [number, number] } | null; nodeX: Float64Array; nodeY: Float64Array; nodeCount: number } }; coverage: () => { zone: { kind: 'circle'; cx: number; cy: number; r: number } | null; depot: number | null; result: { method: string; fleet: { totals: { distance: number; makespanSeconds: number; vehiclesUsed: number }; lowerBounds: { makespanSeconds: { value: number } } } | null; routes: unknown[] } | null } } };
+    const screen = async (x: number, y: number) => {
+      const p = (await page.evaluate(([a, b]) => (window as unknown as W).__sweepCity.project(a!, b!, 0), [x, y]))!;
+      return [box.x + ((p[0] + 1) / 2) * box.width, box.y + ((1 - p[1]) / 2) * box.height] as const;
+    };
+    const centre = await page.evaluate(() => (window as unknown as W).__sweepCity.state().city.focus?.xy ?? [0, 0]);
+    await page.getByTestId('cov-shape-circle').click();
+    await page.getByTestId('cov-draw-zone').click();
+    let [sx, sy] = await screen(centre[0], centre[1]);
+    await page.mouse.click(sx, sy);
+    [sx, sy] = await screen(centre[0] + 300, centre[1]);
+    await page.mouse.click(sx, sy);
+    await expect(page.getByTestId('cov-zone')).toContainText('Radius');
+    const node = await page.evaluate(([cx, cy]) => {
+      const c = (window as unknown as W).__sweepCity.state().city;
+      let best = 0;
+      let bd = Infinity;
+      for (let i = 0; i < c.nodeCount; i++) {
+        const d = (c.nodeX[i]! - cx!) ** 2 + (c.nodeY[i]! - cy!) ** 2;
+        if (d < bd) [best, bd] = [i, d];
+      }
+      return { x: c.nodeX[best]!, y: c.nodeY[best]! };
+    }, centre);
+    await page.getByTestId('pick-depot').click();
+    [sx, sy] = await screen(node.x, node.y);
+    await page.mouse.click(sx, sy);
+    await expect(page.getByTestId('cov-depot')).not.toHaveText(/Not set|Click/);
+    await page.getByTestId('cov-vehicles').fill('3');
+    await page.getByTestId('cov-shift').fill('1');
+    await page.getByTestId('cov-run').click();
+    await expect(page.getByTestId('cov-makespan')).toBeVisible({ timeout: 90_000 });
+
+    const st = await page.evaluate(() => (window as unknown as W).__sweepCity.coverage());
+    expect(st.zone!.kind).toBe('circle');
+    const depotId = `n${city.nodeOsm[st.depot!]}`;
+    const zg = zoneCoverageGraph(city, { zone: st.zone!, direction: 'directed', depotId });
+    const cov = solveZoneCoverage(zg.graph, { direction: 'directed', depotId });
+    if (!cov.ok) throw new Error(cov.message);
+    const fp = planFleet(cov.graph, { vehicles: 3, depotId, direction: 'directed', objective: 'min-makespan', capacity: null, demandPerKm: 0, shiftSeconds: 3600, serviceSpeedKmh: 8, deadheadSpeedKmh: 20, dumpSeconds: 0, coverage: cov });
+    if (!fp.ok) throw new Error(fp.message);
+    const f = st.result!.fleet!;
+    expect(Math.abs(f.totals.distance - fp.totals.distance)).toBeLessThan(1e-6);
+    expect(Math.abs(f.totals.makespanSeconds - fp.totals.makespanSeconds)).toBeLessThan(1e-6);
+    expect(f.totals.vehiclesUsed).toBe(fp.totals.vehiclesUsed);
+    // The makespan bound holds for plans with at most 3 routes (more routes means the limits need a larger fleet).
+    if (fp.routes.length <= 3) expect(f.lowerBounds.makespanSeconds.value).toBeLessThanOrEqual(f.totals.makespanSeconds + 1e-6);
+    await expect(page.getByTestId('cov-vehicles-table').locator('tbody tr')).toHaveCount(fp.routes.length);
+    // The timeline ends when the last vehicle is back.
+    const max = Number(await page.getByTestId('tl-scrub').getAttribute('max'));
+    expect(Math.abs(max - Math.ceil(fp.totals.makespanSeconds))).toBeLessThanOrEqual(1);
   });
 });

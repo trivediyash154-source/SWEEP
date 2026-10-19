@@ -213,6 +213,18 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     await expect(page.getByTestId('cov-method')).not.toContainText('undirected');
     if (!exp.optimal) await expect(page.getByTestId('cov-optimal')).not.toHaveText('Proven optimal');
 
+    // Shift timeline: a deterministic clock over the planned route, scrubbable end to end.
+    await expect(page.getByTestId('shift-timeline')).toBeVisible();
+    await expect(page.getByTestId('tl-clock')).toHaveText('06:00');
+    await expect(page.getByTestId('tl-progress-0')).toHaveText('0 %');
+    const max = Number(await page.getByTestId('tl-scrub').getAttribute('max'));
+    // Service 8 km/h, transit 20 km/h (the defaults): the end of the shift is the engine route timed at those speeds.
+    const expS = (exp.route.serviceDistance / 1000 / 8 + (exp.route.totalDistance - exp.route.serviceDistance) / 1000 / 20) * 3600;
+    expect(Math.abs(max - Math.ceil(expS))).toBeLessThanOrEqual(1);
+    await page.getByTestId('tl-scrub').fill(String(max));
+    await expect(page.getByTestId('tl-progress-0')).toHaveText('100 %');
+    await expect(page.getByTestId('tl-vehicle-0')).toContainText('back at depot');
+
     // Undirected relaxation: a different problem, labelled as such; a heuristic never claims optimality.
     await page.getByTestId('cov-dir-undirected').click();
     await expect(page.getByTestId('cov-stale')).toBeVisible();

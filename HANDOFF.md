@@ -171,7 +171,9 @@ Run `pnpm dev`, or build and then run `node scripts/e2e-server.mjs 8790` to serv
 | `scenario.ts`, `panels/ScenarioPanel.tsx` | scenarios (`closed[]`, `oneway[]`) with real recalculation and a baseline comparison |
 | `panels/RouteLab.tsx` | endpoint search that snaps to junctions; profiles; objective; algorithm chips; results rows; agreement banner; replay; reach bands; assumptions |
 | `overlays.ts` | route path, search exploration ribbons, reach ribbons, scenario highlights |
-| `panels/CoveragePanel.tsx`, `panels/Timeline.tsx`, `coverageOverlays.ts` | **placeholders**: the next work, see §4 |
+| `coverage.worker.ts`, `coverageClient.ts`, `coverageStore.ts` | coverage plans off the main thread: `zoneCoverageGraph` → `solveZoneCoverage` → `planFleet` (when there is more than one vehicle, or a capacity, shift or disposal site is set). Routes come back as arcs. The store holds zone, depot, dump, classes, direction, fleet, result and `resultKey` (a stale flag that includes the scenario key). |
+| `panels/CoveragePanel.tsx`, `coverageOverlays.ts` | **done**: the Coverage & fleet panel (rectangle zone drawn with two clicks; depot and disposal picks; road classes; respect or ignore one-ways; fleet inputs; results with method, guarantee, lower bound, gap, per-vehicle table, fleet bounds and checks) and its map layers (one coloured path per vehicle, zone outline, markers) |
+| `panels/Timeline.tsx` | **placeholder**: the next work, see §4.3 |
 | `Inspector.tsx`, `Provenance.tsx` | feature details (height source, OSM links) and the data provenance dialog |
 
 ### Changes elsewhere in the web app
@@ -276,8 +278,8 @@ Measured with `pnpm bench` on the partial bundle:
 | 2 Real Pune data | partial; acquisition must finish |
 | 3 Renderer and themes | done for the workspace; recapture the same-camera screenshots in both themes for the report |
 | 4–6 Routing, profiles, reachability | done and tested |
-| 7 Coverage engine | done and tested; **UI missing** |
-| 8 Fleet, scenarios for coverage, cost model, report | engine done; **UI missing** |
+| 7 Coverage | engine done and tested; Coverage & fleet UI done, with an e2e test against the engine (rectangle zones) |
+| 8 Fleet in UI, scenarios for coverage, cost model, report | fleet planning is in the coverage panel; coverage scenarios, cost model and report **not built** |
 | 9 Shift timeline | **not started**; `Timeline.tsx` is a placeholder |
 | 10 Docs, full verify, final report | **not started** |
 
@@ -293,7 +295,29 @@ Run `npx playwright test --reporter=line`.
 * An "element(s) not found" on `city-name` while the screenshot shows the page usually means the renderer's main thread was starved or blocked.
 * Fix the root causes. Do not delete or weaken the tests.
 
-### 4.2 Coverage & Fleet UI (the second workflow; highest product value)
+#### What is known about the intermittent city-page freeze
+
+* **Symptom.** Sometimes a `/workspace` page never shows "Pune" in `city-name`. Playwright then reports "element(s) not found" even though the DOM has the element, which means the renderer's main thread is blocked. The trace shows the GeoCityScene and geometry-worker chunk requests issued right after the city JSON arrives, and they never complete.
+* **It is not only CPU contention.** It still happened with `workers: 1`.
+* **Loading in isolation works.** Six fresh loads in one browser all loaded in about 0.65 s.
+* **Mitigations applied so far:**
+  * a single WebGL probe per page, released straight away (`lib/webgl.ts`; before, one probe context leaked on every page);
+  * Playwright launches with `--enable-unsafe-swiftshader --use-angle=swiftshader`;
+  * `workers: 1`.
+
+  Check whether the full suite is now green. If not, open a CDP session on the stuck page and call `Debugger.pause` (bound every CDP call with a timeout). If it pauses, the stack shows the looping JavaScript. If it never pauses, the main thread is stuck in a native or GL call: the SwiftShader GPU process.
+
+### 4.2 Coverage & Fleet UI (the second workflow): mostly done
+
+**Done.** The worker, store, panel and map layers are built, and an e2e test in `e2e/city.spec.ts` ("coverage plan of a drawn zone matches the engine…") checks that the UI totals equal an engine run in directed and undirected mode, with honest method labels.
+
+**Still to do:**
+
+* circle and polygon zones in the UI (the engine already supports them);
+* an e2e test for a multi-vehicle fleet with a shift limit, checking that the UI shows the engine's `planFleet` totals and bounds;
+* coverage in the scenario comparison (see §4.5).
+
+The original plan for this section is kept below for reference.
 
 **`apps/web/src/city/coverage.worker.ts` (new)**
 

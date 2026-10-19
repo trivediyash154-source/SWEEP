@@ -942,3 +942,67 @@
 .cv-checks li.is-bad strong {
   color: #ff4d6d;
 }
+
+/* Shift timeline */
+.tl {
+  position: absolute;
+  left: 440px;
+  right: 76px;
+  bottom: 60px;
+  z-index: 6;
+  display: grid;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(10px);
+}
+.tl__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tl__start {
+  display: grid;
+  gap: 2px;
+}
+.tl__clock {
+  font: 600 20px/1 var(--font-mono);
+  min-width: 64px;
+}
+.tl__scrub {
+  flex: 1;
+  min-width: 80px;
+  accent-color: var(--accent, #b7a6ff);
+}
+.tl__vehicles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+.tl__vehicles li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tl__street {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .tl {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+  }
+  .tl__bar {
+    flex-wrap: wrap;
+  }
+}

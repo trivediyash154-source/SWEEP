@@ -200,7 +200,137 @@ Converts Overpass API JSON into a network: included road classes are whitelisted
 
 The bundled Zurich sample (see `packages/engine/src/examples/data/README.md`) is real data downloaded once; one-way streets cut by the sample's boundary cannot be serviced legally inside it, so they are kept but marked optional at load time (recorded in its notes).
 
-## 12. References
+## 12. Point-to-point routing on the real city (`p2p/`)
+
+**Graph.** Routing uses an edge-based (turn-expanded) graph.
+
+* Nodes are directed arcs over road segments. Arc 2s runs along segment s from `segU` to `segV`; arc 2s + 1 runs the other way.
+* Edges are permitted transitions a → b at a city node. Each carries a turn cost.
+
+A route from city node o to city node t is a sequence of arcs a₁ … a_k with tail(a₁) = o, head(a_k) = t, and a permitted transition between consecutive arcs. Its cost is
+
+  cost(a₁) + Σᵢ [turn(aᵢ → aᵢ₊₁) + cost(aᵢ₊₁)].
+
+There are two objectives:
+
+| Objective | Arc cost | Turn cost |
+|---|---|---|
+| time | length ÷ profile speed (s) | the profile's turn penalty |
+| distance | length (m) | 0 |
+
+**Restrictions.** One-way tags, access tags, closures and direction overrides remove arcs. Via-node turn restrictions remove transitions. U-turns are permitted only where the arriving arc has no other permitted continuation.
+
+**Reduction.** Adding a super-source (edges to every arc leaving o, weighted by that arc's cost) and a super-sink (from every arc entering t, weight 0) gives an ordinary shortest-path problem with non-negative weights. Every algorithm below solves exactly this problem.
+
+**Algorithms.** All five run on the same graph with the same cost function.
+
+| Algorithm | Method | Why it is exact |
+|---|---|---|
+| Dijkstra | binary heap, lazy deletion | standard |
+| A* | key g + h, where h = Euclidean distance (shrunk by 0.5 % and 0.2 m against projection and rounding error) ÷ the fastest speed in the graph (time objective), or the distance itself (distance objective) | h is admissible; the search re-opens settled nodes, so it is optimal even if h is not consistent |
+| Bidirectional Dijkstra | forward from the arcs leaving o, backward from the arcs entering t | stops when top_F + top_B ≥ μ, the best meeting cost |
+| ALT (Goldberg & Harrelson 2005) | 8 landmarks; distances from and to each landmark | the target is a set E of arcs, so h(a) = max_L max( min_{e∈E} δ(L,e) − δ(L,a), δ(a,L) − max_{e∈E} δ(e,L) ), a valid lower bound by the triangle inequality. Infinite distances are handled exactly: the bound is +∞ when no target arc is reachable. |
+| Contraction hierarchies (Geisberger et al. 2008) | contraction on the edge-based graph, so turn costs and restrictions are part of the hierarchy | a bounded witness search can only add unnecessary shortcuts, never omit a needed one; the query is an upward bidirectional search, and shortcuts are unpacked into real arcs |
+
+**Measurements.** Runtime is the median of untraced runs. A trace records the real settle order in a separate run.
+
+**Independent validation** (`validateRoute`) checks, without using any search code:
+
+* the route is contiguous from o to t;
+* every arc and transition is permitted for the profile and scenario;
+* the cost is recomputed from first principles and equals the reported cost;
+* distance and time are consistent.
+
+The test suites assert that all five algorithms agree to within 1e-9 relative, on synthetic graphs and on the real Pune network (`test/p2p.test.ts`, `test/p2p.real.test.ts`).
+
+**Reachability** (`reach.ts`). One time-objective Dijkstra runs from every arc leaving the origin.
+
+* Each arc gets an entry time (after any turn penalty) and an exit time (entry time + the arc's travel time).
+* An arc is reached fully within T when exit ≤ T.
+* It is reached partially when entry < T < exit, by the fraction (T − entry) ÷ its travel time.
+
+The same labels serve every threshold, so the 5 ⊆ 10 ⊆ 15-minute sets are nested by construction.
+
+**Profiles.** Speeds by road class and turn penalties are stated assumptions; `profileAssumptions()` returns them and the UI shows them. Nothing in the profiles models live traffic.
+
+## 13. Coverage of a service zone (`coverage/zone.ts`, `solveCoverage.ts`)
+
+**Zone graph.** A rectangle, circle or polygon selects the required segments: those whose midpoint lies in the zone, optionally limited to some road classes. The rest of the connected network stays in the graph as optional (deadhead) streets.
+
+* Closures remove segments. Direction overrides change one-way status.
+* Required segments cut off from the main component are reported, never silently dropped.
+
+**Methods.**
+
+* **Directed** (one-way streets obeyed; both directions of a required two-way street are serviced, as in kerbside sweeping): the exact directed postman, by minimum-cost flow.
+* **Undirected relaxation** (one-way restrictions ignored; reported with a count of wrong-way traversals):
+  * exact Edmonds–Johnson up to 600 odd intersections;
+  * beyond that, the candidate-matching heuristic (§14).
+
+**Connectors.** When the required streets fall into several groups, or the depot is off them, the problem is the Rural Postman Problem, which is NP-hard. SWEEP then:
+
+1. joins the groups with a minimum spanning tree over shortest legal paths;
+2. solves the connected problem;
+3. reports the result as "not proven optimal", with the gap to a lower bound of the original problem.
+
+`optimal` is true only for an exact method where no connector was needed.
+
+**Lower bounds** (valid for the original problem).
+
+* **Undirected.** Let R be the required edges and T the vertices of odd degree in R.
+  * Any covering closed walk traverses a multiset R + X in which every vertex has even degree. So X contains |T|/2 paths pairing up T, and cost ≥ c(R) + min over perfect matchings M of T of Σ_{(a,b)∈M} d(a, b).
+  * The matching is computed exactly when |T| ≤ 600.
+  * Otherwise SWEEP uses a feasible dual of the fractional perfect-matching LP: values y_v with y_a + y_b ≤ d(a, b), started at half the distance to the nearest other odd vertex and improved by coordinate ascent. Any perfect matching costs at least Σ y_v.
+* **Directed.** With b(v) = in_R(v) − out_R(v), the extra arcs of any covering closed walk form a flow X with out_X(v) − in_X(v) = b(v). Hence cost ≥ c(R) + the minimum-cost flow value.
+
+## 14. Scalable undirected heuristic (`heuristic.ts`)
+
+The heuristic follows the Edmonds–Johnson structure, with the pairing restricted to candidate pairs: each odd vertex's nearest odd vertices by exact network distance.
+
+1. Minimum-cost maximum-cardinality matching on the candidate graph (blossom). This is optimal among candidate pairs only.
+2. Vertices left unmatched are paired greedily.
+3. Pair-exchange improvement.
+4. Duplicated shortest paths, then a Hierholzer circuit.
+
+The route is verified independently. Its quality is reported as the gap to the bound in §13; it is never called optimal.
+
+## 15. Multi-vehicle plans (`carp.ts`)
+
+**Model.** Capacitated arc routing with a depot and an optional disposal site.
+
+* Demand per task is length (km) × demand per km.
+* Load between unloadings must not exceed the capacity.
+* Time is service at the service speed, all other movement at the transit speed, plus unloading time.
+* A route may not exceed the shift limit.
+* Objective: minimum total distance, or minimum makespan.
+
+**Method.** Route-first, cluster-second (Beasley 1983, Ulusoy 1985; intermediate facilities as in Ghiani et al.):
+
+1. The giant tour is the service order of the single-vehicle coverage route.
+2. The giant tour is split by dynamic programming. The split is optimal for that order only, under capacity and shift limits.
+3. Unloading stops are placed optimally.
+4. A deterministic local search (relocate or swap within each task's 10 nearest tasks) improves the plan.
+
+No optimality is claimed.
+
+**Fleet lower bounds** (all valid for any plan with at most k vehicles):
+
+* **Total distance** ≥ the single-vehicle coverage optimum when that is exact, otherwise ≥ its lower bound. All routes together form one closed covering walk from the depot.
+* **Minimum total working time** = required length ÷ service speed + (distance bound − required length) ÷ transit speed + (the minimum number of trips × unloading time, when there is a disposal site).
+* **Makespan** ≥ max(minimum total working time ÷ k, the longest single-street round trip from the depot).
+* **Vehicles needed** ≥ ⌈minimum total working time ÷ shift⌉ by shift. By capacity, without a disposal site: vehicles ≥ ⌈total demand ÷ capacity⌉.
+
+**Shift timeline.** The timeline replays a plan deterministically. Each step lasts its length ÷ its speed (service speed for first service, transit speed otherwise), and each unloading adds its fixed time. A vehicle's position at time t comes from a binary search over its step start times, so it is monotone in t.
+
+## 16. Cost and CO₂ estimate (`apps/web/src/city/costModel.ts`)
+
+* **Fuel (L)** = service km × service rate ÷ 100 + transit km × transit rate ÷ 100.
+* **Cost** = fuel × price + vehicle hours × crew × wage.
+* **CO₂** = fuel × emission factor. The default is 2.68 kg/L, the usual combustion factor for diesel.
+
+Every rate is the user's input, and an output is shown only when its inputs are given. None of these is a measured figure.
+
+## 17. References
 
 * L. Euler, *Solutio problematis ad geometriam situs pertinentis*, 1736.
 * C. Hierholzer, *Über die Möglichkeit, einen Linienzug ohne Wiederholung und ohne Unterbrechung zu umfahren*, Math. Ann., 1873.

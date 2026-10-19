@@ -45,6 +45,20 @@ Out of scope: DDoS beyond the simple per-IP rate limiting, multi-instance deploy
 | Secrets | **None are required.** No `.env` is needed, and no keys are in the repository, the Docker image or the frontend. `.env.example` lists only non-secret settings. The Docker image runs as the non-root `node` user. | `.env.example`, `Dockerfile` |
 | Browser storage | Local mode keeps drafts and local scenarios in `localStorage`, behind try/catch. Signing out removes any account scenario from the local draft. | `web/state/*` |
 
+## City data acquisition and the city workspace
+
+* **Polite use of public OpenStreetMap services.** `scripts/city/acquire.ts`:
+  * sends one request at a time, at least 4 s apart, with a descriptive User-Agent that includes the project URL;
+  * makes at most 6 attempts per query, with exponential backoff, and honours `Retry-After`;
+  * stops using an endpoint after two connection failures in a run;
+  * splits a tile that keeps timing out into quadrants, rather than retrying the same heavy query.
+
+  Downloads are cached and resumed from a manifest, so nothing is fetched twice. No credentials or API keys are used or stored.
+* **Licensing.** The data is © OpenStreetMap contributors, ODbL. The bundle carries its attribution and provenance, and the UI and both printable reports show them.
+* **Untrusted bundle input.** `decodeCityBundle` validates the format version, every array length and every index range before any use, and throws `CityFormatError` otherwise. The bundle is plain JSON with no executable content.
+* **No sign-in.** By design, `/workspace` needs no account and stores nothing on the server. Scenario, coverage and cost inputs live only in the page's memory.
+* **No fabricated figures.** Every number the city workspace shows is either an engine result for the bundled data or a user input labelled as an assumption. This covers profile speeds, turn penalties, fleet speeds, fuel, price, wage and the CO₂ factor. Building heights not tagged in OSM are flagged as estimates.
+
 ## Known limitations
 
 * **No password reset.** It needs an email delivery service, which is not configured. The UI says so.

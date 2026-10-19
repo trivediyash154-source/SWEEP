@@ -36,6 +36,37 @@ This document describes the implementation as it exists now.
 oracle/ (Python, networkx) ── independent cross-checks (matching, min-cost flow, brute force, state search); tests only
 ```
 
+## City workspace (`/workspace`, real OpenStreetMap data)
+
+```
+data/regions/<id>.json ── bbox, tile size, road classes, Overpass endpoints, focus point
+        │  pnpm city:acquire <id>   (scripts/city/acquire.ts)
+        │    one request at a time, ≥ 4 s apart, SWEEP User-Agent, 6 attempts with backoff,
+        │    endpoint fallback, quadrant split for tiles that keep timing out, checkpoint manifest
+        ▼
+data/cache/osm/<id>/ ── manifest.json + tiles/<row>_<col>_{streets,buildings}.json (raw Overpass JSON, committed)
+        │  pnpm city:build <id>     (scripts/city/build.ts → @sweep/engine city/bundle.ts)
+        │    merge + de-duplicate by OSM id · osmToGraph in a local metric frame · way tags kept ·
+        │    via-node turn restrictions · footprint validation · heights (tag | levels × 3 m | flagged estimate) ·
+        │    provenance (endpoints, OSM database dates, tiles ok/missing, queries, transformations, limitations)
+        ▼
+apps/web/public/cities/<id>.json + index.json ── format `sweep-city/1`, integer decimetre coordinates
+        │  fetch + decodeCityBundle (validates every length and index; CityFormatError otherwise)
+        ▼
+apps/web/src/city/
+  CityWorkspace ── bar (modes: Route lab · Coverage & fleet · Scenarios), camera tools, inspector, legend, provenance
+  GeoCityScene (R3F) ── chunked extruded footprints + ribbon roads (meshes built in geometry.worker),
+                        theme materials (materials.ts), overlays (routes, search traces, reach, zone, vehicles),
+                        picking via SegmentIndex + ground ray (buildings ray-cast on click only)
+  router.worker ── RoutingEngine per (profile, scenario): Dijkstra, A*, bidirectional, ALT, CH; validateRoute; reachability
+  coverage.worker ── zoneCoverageGraph → solveZoneCoverage → planFleet
+  stores (zustand) ── store (city, mode, picks) · routeStore · scenario · coverageStore · shift
+  panels ── RouteLab · RouteReport · ScenarioPanel · CoveragePanel · CoverageReport · Timeline
+  pure modules ── timeline.ts (deterministic shift clock) · costModel.ts (user-assumption estimates)
+```
+
+All routing and coverage computation runs in Web Workers in the browser, on the same bundled data the engine tests use. The city workspace makes no server API calls; the server only serves the static files.
+
 ## Component boundaries
 
 | Concern | Where it lives | Notes |

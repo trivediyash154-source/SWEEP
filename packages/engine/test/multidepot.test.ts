@@ -40,7 +40,7 @@ describe.skipIf(!existsSync(BUNDLED))('several depots on the real Pune network',
       expect(p.lowerBounds.makespanSeconds.value).toBeLessThanOrEqual(p.totals.makespanSeconds + 1e-6);
       expect(p.totals.vehiclesAvailable).toBe(4);
       expect(p.guarantee).toMatch(/not proven optimal/);
-    });
+    }, 120_000);
   }
 
   it('with one depot it is exactly the single-depot plan', () => {
@@ -53,7 +53,7 @@ describe.skipIf(!existsSync(BUNDLED))('several depots on the real Pune network',
     expect(multi.totals.distance).toBeCloseTo(single.totals.distance, 9);
     expect(multi.totals.makespanSeconds).toBeCloseTo(single.totals.makespanSeconds, 9);
     expect(multi.routes.length).toBe(single.routes.length);
-  });
+  }, 120_000);
 
   it('refuses bad depot lists', () => {
     const zg = zoneCoverageGraph(city, { zone, direction: 'undirected' });

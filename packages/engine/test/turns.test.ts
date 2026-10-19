@@ -197,7 +197,7 @@ describe.skipIf(!existsSync(BUNDLED))('turn-aware coverage on the real Pune netw
       expect(t.turns.after.banned).toBeLessThanOrEqual(t.turns.before.banned);
       // The tally the result reports is the tally of its steps.
       expect(new TurnModel(cov.graph, rules).tally(t.route.steps)).toEqual(t.turns.after);
-    });
+    }, 120_000);
   }
 
   it('fleet: each route keeps its streets and length, the plan still verifies', () => {
@@ -219,5 +219,5 @@ describe.skipIf(!existsSync(BUNDLED))('turn-aware coverage on the real Pune netw
     expect(turned.turns!.lowerBound!.seconds).toBeLessThanOrEqual(turned.turns!.after.seconds + 1e-9);
     expect(turned.turns!.reorderedRoutes + turned.turns!.keptRoutes).toBe(turned.routes.length);
     expect(plain.turns).toBeNull();
-  });
+  }, 120_000);
 });

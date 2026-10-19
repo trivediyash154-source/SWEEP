@@ -873,10 +873,14 @@
     18.475,
     73.874
    ],
-   "status": "failed",
+   "status": "ok",
    "file": "t4_3_streets.json",
-   "attempts": 18,
-   "lastError": "TimeoutError: The operation was aborted due to timeout"
+   "bytes": 41950,
+   "osmBase": "2026-10-19T18:07:46Z",
+   "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+   "fetchedAt": "2026-10-19T18:11:17.818Z",
+   "attempts": 19,
+   "parts": 4
   },
   "t4_3:buildings": {
    "key": "t4_3",

@@ -4,6 +4,7 @@ import { fromScaled } from '../units.js';
 import { minCostFlow, type FlowArc } from '../mincostflow.js';
 import { minCostPerfectMatchingComplete } from '../matching/blossom.js';
 import { arcDijkstra, buildArcGraph, treePath, type ArcGraph } from './arcs.js';
+import { sparseAssignment } from './assignment.js';
 
 
 /**
@@ -325,7 +326,8 @@ export function fractionalMatchingDual(
   const start = total(yA);
   let used = run(yA, 'ascend', sweeps);
   let best: Float64Array = yA;
-  // Start B: optimal assignment dual (bipartite double cover) with pricing.
+  // Start B: optimal assignment dual (bipartite double cover) with pricing, solved by the sparse
+  // Jonker–Volgenant assignment in assignment.ts (any optimal dual gives the same Σy before clipping).
   // y_i = (u_i + v_i)/2 is feasible for every KNOWN pair (u_i + v_j ≤ d_ij and u_j + v_i ≤ d_ij).
   // Pricing: from every vertex search up to radius y_i + max_j y_j; any odd vertex j found with
   // d(i,j) < y_i + y_j is a violated pair: add its exact distance and re-solve. Pairs not found
@@ -333,28 +335,31 @@ export function fractionalMatchingDual(
   // pairs (it is then an optimal dual of the fractional matching LP).
   let assignment: 'used' | 'infeasible' | 'skipped' = 'skipped';
   if (opts.assignment !== false && k > 1) {
-    const supply = new Float64Array(2 * k);
-    for (let i = 0; i < k; i++) {
-      supply[i] = 1;
-      supply[k + i] = -1;
-    }
     const radius = new Float64Array(k);
     let yB: Float64Array | null = null;
     let feasibleAllPairs = false;
     const tm = opts.timings;
     for (let round = 0; round < (opts.pricingRounds ?? 1) && !feasibleAllPairs; round++) {
       const tf = performance.now();
-      const arcs: FlowArc[] = [];
-      for (let i = 0; i < k; i++) for (const [j, d] of known[i]!) arcs.push({ tail: i, head: k + j, cost: d });
-      const flow = minCostFlow(2 * k, arcs, supply);
+      // Optimal assignment on the known pairs (rows and columns are the odd vertices).
+      const rowOff = new Int32Array(k + 1);
+      for (let i = 0; i < k; i++) rowOff[i + 1] = rowOff[i]! + known[i]!.size;
+      const col = new Int32Array(rowOff[k]!);
+      const cst = new Float64Array(rowOff[k]!);
+      for (let i = 0, e = 0; i < k; i++)
+        for (const [j, d] of known[i]!) {
+          col[e] = j;
+          cst[e++] = d;
+        }
+      const asg = sparseAssignment(k, rowOff, col, cst);
       if (tm) tm[`flow${round}`] = performance.now() - tf;
-      if (!flow.feasible) {
+      if (!asg) {
         assignment = 'infeasible';
         yB = null;
         break;
       }
       yB = new Float64Array(k);
-      for (let i = 0; i < k; i++) yB[i] = (-flow.potential[i]! + flow.potential[k + i]!) / 2;
+      for (let i = 0; i < k; i++) yB[i] = (asg.u[i]! + asg.v[i]!) / 2;
       let ymax = -Infinity;
       for (let i = 0; i < k; i++) if (yB[i]! > ymax) ymax = yB[i]!;
       let violations = 0;

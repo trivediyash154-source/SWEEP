@@ -206,16 +206,15 @@ Run `pnpm dev`, or build and then run `node scripts/e2e-server.mjs 8790` to serv
 * Engine tests: 154/154 ✓.
 * Web tests: 9/9 ✓.
 
-### E2E (last full run: 44 passed, 4 failed)
+### E2E (last full local run, 2026-10-19: **49 of 49 passed**, 7.3 min, one worker)
 
-* `e2e/city.spec.ts` alone: **8/8 pass**.
-* The full suite (`npx playwright test`) had 44 passing and **4 failing** tests:
-  1. `a11y.spec.ts` › `/workspace (velvet)`: `waitForLoadState('networkidle')` timed out at 90 s.
-  2. `auth.spec.ts` › "accounts and persistence … reopen runs … sign out": `toBeVisible`, element not found.
-  3. `city.spec.ts` › contrast in the velvet theme: element not found (city-name). It passes alone, so this is probably load- or timeout-related.
-  4. `workspace.spec.ts` › "workspace loads … route with real baselines": `locator.click` timed out.
+The 4 earlier failures were fixed:
 
-  Failures 2 and 4 are in the old lab, which moved from `/workspace` to `/lab`. Check whether some selector or navigation still assumes `/workspace`, or whether the failure is CPU contention. **Fix these first** (see §4.1).
+* the Network-lab links still pointed at `/workspace`;
+* the closure test clicked a street hidden behind the side panel;
+* intermittent city-page freezes: a leaked WebGL probe context, plus an implicit SwiftShader fallback.
+
+Check CI on the PR for the latest head. On commit `f566421`, CI had 47 of 48 passing; the failure was the closure test, which has since been fixed.
 
 ### Bundled dataset
 
@@ -288,7 +287,7 @@ Measured with `pnpm bench` on the partial bundle:
 
 ## 4. What to do next, in order
 
-### 4.1 Make the full e2e suite green
+### 4.1 Make the full e2e suite green: DONE locally (keep it green; confirm on CI)
 
 Run `npx playwright test --reporter=line`.
 

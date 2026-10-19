@@ -73,7 +73,7 @@ All fonts are bundled through `@fontsource`; there are no external font requests
   * buildings aligned to their nearest street, in several archetypes, with a facade window shader that is lit in Velvet and a crisp white model in Porcelain;
   * blossom trees.
 
-  Buildings are context, not data, and the legend says so. Shadows, bloom and the vignette degrade automatically on slow GPUs.
+  Buildings are context, not data, and the legend says so. Shadows, bloom and the vignette degrade automatically on slow GPUs. Software rasterisers start in low-power mode, which draws frames only while the route plays or the camera moves.
 * **Blossom zones.** `data-petal-intensity` on an element scales the cursor field over it. The simulation uses 0.7 and the editor 0.2; nothing is emitted while you drag in the editor. The field never takes pointer events.
 
 ## Components

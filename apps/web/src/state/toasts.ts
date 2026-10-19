@@ -5,11 +5,13 @@ export interface Toast {
   kind: 'success' | 'error' | 'info';
   title: string;
   body?: string;
+  /** How long the toast stays on screen, counted only while it is visible and the page is responsive (0 = until dismissed). */
+  ttlMs: number;
 }
 
 interface ToastState {
   toasts: Toast[];
-  push: (t: Omit<Toast, 'id'>, ttlMs?: number) => void;
+  push: (t: Omit<Toast, 'id' | 'ttlMs'>, ttlMs?: number) => void;
   dismiss: (id: number) => void;
 }
 
@@ -18,8 +20,7 @@ export const useToasts = create<ToastState>((set, get) => ({
   toasts: [],
   push: (t, ttlMs = 5200) => {
     const id = ++n;
-    set({ toasts: [...get().toasts.slice(-3), { ...t, id }] });
-    if (ttlMs > 0) setTimeout(() => get().dismiss(id), ttlMs);
+    set({ toasts: [...get().toasts.slice(-3), { ...t, id, ttlMs }] });
   },
   dismiss: (id) => set({ toasts: get().toasts.filter((x) => x.id !== id) }),
 }));

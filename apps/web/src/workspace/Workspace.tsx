@@ -38,7 +38,7 @@ export default function Workspace() {
   useEffect(() => {
     const example = search.get('example');
     if (example && !scenarioId) {
-      if (!(ws.ref?.kind === 'example' && ws.ref.id === example)) ws.loadExample(example);
+      if (!(ws.ref?.kind === 'example' && ws.ref.id === example) && !ws.loadExample(example)) setLoadError(`There is no bundled example called "${example}". Choose one from the library in the editor.`);
       return;
     }
     if (!scenarioId) return;

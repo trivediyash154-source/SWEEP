@@ -266,10 +266,16 @@ export function CommandHeader() {
             <>
               <span className="mono">{formatDistance(fleet ? fleet.makespan : result.route.totalDistance)}</span>
               <span className="faint">{fleet ? `longest of ${fleet.activeVehicles}` : `${result.route.steps.length} steps`}</span>
-              <span className="mono num--repeat">+{formatDistance(result.route.repeatedDistance)}</span>
-              <span className={`status-pill${result.algorithm.optimal ? ' is-ok' : ' is-bad'}`}>
-                <Icon name={result.algorithm.optimal ? 'check' : 'cross'} size={11} /> {result.mode === 'directed' ? 'directed' : 'exact'}
-              </span>
+              <span className="mono num--repeat">+{formatDistance(fleet ? Math.max(0, fleet.totalDistance - result.route.requiredDistance) : result.route.repeatedDistance)}</span>
+              {fleet ? (
+                <span className={`status-pill${fleet.algorithm.ratioBound === 1 ? ' is-ok' : ''}`} title={fleet.algorithm.guarantee}>
+                  {fleet.algorithm.ratioBound === 1 ? 'exact' : fleet.algorithm.ratioBound ? `≤ ${fleet.algorithm.ratioBound.toFixed(2)}× opt` : 'heuristic'}
+                </span>
+              ) : (
+                <span className={`status-pill${result.algorithm.optimal ? ' is-ok' : ' is-bad'}`}>
+                  <Icon name={result.algorithm.optimal ? 'check' : 'cross'} size={11} /> {result.mode === 'directed' ? 'directed' : 'exact'}
+                </span>
+              )}
             </>
           ) : optimizing ? (
             <span className="faint">Solving…</span>

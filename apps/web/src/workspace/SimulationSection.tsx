@@ -243,8 +243,8 @@ export function SimulationSection() {
   const webgl = webglAvailable();
   const use3d = stage === '3d' && webgl;
   const ref = useWorkspace((s) => s.ref);
-  const dirty = useWorkspace((s) => s.dirty);
-  const src = dirty && graph.source?.kind !== 'live-acquisition' && graph.source?.kind !== 'bundled-sample' ? 'user' : (graph.source?.kind ?? (ref?.kind === 'example' ? 'example' : 'user'));
+  const edited = useWorkspace((s) => s.networkEdited);
+  const src = edited && graph.source?.kind !== 'live-acquisition' && graph.source?.kind !== 'bundled-sample' ? 'user' : (graph.source?.kind ?? (ref?.kind === 'example' ? 'example' : 'user'));
   const errors = (failure ?? validation).issues.filter((i) => i.severity === 'error');
   const directed = result?.mode === 'directed' || graph.edges.some(isOneway);
   return (
@@ -283,8 +283,8 @@ export function SimulationSection() {
                 <dd className="num">{formatDistance(result.route.requiredDistance)}</dd>
               </div>
               <div>
-                <dt>Repeated</dt>
-                <dd className="num num--repeat">{formatDistance(result.route.repeatedDistance)}</dd>
+                <dt>{fleet ? 'Extra driving (all vehicles)' : 'Repeated'}</dt>
+                <dd className="num num--repeat">{formatDistance(fleet ? Math.max(0, fleet.totalDistance - result.route.requiredDistance) : result.route.repeatedDistance)}</dd>
               </div>
               <div>
                 <dt>{fleet ? 'Vehicles' : 'Traversals'}</dt>

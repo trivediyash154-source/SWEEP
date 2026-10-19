@@ -7,6 +7,7 @@ import type { OrbitControls as OrbitControlsImpl } from 'three/examples/jsm/cont
 import type { District } from './district';
 import { createBuildingMaterial, createGableGeometry, createSpectralMaterial } from './materials';
 import { sampleTrack, pointsBounds, type RouteTrack } from '../lib/routeTrack';
+import { startInLowPower } from '../lib/webgl';
 import type { Highlight } from '../lib/analysis';
 import { routeClock } from '../workspace/routeClock';
 import { useWorkspace, type CameraCommand } from '../state/workspace';
@@ -597,10 +598,13 @@ function Highlights({ d, pal, highlight, hoverVertex, hoverEdge, selectedVertex,
 }
 
 /* --------------------------------------------------------------- camera */
-function CameraRig({ d, tracks }: { d: District; tracks: RouteTrack[] }) {
-  const { camera, size } = useThree();
+function CameraRig({ d, tracks, reduced }: { d: District; tracks: RouteTrack[]; reduced: boolean }) {
+  const { camera, size, invalidate } = useThree();
   // Portrait viewports need more distance to fit the district horizontally.
-  const fitScale = size.width < size.height ? Math.min(2.4, 1.15 / Math.max(0.42, size.width / size.height)) : 1;
+  const portrait = size.width < size.height;
+  const fitScale = portrait ? Math.min(2, 0.92 / Math.max(0.42, size.width / size.height)) : 1;
+  // Home view direction (× extent). Portrait screens look down more steeply so buildings hide fewer streets.
+  const home: readonly [number, number, number] = portrait ? [-0.3, 0.78, 0.52] : [-0.42, 0.5, 0.72];
   const controls = useThree((s) => s.controls) as unknown as OrbitControlsImpl | null;
   const cmd = useWorkspace((s) => s.camera);
   const follow = useWorkspace((s) => s.follow);
@@ -611,7 +615,14 @@ function CameraRig({ d, tracks }: { d: District; tracks: RouteTrack[] }) {
 
   const go = (toP: THREE.Vector3, toT: THREE.Vector3, dur = 0.9) => {
     if (!controls) return;
-    anim.current = { fromP: camera.position.clone(), toP, fromT: controls.target.clone(), toT, t: 0, dur };
+    if (reduced) {
+      // No camera motion under reduced motion: jump, then draw one frame (the canvas renders on demand).
+      anim.current = null;
+      camera.position.copy(toP);
+      controls.target.copy(toT);
+      controls.update();
+    } else anim.current = { fromP: camera.position.clone(), toP, fromT: controls.target.clone(), toT, t: 0, dur };
+    invalidate();
   };
   useEffect(() => {
     if (!controls) return;
@@ -620,10 +631,10 @@ function CameraRig({ d, tracks }: { d: District; tracks: RouteTrack[] }) {
       first.current = false;
       camera.position.set(-ext * 0.9 * fitScale, ext * 1.2 * fitScale, ext * 1.4 * fitScale);
       controls.target.set(0, 0, 0);
-      go(new THREE.Vector3(-ext * 0.42 * fitScale, ext * 0.5 * fitScale, ext * 0.72 * fitScale), new THREE.Vector3(0, 0, 0), 1.8);
+      go(new THREE.Vector3(home[0] * ext * fitScale, home[1] * ext * fitScale, home[2] * ext * fitScale), new THREE.Vector3(0, 0, 0), 1.8);
       return;
     }
-    if (c === 'reset') go(new THREE.Vector3(-ext * 0.42 * fitScale, ext * 0.5 * fitScale, ext * 0.72 * fitScale), new THREE.Vector3(0, 0, 0));
+    if (c === 'reset') go(new THREE.Vector3(home[0] * ext * fitScale, home[1] * ext * fitScale, home[2] * ext * fitScale), new THREE.Vector3(0, 0, 0));
     else if (c === 'top') go(new THREE.Vector3(0, ext * 1.15 * fitScale, ext * 0.001), new THREE.Vector3(0, 0, 0));
     else if (c === 'focus-route') {
       const pts = tracks.flatMap((t) => t.points);
@@ -661,6 +672,7 @@ function CameraRig({ d, tracks }: { d: District; tracks: RouteTrack[] }) {
       controls.target.lerpVectors(a.fromT, a.toT, e);
       controls.update();
       if (a.t >= 1) anim.current = null;
+      else invalidate(); // keeps an on-demand canvas drawing until the move ends
       return;
     }
     if (follow && followPose.valid) {
@@ -672,6 +684,18 @@ function CameraRig({ d, tracks }: { d: District; tracks: RouteTrack[] }) {
       controls.update();
     }
   });
+  return null;
+}
+
+/** Redraws an on-demand canvas when the shared route clock moves (scrubbing or stepping while paused). */
+function ClockInvalidator() {
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    const off = routeClock.subscribe(() => invalidate());
+    return () => {
+      off();
+    };
+  }, [invalidate]);
   return null;
 }
 
@@ -689,7 +713,9 @@ export interface DistrictSceneProps {
 export default function DistrictScene({ district: d, tracks, trackColors, theme, reduced, highlight, dimRoute }: DistrictSceneProps) {
   const pal = SCENE_PALETTE[theme];
   const ext = d.extent;
-  const [lowPower, setLowPower] = useState(false);
+  // Software rasterisers start in low-power mode (no shadows, bloom or motes; frames only while playing or interacting)
+  // unless the `sweep.quality` preference says otherwise.
+  const [lowPower, setLowPower] = useState(startInLowPower);
   const shadows = !lowPower;
   const hover = useWorkspace((s) => s.hover);
   const selection = useWorkspace((s) => s.selection);
@@ -705,7 +731,7 @@ export default function DistrictScene({ district: d, tracks, trackColors, theme,
       dpr={lowPower ? 1 : [1, 1.75]}
       gl={{ antialias: true, powerPreference: 'high-performance', alpha: false }}
       camera={{ fov: 38, near: 1, far: ext * 12, position: [-ext * 0.42, ext * 0.5, ext * 0.72] }}
-      frameloop={reduced && !playing ? 'demand' : 'always'}
+      frameloop={(reduced || lowPower) && !playing ? 'demand' : 'always'}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = theme === 'velvet' ? 1.08 : 1.0;
@@ -714,6 +740,7 @@ export default function DistrictScene({ district: d, tracks, trackColors, theme,
       data-testid="district-canvas"
     >
       <PerformanceMonitor onDecline={() => setLowPower(true)} flipflops={2} onFallback={() => setLowPower(true)} />
+      <ClockInvalidator />
       <color attach="background" args={[pal.background]} />
       <fog attach="fog" args={[pal.fog, ext * 1.1, ext * 4.2]} />
       <hemisphereLight args={[pal.hemiSky, pal.hemiGround, theme === 'velvet' ? 0.75 : 1.35]} />
@@ -753,7 +780,7 @@ export default function DistrictScene({ district: d, tracks, trackColors, theme,
         reduced={reduced}
       />
       <OrbitControls makeDefault enableDamping dampingFactor={0.08} maxPolarAngle={Math.PI * 0.47} minDistance={ext * 0.05} maxDistance={ext * 3} screenSpacePanning={false} />
-      <CameraRig d={d} tracks={shown.map((i) => tracks[i]!)} />
+      <CameraRig d={d} tracks={shown.map((i) => tracks[i]!)} reduced={reduced} />
       {!lowPower && (
         <EffectComposer multisampling={0}>
           <Bloom intensity={theme === 'velvet' ? 0.9 : 0.35} luminanceThreshold={theme === 'velvet' ? 0.62 : 0.9} luminanceSmoothing={0.22} mipmapBlur />

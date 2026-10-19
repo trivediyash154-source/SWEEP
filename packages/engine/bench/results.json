@@ -5,15 +5,15 @@
     "node": "v22.22.0",
     "platform": "linux 6.18.44-fc-v139"
   },
-  "measuredAt": "2026-10-18T22:56:26.972Z",
+  "measuredAt": "2026-10-19T08:16:14.263Z",
   "rows": [
     {
       "name": "Königsberg, 1736",
       "vertices": 4,
       "edges": 7,
       "odd": 4,
-      "medianMs": 0.71,
-      "minMs": 0.59,
+      "medianMs": 1.16,
+      "minMs": 0.9,
       "runs": 9
     },
     {
@@ -21,8 +21,8 @@
       "vertices": 7,
       "edges": 8,
       "odd": 0,
-      "medianMs": 0.42,
-      "minMs": 0.37,
+      "medianMs": 0.66,
+      "minMs": 0.6,
       "runs": 9
     },
     {
@@ -30,8 +30,8 @@
       "vertices": 6,
       "edges": 7,
       "odd": 2,
-      "medianMs": 0.46,
-      "minMs": 0.38,
+      "medianMs": 0.76,
+      "minMs": 0.65,
       "runs": 9
     },
     {
@@ -39,8 +39,8 @@
       "vertices": 16,
       "edges": 24,
       "odd": 8,
-      "medianMs": 1.82,
-      "minMs": 1.02,
+      "medianMs": 2.43,
+      "minMs": 1.36,
       "runs": 9
     },
     {
@@ -48,8 +48,8 @@
       "vertices": 6,
       "edges": 6,
       "odd": 4,
-      "medianMs": 0.46,
-      "minMs": 0.39,
+      "medianMs": 0.73,
+      "minMs": 0.64,
       "runs": 9
     },
     {
@@ -57,8 +57,8 @@
       "vertices": 4,
       "edges": 6,
       "odd": 4,
-      "medianMs": 0.37,
-      "minMs": 0.34,
+      "medianMs": 0.34,
+      "minMs": 0.28,
       "runs": 9
     },
     {
@@ -66,8 +66,8 @@
       "vertices": 6,
       "edges": 7,
       "odd": 2,
-      "medianMs": 0.37,
-      "minMs": 0.34,
+      "medianMs": 0.26,
+      "minMs": 0.21,
       "runs": 9
     },
     {
@@ -75,8 +75,8 @@
       "vertices": 20,
       "edges": 31,
       "odd": 2,
-      "medianMs": 0.39,
-      "minMs": 0.34,
+      "medianMs": 0.68,
+      "minMs": 0.64,
       "runs": 9
     },
     {
@@ -84,8 +84,8 @@
       "vertices": 351,
       "edges": 595,
       "odd": 148,
-      "medianMs": 43.06,
-      "minMs": 37.94,
+      "medianMs": 54.33,
+      "minMs": 36.7,
       "runs": 9
     },
     {
@@ -93,8 +93,8 @@
       "vertices": 660,
       "edges": 1121,
       "odd": 284,
-      "medianMs": 188.07,
-      "minMs": 181.58,
+      "medianMs": 189.95,
+      "minMs": 175.59,
       "runs": 3
     },
     {
@@ -102,8 +102,8 @@
       "vertices": 1199,
       "edges": 2052,
       "odd": 458,
-      "medianMs": 709.36,
-      "minMs": 700.53,
+      "medianMs": 692.01,
+      "minMs": 651.95,
       "runs": 3
     },
     {
@@ -111,8 +111,8 @@
       "vertices": 1800,
       "edges": 3110,
       "odd": 696,
-      "medianMs": 2304.98,
-      "minMs": 2158.02,
+      "medianMs": 2392.95,
+      "minMs": 2227.92,
       "runs": 3
     },
     {
@@ -120,8 +120,75 @@
       "vertices": 2640,
       "edges": 4574,
       "odd": 958,
-      "medianMs": 5898.96,
-      "minMs": 5611.08,
+      "medianMs": 5926.62,
+      "minMs": 5702.79,
+      "runs": 3
+    }
+  ],
+  "directed": [
+    {
+      "name": "Zurich Altstadt (real OSM data)",
+      "vertices": 177,
+      "edges": 188,
+      "detail": "304 required arcs, 29 one-way",
+      "medianMs": 10.61,
+      "minMs": 9.79,
+      "runs": 5
+    },
+    {
+      "name": "one-way 20×14",
+      "vertices": 280,
+      "edges": 470,
+      "detail": "782 required arcs, 157 one-way",
+      "medianMs": 51.82,
+      "minMs": 41.54,
+      "runs": 5
+    },
+    {
+      "name": "one-way 30×22",
+      "vertices": 660,
+      "edges": 1150,
+      "detail": "1887 required arcs, 384 one-way",
+      "medianMs": 144.53,
+      "minMs": 119.55,
+      "runs": 5
+    },
+    {
+      "name": "one-way 40×30",
+      "vertices": 1200,
+      "edges": 2092,
+      "detail": "3471 required arcs, 698 one-way",
+      "medianMs": 199.22,
+      "minMs": 138.68,
+      "runs": 5
+    }
+  ],
+  "fleets": [
+    {
+      "name": "Meridian District · 3 vehicles",
+      "vertices": 351,
+      "edges": 595,
+      "detail": "optimal-split-dp, gap 1.118",
+      "medianMs": 86.33,
+      "minMs": 63.2,
+      "runs": 3
+    },
+    {
+      "name": "Meridian District · 8 vehicles",
+      "vertices": 351,
+      "edges": 595,
+      "detail": "optimal-split-dp, gap 1.386",
+      "medianMs": 85.12,
+      "minMs": 80.78,
+      "runs": 3
+    },
+    {
+      "name": "synthetic 40×30 · 4 vehicles",
+      "vertices": 1199,
+      "edges": 2052,
+      "detail": "optimal-split-dp, gap 1.083",
+      "medianMs": 889.33,
+      "minMs": 878.47,
       "runs": 3
     }
   ]

@@ -44,6 +44,9 @@ test.describe('workspace', () => {
     await expect(page.getByTestId('route-summary')).toContainText(km(r.single.route.totalDistance));
     await expect(page.locator('[data-testid=sim-stage] canvas').first().or(page.getByTestId('sim-2d'))).toBeVisible();
     expect(errors).toEqual([]);
+    // An unknown example id is reported, not silently replaced.
+    await page.goto('/workspace?example=no-such-district');
+    await expect(page.getByRole('alert').filter({ hasText: 'no bundled example called "no-such-district"' })).toBeVisible();
   });
 
   test('loads a bundled network and compares the exact route with real baselines', async ({ page }) => {
@@ -231,6 +234,10 @@ test.describe('workspace', () => {
     const fleet = expected('meridian-district', { vehicles: 3 }).fleet!;
     await expect(page.getByTestId('total-distance')).toHaveText(km(fleet.makespan));
     await expect(page.getByTestId('solver-status')).toContainText('Within 1.67× of optimal');
+    // A split route is bounded, not exact: the header summary must not claim otherwise.
+    await expect(page.getByTestId('route-summary')).toContainText('≤ 1.67× opt');
+    await expect(page.getByTestId('route-summary')).not.toContainText('exact');
+    await expect(page.getByTestId('sim-source')).toHaveText('Bundled example');
     await page.getByTestId('vehicle-2').click();
     await expect(page.getByTestId('vehicle-2')).toHaveAttribute('aria-pressed', 'true');
     await page.getByTestId('route-play').click();

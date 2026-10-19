@@ -26,6 +26,16 @@ Bugs that the end-to-end suite found during the workspace redesign, and that wer
 * The wordmark was a link nested inside a link.
 * The lower-bound bar in the laboratory did not say it is not a route.
 * Controls scrolled into view could end up under the sticky command header. The workspace now sets `scroll-padding-top`, which also keeps keyboard focus visible.
+* The "Local data cleared" toast could disappear before it was seen. Its timer started when it was pushed, and loading the large default district straight afterwards blocked the page for longer than the timer. Toasts now count only time on screen while the page is responsive, and pause while hovered or focused. This was found by the local run and by CI.
+
+Found during the screenshot review and fixed:
+
+* In fleet mode the header said "exact" for a split route; it now shows the proven bound (for example "≤ 1.67× opt").
+* The lower-bound bar in the laboratory was misaligned with the other bars.
+* Changing the fleet size relabelled the network "Edited network".
+* An unknown `?example=` id silently opened the default district; it is now reported.
+* On a portrait phone the route was hidden behind buildings.
+* With on-demand rendering (reduced motion), camera buttons and scrubbing did not redraw the 3D view.
 
 ## 1. Mathematical tests (`packages/engine/test`)
 
@@ -99,34 +109,61 @@ The oracle re-walks every SWEEP route, including the legal direction of every st
 
 ## 5. Performance (measured, not targets)
 
-### Engine (`pnpm bench`, Node 22, 4-core Xeon at 2.10 GHz)
+### Engine (`pnpm bench`, Node 22, 4-core Xeon at 2.10 GHz, 2026-10-19)
+
+Undirected solver (`solveChinesePostman`):
 
 | Network | Vertices | Edges | Odd k | Median solve |
 |---|---:|---:|---:|---:|
-| Königsberg | 4 | 7 | 4 | 0.71 ms |
-| Old Town Grid | 16 | 24 | 8 | 1.82 ms |
-| Market Avenues | 20 | 31 | 2 | 0.39 ms |
-| Meridian District | 351 | 595 | 148 | 43 ms |
-| synthetic 30×22 | 660 | 1,121 | 284 | 188 ms |
-| synthetic 40×30 | 1,199 | 2,052 | 458 | 709 ms |
-| synthetic 50×36 | 1,800 | 3,110 | 696 | 2,305 ms |
-| synthetic 60×44 | 2,640 | 4,574 | 958 | 5,899 ms |
+| Königsberg | 4 | 7 | 4 | 1.16 ms |
+| Old Town Grid | 16 | 24 | 8 | 2.43 ms |
+| Market Avenues | 20 | 31 | 2 | 0.68 ms |
+| Meridian District | 351 | 595 | 148 | 54 ms |
+| synthetic 30×22 | 660 | 1,121 | 284 | 190 ms |
+| synthetic 40×30 | 1,199 | 2,052 | 458 | 692 ms |
+| synthetic 50×36 | 1,800 | 3,110 | 696 | 2,393 ms |
+| synthetic 60×44 | 2,640 | 4,574 | 958 | 5,927 ms |
 
-Matching dominates, as expected for O(k³). The default interactive limit is therefore **600 odd vertices** (about 1.5 s by interpolation). Raw results are in `packages/engine/bench/results.json`.
+Matching dominates, as expected for O(k³). The default interactive limit is therefore **600 odd vertices** (about 1.5 s by interpolation).
 
-### Frontend (headless Chromium, software WebGL)
+Directed solver (`solveDirectedPostman`, `both` service rule, minimum-cost flow, certificate and verification included). The synthetic networks make every third street one-way and mark the streets that cannot be serviced on a closed legal route optional, the same treatment the Zurich sample gets:
+
+| Network | Vertices | Streets | Required arcs | One-way | Median solve |
+|---|---:|---:|---:|---:|---:|
+| Zurich Altstadt (real OSM) | 177 | 188 | 304 | 29 | 10.6 ms |
+| one-way 20×14 | 280 | 470 | 782 | 157 | 52 ms |
+| one-way 30×22 | 660 | 1,150 | 1,887 | 384 | 145 ms |
+| one-way 40×30 | 1,200 | 2,092 | 3,471 | 698 | 199 ms |
+
+Fleets (`solveFleet`, base solve + split + verification):
+
+| Network | Vehicles | Split | Longest route / lower bound | Median |
+|---|---:|---|---:|---:|
+| Meridian District | 3 | exact split DP | 1.118 | 86 ms |
+| Meridian District | 8 | exact split DP | 1.386 | 85 ms |
+| synthetic 40×30 | 4 | exact split DP | 1.083 | 889 ms |
+
+Raw results are in `packages/engine/bench/results.json`.
+
+### Frontend (headless Chromium, software WebGL via SwiftShader, local server)
 
 | Measurement | Result |
 |---|---|
-| First contentful paint `/` (local server) | 100 ms |
-| First contentful paint `/workspace` (Meridian) | 100 ms |
-| rAF frame interval, landing with hero off-screen and **petal field active** while the pointer moves | median 16.7 ms, p95 16.8 ms (180 frames / 3 s) |
-| Same, with the petal field **disabled** | median 16.7 ms, p95 16.8 ms (181 frames / 3 s) |
-| JS heap before and after 6 play/pause/restart cycles (Meridian) | 9.2 MB → 10.5 MB |
-| UI re-optimise round trip, Meridian (worker-thread solve on the server) | 321 ms |
-| Initial JS (gzip) | 87 KB app shell + 52 KB landing; 3D chunk (264 KB) is lazy |
+| First contentful paint `/` | 152 ms |
+| First contentful paint `/workspace` | 116 ms |
+| `/workspace`: navigation until the solved Meridian route is on screen | 2.8 s (includes building the 3D district in software) |
+| `POST /api/route`, Meridian, measured with curl | 0.31 s |
+| Re-optimise round trip in the UI, Meridian, **2D stage** | 0.83 s |
+| Re-optimise round trip, **3D stage, idle** | 2.9 s. The API answers at 0.75 s; the rest is software-rendered frames. Main-thread JavaScript for a new result is about 100 ms (CPU profile, mostly building the route tube). |
+| Re-optimise round trip, 3D stage **while the route plays** | about 12 s here: continuously animated software WebGL saturates the 4 CPU cores that the local server also uses |
+| JS heap before and after 6 play/pause/restart cycles (Meridian, 3D) | 26.9 MB → 29.0 MB |
+| JS (gzip) | 114 KB app shell; workspace 48 KB and landing 48 KB, each loaded on its route; three.js and R3F 258 KB plus the district scene 11 KB, lazy; engine worker 24 KB |
 
-**Caveats.** Hero 3D frame rates are not reported. They are dominated by SwiftShader software rendering in this container and do not represent GPU hardware. The scene lowers its resolution and disables post-processing automatically when the frame rate declines. Load times were measured on localhost without network latency.
+**Caveats.** Frame rates are not reported: in this container every frame is rasterised on the CPU (about 0.75 s per frame at 1440×900 with shadows and bloom), which says nothing about GPU hardware.
+
+SWEEP detects software rasterisers (SwiftShader, llvmpipe, Microsoft Basic Render), and the measurements above were taken with that detection active. On those rasterisers it starts the 3D scene in low-power mode: no shadows, bloom or motes, and frames are drawn only while playing or interacting. The `sweep.quality` preference (`full` / `low`) overrides the detection; the README screenshots use `full`. On GPUs, `PerformanceMonitor` still lowers resolution and drops post-processing when the frame rate declines.
+
+Load times were measured on localhost, without network latency.
 
 ## 6. Manual visual review
 

@@ -33,6 +33,8 @@ interface WorkspaceState {
   name: string;
   ref: ScenarioRef;
   dirty: boolean;
+  /** True once intersections or streets changed since the network was loaded (routing settings and renames do not count). */
+  networkEdited: boolean;
   validation: ValidationReport;
   lockedWeights: string[];
   selection: Selection;
@@ -179,6 +181,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       history,
       future: opts.history === false ? s.future : [],
       dirty: true,
+      networkEdited: s.networkEdited || next.vertices !== s.graph.vertices || next.edges !== s.graph.edges,
       validation: validateFor(next),
       stale: s.result !== null,
       failure: null,
@@ -205,6 +208,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     name: init.name,
     ref: init.ref,
     dirty: false,
+    networkEdited: false,
     validation: validateFor(init.graph),
     lockedWeights: computeLocked(init.graph),
     selection: null,
@@ -245,6 +249,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         ref,
         name: name ?? graph.name ?? 'Untitled network',
         dirty: false,
+        networkEdited: false,
         validation: validateFor(g),
         lockedWeights: computeLocked(g),
         selection: null,
@@ -392,7 +397,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       const s = get();
       const prev = s.history[s.history.length - 1];
       if (!prev) return;
-      set({ graph: prev, history: s.history.slice(0, -1), future: [s.graph, ...s.future], validation: validateFor(prev), stale: s.result !== null, dirty: true, inspectPath: null });
+      set({ graph: prev, history: s.history.slice(0, -1), future: [s.graph, ...s.future], validation: validateFor(prev), stale: s.result !== null, dirty: true, networkEdited: s.networkEdited || prev.vertices !== s.graph.vertices || prev.edges !== s.graph.edges, inspectPath: null });
       persistDraft({ graph: prev, name: s.name, ref: s.ref });
       scheduleAuto();
     },
@@ -400,7 +405,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       const s = get();
       const next = s.future[0];
       if (!next) return;
-      set({ graph: next, future: s.future.slice(1), history: [...s.history, s.graph], validation: validateFor(next), stale: s.result !== null, dirty: true, inspectPath: null });
+      set({ graph: next, future: s.future.slice(1), history: [...s.history, s.graph], validation: validateFor(next), stale: s.result !== null, dirty: true, networkEdited: s.networkEdited || next.vertices !== s.graph.vertices || next.edges !== s.graph.edges, inspectPath: null });
       persistDraft({ graph: next, name: s.name, ref: s.ref });
       scheduleAuto();
     },

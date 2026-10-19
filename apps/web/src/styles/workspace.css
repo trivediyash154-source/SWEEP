@@ -541,8 +541,10 @@ html:has(.workspace) {
 }
 .lg--arrow {
   width: auto;
+  height: auto;
   border: 0;
   font-style: normal;
+  line-height: 1;
   color: var(--warning);
 }
 .lg--service {
@@ -1165,15 +1167,18 @@ html:has(.workspace) {
 .lab-card--wide {
   grid-column: 1 / -1;
 }
+/* Rows share one grid (subgrid), so every track starts and ends at the same x whatever its value column holds. */
 .hbars {
   display: grid;
-  gap: 14px;
+  grid-template-columns: minmax(180px, 0.9fr) minmax(0, 2fr) max-content;
+  column-gap: 16px;
+  row-gap: 14px;
 }
 .hbar {
   display: grid;
-  grid-template-columns: minmax(180px, 0.9fr) minmax(0, 2fr) minmax(120px, auto);
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
-  gap: 16px;
 }
 .hbar__label {
   display: grid;
@@ -1583,6 +1588,7 @@ html:has(.workspace) {
   }
   .hbar {
     grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 16px;
   }
   .hbar__track {
     grid-column: 1 / -1;

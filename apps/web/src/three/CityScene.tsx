@@ -12,11 +12,11 @@ export const PALETTE = {
   velvet: {
     background: '#1d0f2e',
     fog: '#1d0f2e',
-    ground: '#21102f',
-    road: '#5a4470',
+    ground: '#2e1c45',
+    road: '#5f4a80',
     roadRequired: '#d9c6b6',
     roadOptional: '#4a3a5c',
-    building: ['#2f1b45', '#3a2152', '#47285f', '#2a1840'],
+    building: ['#6f5c93', '#7d699f', '#8a76aa', '#655387'],
     route: '#75e0ff',
     repeat: '#ff6d86',
     deadhead: '#e9c98c',
@@ -354,8 +354,8 @@ export function CityScene({ model, theme, mode, paused = false, getProgress, col
       <PerformanceMonitor onDecline={() => setLowPower(true)} flipflops={2} onFallback={() => setLowPower(true)} />
       <color attach="background" args={[pal.background]} />
       <fog attach="fog" args={[pal.fog, ext * (mode === 'hero' ? 0.9 : 1.2), ext * (mode === 'hero' ? 2.3 : 3.4)]} />
-      <hemisphereLight args={[pal.hemiSky, pal.hemiGround, theme === 'velvet' ? 0.9 : 1.5]} />
-      <directionalLight position={[ext * 0.4, ext * 0.8, ext * 0.3]} intensity={theme === 'velvet' ? 1.1 : 1.6} color={pal.sun} />
+      <hemisphereLight args={[pal.hemiSky, pal.hemiGround, theme === 'velvet' ? 1.1 : 1.5]} />
+      <directionalLight position={[ext * 0.4, ext * 0.8, ext * 0.3]} intensity={theme === 'velvet' ? 1.45 : 1.6} color={pal.sun} />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
         <planeGeometry args={[ext * 6, ext * 6]} />
         <meshStandardMaterial color={pal.ground} roughness={1} />

@@ -17,18 +17,18 @@ export const SCENE_PALETTE = {
   velvet: {
     background: '#1b0d2b',
     fog: '#22102f',
-    ground: '#1f0f2c',
-    plate: '#27153a',
+    ground: '#2b1a40',
+    plate: '#33204b',
     grid: 'rgba(233,201,140,0.07)',
-    sidewalk: '#3b2752',
-    road: '#140a1f',
-    roadRequired: '#2a1a3b',
+    sidewalk: '#4a3666',
+    road: '#3d2e55',
+    roadRequired: '#4b3a66',
     roadEdge: '#e9c98c',
     dash: '#e9c98c',
     arrow: '#ffd98c',
-    junction: '#4a3463',
-    building: ['#2f1b45', '#3a2152', '#46285e', '#2b1940', '#523070'],
-    roof: ['#5b2f63', '#6a3a5e', '#4c2b5a'],
+    junction: '#5a4475',
+    building: ['#6d5a8f', '#7a669c', '#8571a6', '#62508a', '#9280b2'],
+    roof: ['#a493c4', '#b09fce', '#9787b8'],
     trunk: '#4a2a3a',
     canopy: ['#f3a7c4', '#e98bb0', '#ffc2d6'],
     hemiSky: '#c9b8ff',
@@ -743,10 +743,10 @@ export default function DistrictScene({ district: d, tracks, trackColors, theme,
       <ClockInvalidator />
       <color attach="background" args={[pal.background]} />
       <fog attach="fog" args={[pal.fog, ext * 1.1, ext * 4.2]} />
-      <hemisphereLight args={[pal.hemiSky, pal.hemiGround, theme === 'velvet' ? 0.75 : 1.35]} />
+      <hemisphereLight args={[pal.hemiSky, pal.hemiGround, theme === 'velvet' ? 1.0 : 1.35]} />
       <directionalLight
         position={[ext * 0.45, ext * 0.9, ext * 0.25]}
-        intensity={theme === 'velvet' ? 1.25 : 1.9}
+        intensity={theme === 'velvet' ? 1.45 : 1.9}
         color={pal.sun}
         castShadow={shadows}
         shadow-mapSize={[2048, 2048]}

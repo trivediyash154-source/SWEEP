@@ -18,15 +18,16 @@
     "@fontsource/space-grotesk": "5.2.10",
     "@react-three/drei": "10.7.6",
     "@react-three/fiber": "9.4.0",
+    "@react-three/postprocessing": "3.0.4",
     "@sweep/engine": "workspace:*",
+    "earcut": "3.0.1",
     "motion": "12.23.24",
+    "postprocessing": "6.38.2",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-router-dom": "7.9.5",
     "three": "0.181.0",
-    "zustand": "5.0.8",
-    "@react-three/postprocessing": "3.0.4",
-    "postprocessing": "6.38.2"
+    "zustand": "5.0.8"
   },
   "devDependencies": {
     "@types/react": "19.2.2",

@@ -364,7 +364,7 @@ export default function Landing() {
               {ledger.map((r) => (
                 <tr key={r.id}>
                   <th scope="row">
-                    <Link to={`/workspace?example=${r.id}`}>{r.title}</Link>
+                    <Link to={`/lab?example=${r.id}`}>{r.title}</Link>
                   </th>
                   <td className="num">{formatNumber(r.vertices)}</td>
                   <td className="num">{formatNumber(r.odd)}</td>

@@ -154,8 +154,10 @@ export interface OsmImportOptions {
   keepAllComponents?: boolean;
   /** Provenance to store in graph.source; the conversion notes are appended. */
   source?: DataProvenance;
-  /** Override the size limits (tests). */
+  /** Override the size limits (tests, or larger city extracts built offline). */
   limits?: Partial<OsmLimits>;
+  /** Projection origin [lon, lat] for x/y (default: mean position of the kept vertices and shape points). */
+  origin?: Point;
 }
 
 export interface OsmImportStats {
@@ -617,7 +619,7 @@ export function osmToGraph(input: unknown, opts: OsmImportOptions = {}): OsmImpo
   };
   for (const id of vertexOrder) addMean(coords.get(id)!);
   for (const p of kept) for (const c of p.coords.slice(1, -1)) addMean(c);
-  const project = localProjection(sumLon / cnt, sumLat / cnt);
+  const project = opts.origin ? localProjection(opts.origin[0], opts.origin[1]) : localProjection(sumLon / cnt, sumLat / cnt);
 
   const vertices: Vertex[] = vertexOrder.map((id) => {
     const g = coords.get(id)!;

@@ -2,7 +2,7 @@
   "name": "sweep",
   "private": true,
   "version": "1.0.0",
-  "description": "SWEEP — urban route intelligence: Chinese Postman optimization with a cinematic, explainable interface.",
+  "description": "SWEEP \u2014 urban route intelligence: Chinese Postman optimization with a cinematic, explainable interface.",
   "type": "module",
   "packageManager": "pnpm@10.28.0",
   "engines": {
@@ -19,7 +19,9 @@
     "test:e2e": "playwright test",
     "bench": "pnpm --filter @sweep/engine bench",
     "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm test:oracle && pnpm build && pnpm test:e2e",
-    "lint": "eslint . --max-warnings=0"
+    "lint": "eslint . --max-warnings=0",
+    "city:acquire": "NODE_NO_WARNINGS=1 tsx scripts/city/acquire.ts",
+    "city:build": "tsx scripts/city/build.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.0",

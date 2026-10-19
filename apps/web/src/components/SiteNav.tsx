@@ -9,7 +9,10 @@ export function SiteNav({ overlay = false }: { overlay?: boolean }) {
     <header className={`site-nav${overlay ? ' site-nav--overlay' : ''}`}>
       <Wordmark />
       <nav aria-label="Primary" className="site-nav__links">
-        <NavLink to="/workspace">Workspace</NavLink>
+        <NavLink to="/workspace">City workspace</NavLink>
+        <NavLink to="/lab" className="hide-sm">
+          Network lab
+        </NavLink>
         <NavLink to="/mathematics">Mathematics</NavLink>
         <a href="/#credibility" className="hide-sm">
           Method

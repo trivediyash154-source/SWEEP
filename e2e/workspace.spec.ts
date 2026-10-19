@@ -36,7 +36,7 @@ test.describe('workspace', () => {
   test('opens straight into a solved city without signing in', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    await page.goto('/workspace');
+    await page.goto('/lab');
     await solved(page);
     const r = expected('meridian-district');
     await expect(page.getByTestId('total-distance')).toHaveText(km(r.single.route.totalDistance));
@@ -45,12 +45,12 @@ test.describe('workspace', () => {
     await expect(page.locator('[data-testid=sim-stage] canvas').first().or(page.getByTestId('sim-2d'))).toBeVisible();
     expect(errors).toEqual([]);
     // An unknown example id is reported, not silently replaced.
-    await page.goto('/workspace?example=no-such-district');
+    await page.goto('/lab?example=no-such-district');
     await expect(page.getByRole('alert').filter({ hasText: 'no bundled example called "no-such-district"' })).toBeVisible();
   });
 
   test('loads a bundled network and compares the exact route with real baselines', async ({ page }) => {
-    await page.goto('/workspace');
+    await page.goto('/lab');
     await solved(page);
     await surface(page, 'editor');
     await page.getByTestId('example-greedy-trap').click();
@@ -63,7 +63,7 @@ test.describe('workspace', () => {
   });
 
   test('switches the main stage between 3D and 2D', async ({ page }) => {
-    await page.goto('/workspace?example=konigsberg');
+    await page.goto('/lab?example=konigsberg');
     await solved(page);
     await page.getByTestId('stage-2d').click();
     await expect(page.getByTestId('sim-2d')).toBeVisible();
@@ -72,7 +72,7 @@ test.describe('workspace', () => {
   });
 
   test('builds and edits a network; changes propagate and re-solve automatically', async ({ page }) => {
-    await page.goto('/workspace');
+    await page.goto('/lab');
     await solved(page);
     await surface(page, 'editor');
     await page.getByTestId('new-blank').click();
@@ -116,7 +116,7 @@ test.describe('workspace', () => {
   });
 
   test('plays, pauses and changes the speed of the vehicle on the computed route', async ({ page }) => {
-    await page.goto('/workspace?example=riverside-ladder');
+    await page.goto('/lab?example=riverside-ladder');
     await solved(page);
     const readout = page.getByTestId('playback-readout');
     await expect(readout).toContainText('0 m');
@@ -135,7 +135,7 @@ test.describe('workspace', () => {
   });
 
   test('investigates the algorithm: odd vertices, shortest paths, matching, verification', async ({ page }) => {
-    await page.goto('/workspace?example=old-town-grid');
+    await page.goto('/lab?example=old-town-grid');
     await solved(page);
     const r = expected('old-town-grid');
     if (r.single.mode !== 'undirected') throw new Error('expected undirected');
@@ -156,7 +156,7 @@ test.describe('workspace', () => {
   });
 
   test('verification surface lists every independent check as passed', async ({ page }) => {
-    await page.goto('/workspace?example=four-corners');
+    await page.goto('/lab?example=four-corners');
     await solved(page);
     await surface(page, 'verification');
     const r = expected('four-corners');
@@ -165,7 +165,7 @@ test.describe('workspace', () => {
   });
 
   test('changes theme across the workspace', async ({ page }) => {
-    await page.goto('/workspace?example=konigsberg');
+    await page.goto('/lab?example=konigsberg');
     await solved(page);
     await page.getByRole('button', { name: 'Porcelain' }).first().click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'porcelain');
@@ -174,7 +174,7 @@ test.describe('workspace', () => {
   });
 
   test('saves a scenario locally and reopens it after a reload', async ({ page }) => {
-    await page.goto('/workspace?example=heritage-loop');
+    await page.goto('/lab?example=heritage-loop');
     await solved(page);
     await page.getByTestId('scenario-name').fill('Night sweep');
     await surface(page, 'history');
@@ -182,7 +182,7 @@ test.describe('workspace', () => {
     await expect(page.getByTestId('saved-scenarios')).toContainText('Night sweep');
     await expect(page.getByTestId('experiment-log')).toBeVisible();
     await page.evaluate(() => sessionStorage.setItem('sweep.e2e.keep', '1'));
-    await page.goto('/workspace?example=konigsberg');
+    await page.goto('/lab?example=konigsberg');
     await solved(page);
     await surface(page, 'history');
     await page.getByTestId('saved-scenarios').locator('[data-testid^="open-scenario-"]', { hasText: 'Night sweep' }).click();
@@ -191,7 +191,7 @@ test.describe('workspace', () => {
   });
 
   test('exports JSON and CSV that agree with the computation', async ({ page }) => {
-    await page.goto('/workspace?example=konigsberg');
+    await page.goto('/lab?example=konigsberg');
     await solved(page);
     await surface(page, 'export');
     const r = expected('konigsberg');
@@ -209,7 +209,7 @@ test.describe('workspace', () => {
   });
 
   test('solves the real Zurich OSM sample in directed mode and compares it with the two-way relaxation', async ({ page }) => {
-    await page.goto('/workspace?example=zurich-altstadt');
+    await page.goto('/lab?example=zurich-altstadt');
     await solved(page);
     const directed = expected('zurich-altstadt');
     const relaxed = expected('zurich-altstadt', { mode: 'undirected', ignoreOneway: true });
@@ -227,7 +227,7 @@ test.describe('workspace', () => {
   });
 
   test('plans a fleet: every vehicle animates its own route and the plan exports with validation', async ({ page }) => {
-    await page.goto('/workspace?example=meridian-district');
+    await page.goto('/lab?example=meridian-district');
     await solved(page);
     await page.getByTestId('hdr-vehicles').selectOption('3');
     await expect(page.getByTestId('vehicle-3')).toBeVisible();
@@ -254,7 +254,7 @@ test.describe('workspace', () => {
   });
 
   test('imports GeoJSON with a one-way dead end, explains why it is infeasible and fixes it', async ({ page }) => {
-    await page.goto('/workspace');
+    await page.goto('/lab');
     await solved(page);
     await surface(page, 'editor');
     await page.getByTestId('open-import-bar').click();
@@ -286,7 +286,7 @@ test.describe('workspace', () => {
         }),
       }),
     );
-    await page.goto('/workspace');
+    await page.goto('/lab');
     await solved(page);
     await surface(page, 'editor');
     await page.getByTestId('open-map').click();
@@ -299,7 +299,7 @@ test.describe('workspace', () => {
   });
 
   test('clears local data only after confirmation', async ({ page }) => {
-    await page.goto('/workspace?example=konigsberg');
+    await page.goto('/lab?example=konigsberg');
     await solved(page);
     await surface(page, 'history');
     await expect(page.getByTestId('experiment-log')).toBeVisible();
@@ -312,7 +312,7 @@ test.describe('workspace', () => {
   });
 
   test('blossom field is present over the workspace and never blocks controls', async ({ page }) => {
-    await page.goto('/workspace?example=konigsberg');
+    await page.goto('/lab?example=konigsberg');
     await solved(page);
     const field = page.getByTestId('botanical-field');
     await expect(field).toHaveCount(1);
@@ -325,7 +325,7 @@ test.describe('workspace', () => {
   test('honours reduced motion: no blossom field and playback jumps to the finished route', async ({ browser }) => {
     const ctx = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
-    await page.goto('/workspace?example=riverside-ladder');
+    await page.goto('/lab?example=riverside-ladder');
     await solved(page);
     await expect(page.getByTestId('botanical-field')).toHaveCount(0);
     await page.getByTestId('route-play').click();

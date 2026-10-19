@@ -1,0 +1,29 @@
+{
+ "cities": [
+  {
+   "id": "pune-bibwewadi",
+   "name": "Pune · Bibwewadi & VIT",
+   "description": "About 4 × 4 km of south Pune, Maharashtra, around Vishwakarma Institute of Technology (VIT), Bibwewadi: every mapped street and building footprint from OpenStreetMap.",
+   "bbox": [
+    18.445,
+    73.85,
+    18.481,
+    73.888
+   ],
+   "file": "cities/pune-bibwewadi.json",
+   "bytes": 904076,
+   "stats": {
+    "areaKm2": 16.04,
+    "nodes": 2636,
+    "segments": 3103,
+    "roadLengthKm": 203.69,
+    "buildings": 7142
+   },
+   "osmBase": [
+    "2026-07-15T15:22:01Z",
+    "2026-10-19T10:29:21Z"
+   ],
+   "complete": false
+  }
+ ]
+}

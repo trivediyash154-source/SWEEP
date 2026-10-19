@@ -10,7 +10,7 @@ test.describe('accounts and persistence', () => {
     await page.getByTestId('register-email').fill(email);
     await page.getByTestId('register-password').fill('a long test passphrase');
     await page.getByTestId('register-submit').click();
-    await expect(page).toHaveURL(/\/workspace/);
+    await expect(page).toHaveURL(/\/lab/);
     await page.getByTestId('nav-editor').click();
     await page.getByTestId('example-old-town-grid').click();
     await expect(page.getByTestId('solver-status')).toBeVisible();
@@ -18,7 +18,7 @@ test.describe('accounts and persistence', () => {
     await page.getByTestId('nav-history').click();
     await page.getByTestId('save-account').click();
     await expect(page.getByText('Saved to your account')).toBeVisible();
-    await expect(page).toHaveURL(/\/workspace\/[0-9a-f-]{36}$/);
+    await expect(page).toHaveURL(/\/lab\/[0-9a-f-]{36}$/);
     const scenarioUrl = page.url();
     // optimise a saved scenario → stored run in the account
     await page.getByTestId('optimize').click();
@@ -37,7 +37,7 @@ test.describe('accounts and persistence', () => {
     await page.getByTestId('register-email').fill(unique());
     await page.getByTestId('register-password').fill('another long passphrase');
     await page.getByTestId('register-submit').click();
-    await expect(page).toHaveURL(/\/workspace/);
+    await expect(page).toHaveURL(/\/lab/);
     await page.goto(scenarioUrl);
     await expect(page.getByText('Scenario not found, or it belongs to another account.')).toBeVisible();
   });

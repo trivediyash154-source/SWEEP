@@ -15,3 +15,5 @@ __pycache__/
 *.pyc
 .DS_Store
 apps/web/dist-static/
+data/cache/*
+!data/cache/osm/

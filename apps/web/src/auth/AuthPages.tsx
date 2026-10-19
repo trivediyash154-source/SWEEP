@@ -31,7 +31,7 @@ function AuthShell({ title, subtitle, children }: { title: string; subtitle: str
           {status === 'unavailable' ? (
             <div className="notice notice--info" role="status">
               Accounts need the SWEEP server, which this build cannot reach. Everything else works in local mode, including saving scenarios on this device.
-              <Link to="/workspace" className="btn btn--quiet btn--sm">
+              <Link to="/lab" className="btn btn--quiet btn--sm">
                 Open the workspace
               </Link>
             </div>
@@ -39,7 +39,7 @@ function AuthShell({ title, subtitle, children }: { title: string; subtitle: str
             children
           )}
           <p className="faint small auth__local">
-            No account needed to explore: <Link to="/workspace">open the workspace in local mode</Link>.
+            No account needed to explore: <Link to="/lab">open the network lab in local mode</Link>.
           </p>
         </main>
       </div>
@@ -72,7 +72,7 @@ export function SignIn() {
     try {
       await signIn(email, password);
       toast.success('Signed in');
-      navigate('/workspace');
+      navigate('/lab');
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -123,7 +123,7 @@ export function Register() {
     try {
       await register(email, password, displayName);
       toast.success('Account created', 'You are signed in.');
-      navigate('/workspace');
+      navigate('/lab');
     } catch (err) {
       setError(errorMessage(err));
     } finally {

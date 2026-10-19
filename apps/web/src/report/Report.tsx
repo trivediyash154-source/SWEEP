@@ -45,7 +45,7 @@ export default function Report() {
       <main id="main" className="report report--empty">
         <Wordmark size="sm" />
         <p>{error}</p>
-        <Link className="btn btn--quiet" to="/workspace">
+        <Link className="btn btn--quiet" to="/lab">
           Open the workspace
         </Link>
       </main>
@@ -64,7 +64,7 @@ export default function Report() {
   return (
     <main id="main" className="report" data-testid="report">
       <div className="report__actions no-print">
-        <Link to="/workspace" className="btn btn--ghost btn--sm">
+        <Link to="/lab" className="btn btn--ghost btn--sm">
           ← Workspace
         </Link>
         <button type="button" className="btn btn--primary btn--sm" onClick={() => window.print()} data-testid="print-report">

@@ -90,6 +90,9 @@ importers:
       '@sweep/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      earcut:
+        specifier: 3.0.1
+        version: 3.0.1
       motion:
         specifier: 12.23.24
         version: 12.23.24(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
@@ -1147,6 +1150,9 @@ packages:
 
   draco3d@1.5.9:
     resolution: {integrity: sha512-MqC0eAfW5gPATGY3GABIyFWpHwdDGAyewTdek5R/e+mhI9ZDUMKb2mTDkTMUW0+Vm7an+ThEMUop3+svS72Uug==}
+
+  earcut@3.0.1:
+    resolution: {integrity: sha512-0l1/0gOjESMeQyYaK5IDiPNvFeu93Z/cO0TjZh9eZ1vyCtZnA7KMZ8rQggpsJHIbGSdrqYq9OhuveadOVHCshw==}
 
   electron-to-chromium@1.5.459:
     resolution: {integrity: sha512-4SC9HHSFjO/liAhifpdOL5hG9b4BP7/5G3y3UPZVO8trlAXr1CaUEEJL0gWK3kOcYcZrOA5rkwG45Gra/lTIgg==}
@@ -3078,6 +3084,8 @@ snapshots:
   detect-libc@2.1.2: {}
 
   draco3d@1.5.9: {}
+
+  earcut@3.0.1: {}
 
   electron-to-chromium@1.5.459: {}
 

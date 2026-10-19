@@ -217,7 +217,7 @@ export function HistorySection() {
       } else {
         const created = await api<{ id: string }>('/scenarios', { method: 'POST', body: { name: st.name, graph } });
         st.markSaved({ kind: 'remote', id: created.id });
-        navigate(`/workspace/${created.id}`, { replace: true });
+        navigate(`/lab/${created.id}`, { replace: true });
       }
       toast.success('Saved to your account', st.name);
     } catch (e) {
@@ -232,7 +232,7 @@ export function HistorySection() {
       return;
     }
     st.markSaved({ kind: 'local', id });
-    navigate(`/workspace/${id}`, { replace: true });
+    navigate(`/lab/${id}`, { replace: true });
     toast.success('Saved on this device', st.name);
     refresh();
   };
@@ -292,7 +292,7 @@ export function HistorySection() {
                       className="hist-item"
                       onClick={() => {
                         useWorkspace.getState().loadGraph(s.graph, { kind: 'local', id: s.id }, s.name);
-                        navigate(`/workspace/${s.id}`, { replace: true });
+                        navigate(`/lab/${s.id}`, { replace: true });
                       }}
                       data-testid={`open-scenario-${s.id}`}
                     >
@@ -404,7 +404,7 @@ export function HistorySection() {
                 refresh();
                 toast.success('Local data cleared', `${n} stored item${n === 1 ? '' : 's'} removed.`);
                 useWorkspace.getState().loadExample('meridian-district');
-                navigate('/workspace', { replace: true });
+                navigate('/lab', { replace: true });
               }}
               data-testid="confirm-clear"
             >

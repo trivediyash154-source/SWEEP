@@ -20,3 +20,6 @@ export { geojsonToGraph, GeoJsonImportError, type GeoJsonImportReport } from './
 export { parseGraphJson, coerceGraph, GraphParseError, routeToCsv, edgesToCsv, fleetToCsv, toCsv } from './io.js';
 export { EARTH_RADIUS_M, haversine, polylineLength, localProjection, bboxAreaKm2, bboxSizeMetres, type BBox } from './geo.js';
 export * from './osm.js';
+export * from './city/index.js';
+export * from './p2p/index.js';
+export * from './coverage/index.js';

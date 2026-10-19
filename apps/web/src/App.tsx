@@ -7,6 +7,7 @@ import { RouteFallback } from './components/RouteFallback';
 
 const Landing = lazy(() => import('./landing/Landing'));
 const Workspace = lazy(() => import('./workspace/Workspace'));
+const CityWorkspace = lazy(() => import('./city/CityWorkspace'));
 const MathPage = lazy(() => import('./pages/MathPage'));
 const SignIn = lazy(() => import('./auth/AuthPages').then((m) => ({ default: m.SignIn })));
 const Register = lazy(() => import('./auth/AuthPages').then((m) => ({ default: m.Register })));
@@ -28,8 +29,9 @@ export function App() {
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<Landing />} />
-          <Route path="/workspace" element={<Workspace />} />
-          <Route path="/workspace/:scenarioId" element={<Workspace />} />
+          <Route path="/workspace" element={<CityWorkspace />} />
+          <Route path="/lab" element={<Workspace />} />
+          <Route path="/lab/:scenarioId" element={<Workspace />} />
           <Route path="/mathematics" element={<MathPage />} />
           <Route path="/signin" element={<SignIn />} />
           <Route path="/register" element={<Register />} />

@@ -122,7 +122,7 @@ export default function Account() {
         <section className="account__section" aria-labelledby="session-h">
           <h2 id="session-h">Session</h2>
           <div className="btn-row">
-            <Link to="/workspace" className="btn btn--quiet">
+            <Link to="/lab" className="btn btn--quiet">
               Back to workspace
             </Link>
             <button

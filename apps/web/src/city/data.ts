@@ -22,6 +22,15 @@ export function cityUrl(path: string): string {
   return `${base.endsWith('/') ? base : `${base}/`}${path}`;
 }
 
+/**
+ * Absolute URL of a bundled city file, for workers: a worker resolves a relative
+ * URL against its own script (under /assets/), not against the page, so the
+ * static build's `./cities/...` must be resolved here first.
+ */
+export function absoluteCityUrl(path: string): string {
+  return new URL(cityUrl(path), document.baseURI).href;
+}
+
 export async function fetchCityIndex(signal?: AbortSignal): Promise<CityIndexEntry[]> {
   const res = await fetch(cityUrl('cities/index.json'), signal ? { signal } : {});
   if (!res.ok) throw new Error(`City index unavailable (HTTP ${res.status}).`);

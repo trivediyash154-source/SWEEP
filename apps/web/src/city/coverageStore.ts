@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Zone } from '@sweep/engine';
-import { cityUrl } from './data';
+import { absoluteCityUrl } from './data';
 import { coverage } from './coverageClient';
 import type { CoveragePlanResult, CoverageResponse, FleetSettings } from './coverage.worker';
 import { BASELINE, specOf, useScenarios, type Scenario } from './scenario';
@@ -218,7 +218,7 @@ export const useCoverage = create<CoverageState>((set, get) => ({
     };
     try {
       if (!entry) throw new Error('City not loaded.');
-      await coverage.init(cityUrl(entry.file));
+      await coverage.init(absoluteCityUrl(entry.file));
       const baseline = await ask(specOf(BASELINE), s.depot, s.fleet);
       const scenario = await ask(specOf(active), eff.depot, eff.fleet);
       set({ comparison: { baseline, scenario, key }, comparing: false });
@@ -237,7 +237,7 @@ export const useCoverage = create<CoverageState>((set, get) => ({
       const st = useCity.getState();
       const entry = st.index.find((c) => c.id === st.cityId);
       if (!entry) throw new Error('City not loaded.');
-      await coverage.init(cityUrl(entry.file));
+      await coverage.init(absoluteCityUrl(entry.file));
       const key = coverageKey(s);
       const res = await coverage.send<Extract<CoverageResponse, { op: 'plan' }>>({
         op: 'plan',

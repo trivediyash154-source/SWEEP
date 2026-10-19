@@ -622,7 +622,7 @@
    ],
    "status": "failed",
    "file": "t2_4_buildings.json",
-   "attempts": 12,
+   "attempts": 18,
    "lastError": "HTTP 500"
   },
   "t2_5:streets": {
@@ -685,10 +685,13 @@
     18.463,
     73.888
    ],
-   "status": "failed",
+   "status": "ok",
    "file": "t2_6_buildings.json",
-   "attempts": 6,
-   "lastError": "HTTP 500"
+   "bytes": 77971,
+   "osmBase": "2026-10-19T13:08:05Z",
+   "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+   "fetchedAt": "2026-10-19T13:09:35.893Z",
+   "attempts": 7
   },
   "t3_0:streets": {
    "key": "t3_0",
@@ -699,10 +702,13 @@
     18.469,
     73.856
    ],
-   "status": "failed",
+   "status": "ok",
    "file": "t3_0_streets.json",
-   "attempts": 6,
-   "lastError": "HTTP 500"
+   "bytes": 88575,
+   "osmBase": "2026-10-19T13:08:05Z",
+   "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+   "fetchedAt": "2026-10-19T13:10:11.707Z",
+   "attempts": 7
   },
   "t3_0:buildings": {
    "key": "t3_0",
@@ -713,10 +719,81 @@
     18.469,
     73.856
    ],
-   "status": "failed",
+   "status": "ok",
    "file": "t3_0_buildings.json",
-   "attempts": 6,
-   "lastError": "HTTP 500"
+   "bytes": 431852,
+   "osmBase": "2026-10-19T13:09:06Z",
+   "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+   "fetchedAt": "2026-10-19T13:10:45.491Z",
+   "attempts": 7
+  },
+  "t3_1:streets": {
+   "key": "t3_1",
+   "kind": "streets",
+   "bbox": [
+    18.463,
+    73.856,
+    18.469,
+    73.862
+   ],
+   "status": "ok",
+   "file": "t3_1_streets.json",
+   "bytes": 88589,
+   "osmBase": "2026-10-19T13:09:06Z",
+   "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+   "fetchedAt": "2026-10-19T13:11:09.263Z",
+   "attempts": 1
+  },
+  "t3_1:buildings": {
+   "key": "t3_1",
+   "kind": "buildings",
+   "bbox": [
+    18.463,
+    73.856,
+    18.469,
+    73.862
+   ],
+   "status": "ok",
+   "file": "t3_1_buildings.json",
+   "bytes": 398099,
+   "osmBase": "2026-07-28T02:16:18Z",
+   "endpoint": "https://overpass.private.coffee/api/interpreter",
+   "fetchedAt": "2026-10-19T13:13:06.964Z",
+   "attempts": 1
+  },
+  "t3_2:streets": {
+   "key": "t3_2",
+   "kind": "streets",
+   "bbox": [
+    18.463,
+    73.862,
+    18.469,
+    73.868
+   ],
+   "status": "ok",
+   "file": "t3_2_streets.json",
+   "bytes": 90443,
+   "osmBase": "2026-06-01T08:52:28Z",
+   "endpoint": "https://overpass.kumi.systems/api/interpreter",
+   "fetchedAt": "2026-10-19T13:17:01.394Z",
+   "attempts": 1
+  },
+  "t3_2:buildings": {
+   "key": "t3_2",
+   "kind": "buildings",
+   "bbox": [
+    18.463,
+    73.862,
+    18.469,
+    73.868
+   ],
+   "status": "ok",
+   "file": "t3_2_buildings.json",
+   "bytes": 256388,
+   "osmBase": "2026-10-19T13:16:18Z",
+   "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+   "fetchedAt": "2026-10-19T13:17:21.799Z",
+   "attempts": 1
   }
  }
 }

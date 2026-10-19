@@ -6,10 +6,35 @@ import { contrastRatio, decodePng, luminanceAt } from './png';
 // The bundled real dataset; the UI must show exactly what the engine computes on it.
 const city = decodeCityBundle(JSON.parse(readFileSync(new URL('../apps/web/public/cities/pune-bibwewadi.json', import.meta.url), 'utf8')));
 
+/**
+ * Diagnostic for a page that stops responding while loading: what the renderer's main thread is doing.
+ * It only explains a failure; it never turns one into a pass.
+ */
+async function mainThreadState(page: Page, crashed: boolean): Promise<string> {
+  if (crashed) return 'the renderer process crashed';
+  const cdp = await page.context().newCDPSession(page);
+  const within = <T,>(p: Promise<T>, ms: number) => Promise.race([p, new Promise<null>((r) => setTimeout(() => r(null), ms))]);
+  if ((await within(cdp.send('Debugger.enable'), 5000)) === null) return 'the renderer did not answer the debugger within 5 s (blocked outside JavaScript, for example in a synchronous WebGL call)';
+  const paused = new Promise<{ callFrames: { functionName: string; url: string; location: { lineNumber: number; columnNumber: number } }[] }>((r) => cdp.on('Debugger.paused', r));
+  void cdp.send('Debugger.pause').catch(() => undefined);
+  const ev = await within(paused, 5000);
+  if (!ev) return 'the debugger attached but JavaScript did not pause within 5 s (idle, or blocked in native code)';
+  return `paused in: ${ev.callFrames
+    .slice(0, 12)
+    .map((f) => `${f.functionName || '(anonymous)'} ${f.url.split('/').pop()}:${f.location.lineNumber + 1}:${f.location.columnNumber + 1}`)
+    .join(' <- ')}`;
+}
+
 async function openCity(page: Page, theme: 'velvet' | 'porcelain' = 'velvet'): Promise<void> {
+  let crashed = false;
+  page.on('crash', () => (crashed = true));
   await page.addInitScript((t) => localStorage.setItem('sweep.theme', t), theme);
   await page.goto('/workspace');
-  await expect(page.getByTestId('city-name')).toContainText('Pune', { timeout: 60_000 });
+  try {
+    await expect(page.getByTestId('city-name')).toContainText('Pune', { timeout: 60_000 });
+  } catch (e) {
+    throw new Error(`${e instanceof Error ? e.message : String(e)}\nMain-thread diagnostic: ${await mainThreadState(page, crashed)}`);
+  }
   await page.waitForFunction(() => (window as unknown as { __sweepCity?: { state: () => { meshes: unknown } } }).__sweepCity?.state().meshes, null, { timeout: 60_000 });
 }
 
@@ -138,7 +163,10 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     await page.getByTestId('compare-baseline').click();
     await expect(page.getByTestId('scenario-comparison')).toBeVisible();
     const s = await routeState(page);
-    const engine = new RoutingEngine(city, 'car', { closedSegments: [target!.s] });
+    // The street the UI actually closed (the picker snaps to the nearest street under the pointer).
+    const closed = await page.evaluate(() => (window as unknown as { __sweepCity: { scenarios: () => { active: () => { closed: number[] } } } }).__sweepCity.scenarios().active().closed);
+    expect(closed.length).toBe(1);
+    const engine = new RoutingEngine(city, 'car', { closedSegments: closed });
     const exp = engine.query('dijkstra', { origin: s.origin, destination: s.destination, objective: 'time' }).result;
     expect(Math.abs(s.runs[0]!.cost - exp.cost) / exp.cost).toBeLessThan(1e-9);
     expect(s.runs[0]!.cost).toBeGreaterThanOrEqual(before.runs[0]!.cost); // a closure never makes the trip faster

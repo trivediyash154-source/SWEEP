@@ -5,7 +5,7 @@ import { ThemeToggle } from '../components/ThemeToggle';
 import { Icon } from '../components/Icon';
 import { usePrefs, useReducedMotion } from '../state/prefs';
 import { startInLowPower, webglAvailable } from '../lib/webgl';
-import { useCity, type CityMode } from './store';
+import { useCity, type CityMode, type PickTarget } from './store';
 import { FeatureDetails } from './Inspector';
 import { ProvenanceDialog } from './Provenance';
 import type { SceneOverlays } from './GeoCityScene';
@@ -26,6 +26,10 @@ const MODES: { id: CityMode; label: string; sub: string }[] = [
   { id: 'coverage', label: 'Coverage & fleet', sub: 'Street service' },
   { id: 'scenarios', label: 'Scenarios', sub: 'What if' },
 ];
+
+const pickModeOf = (t: PickTarget): 'node' | 'segment' | 'any' => (t === 'origin' || t === 'destination' || t === 'depot' || t === 'dump' || t === 'scenario-depot' ? 'node' : t === 'close-road' || t === 'make-oneway' ? 'segment' : 'any');
+/** The pick mode at this instant, from the store (stable function for the canvas picker). */
+const currentPickMode = () => pickModeOf(useCity.getState().pickTarget);
 
 export default function CityWorkspace() {
   const theme = usePrefs((s) => s.theme);
@@ -72,7 +76,7 @@ export default function CityWorkspace() {
     };
   }, []);
 
-  const pickMode = useMemo(() => (pickTarget === 'origin' || pickTarget === 'destination' || pickTarget === 'depot' || pickTarget === 'dump' || pickTarget === 'scenario-depot' ? 'node' : pickTarget === 'close-road' || pickTarget === 'make-oneway' ? 'segment' : 'any'), [pickTarget]);
+  const pickMode = useMemo(() => pickModeOf(pickTarget), [pickTarget]);
 
   return (
     <div className="cw" data-testid="city-workspace">
@@ -123,6 +127,7 @@ export default function CityWorkspace() {
               overlays={overlays}
               camera={camera}
               pickMode={pickMode}
+              getPickMode={currentPickMode}
               onPick={handleCityPick}
               onHover={(p) => st.setHover(p)}
               debugRef={debugRef}

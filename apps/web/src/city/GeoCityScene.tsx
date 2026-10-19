@@ -93,6 +93,8 @@ export interface GeoCitySceneProps {
   overlays: SceneOverlays;
   camera: { cmd: CameraCommand; nonce: number; frame?: { minX: number; minY: number; maxX: number; maxY: number } | null };
   pickMode: 'node' | 'segment' | 'any';
+  /** Current pick mode read at event time (the canvas subtree can re-render a frame after the page). */
+  getPickMode?: () => 'node' | 'segment' | 'any';
   onPick: (p: PickResult) => void;
   onHover: (p: PickResult | null) => void;
   /** Width (px) of the panel covering the left edge of the canvas; the view is centred in the remaining area. */
@@ -453,11 +455,12 @@ function CameraRig({ city, camera, debugRef, panelPx }: { city: CityModel; camer
 }
 
 /** Pointer picking: ground-plane projection + spatial index for streets; ray-cast against buildings on click only. */
-function Picker({ city, index, pickMode, buildingsRef, onPick, onHover }: { city: CityModel; index: SegmentIndex; pickMode: GeoCitySceneProps['pickMode']; buildingsRef: React.RefObject<THREE.Group | null>; onPick: GeoCitySceneProps['onPick']; onHover: GeoCitySceneProps['onHover'] }) {
+function Picker({ city, index, pickMode, getPickMode, buildingsRef, onPick, onHover }: { city: CityModel; index: SegmentIndex; pickMode: GeoCitySceneProps['pickMode']; getPickMode: GeoCitySceneProps['getPickMode']; buildingsRef: React.RefObject<THREE.Group | null>; onPick: GeoCitySceneProps['onPick']; onHover: GeoCitySceneProps['onHover'] }) {
   const { camera, gl } = useThree();
-  const cbs = useRef({ onPick, onHover, pickMode });
-  cbs.current = { onPick, onHover, pickMode };
+  const cbs = useRef({ onPick, onHover, pickMode, getPickMode });
+  cbs.current = { onPick, onHover, pickMode, getPickMode };
   useEffect(() => {
+    const modeNow = (): GeoCitySceneProps['pickMode'] => cbs.current.getPickMode?.() ?? cbs.current.pickMode;
     const el = gl.domElement;
     const ray = new THREE.Raycaster();
     const ndc = new THREE.Vector2();
@@ -485,7 +488,7 @@ function Picker({ city, index, pickMode, buildingsRef, onPick, onHover }: { city
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
         const g = toGround(ev);
-        cbs.current.onHover(g ? resolve(g, cbs.current.pickMode) : null);
+        cbs.current.onHover(g ? resolve(g, modeNow()) : null);
       });
     };
     const onDown = (ev: PointerEvent) => {
@@ -495,7 +498,8 @@ function Picker({ city, index, pickMode, buildingsRef, onPick, onHover }: { city
       if (!down || Math.hypot(ev.clientX - down.x, ev.clientY - down.y) > 5) return;
       down = null;
       const g = toGround(ev);
-      if (cbs.current.pickMode === 'any' && buildingsRef.current) {
+      const mode = modeNow();
+      if (mode === 'any' && buildingsRef.current) {
         const hits = ray.intersectObjects(buildingsRef.current.children, false);
         const h = hits[0];
         if (h && h.faceIndex != null) {
@@ -509,7 +513,7 @@ function Picker({ city, index, pickMode, buildingsRef, onPick, onHover }: { city
           }
         }
       }
-      if (g) cbs.current.onPick(resolve(g, cbs.current.pickMode));
+      if (g) cbs.current.onPick(resolve(g, mode));
     };
     const onLeave = () => cbs.current.onHover(null);
     el.addEventListener('pointermove', onMove);
@@ -602,7 +606,7 @@ export default function GeoCityScene(props: GeoCitySceneProps) {
       {overlays.zone && <ZoneOutline zone={overlays.zone} theme={theme} />}
       <OrbitControls makeDefault enableDamping dampingFactor={0.08} maxPolarAngle={Math.PI * 0.46} minDistance={25} maxDistance={ext * 3} screenSpacePanning={false} />
       <CameraRig city={city} camera={props.camera} panelPx={props.panelPx ?? 0} {...(props.debugRef ? { debugRef: props.debugRef } : {})} />
-      <Picker city={city} index={index} pickMode={props.pickMode} buildingsRef={buildingsRef} onPick={props.onPick} onHover={props.onHover} />
+      <Picker city={city} index={index} pickMode={props.pickMode} getPickMode={props.getPickMode} buildingsRef={buildingsRef} onPick={props.onPick} onHover={props.onHover} />
       <Animator active={animating} />
       {!lowPower && (
         <EffectComposer multisampling={0}>

@@ -37,7 +37,7 @@ export function useCoverageOverlays(): CoverageLayers {
       if (depot !== null) markers.push({ id: 'depot', x: city.nodeX[depot]!, y: city.nodeY[depot]!, kind: 'depot', label: 'Depot' });
       if (dump !== null) markers.push({ id: 'dump', x: city.nodeX[dump]!, y: city.nodeY[dump]!, kind: 'dump', label: 'Disposal' });
     }
-    const z = mode === 'coverage' ? (zone ?? (cornerA ? { minX: cornerA[0] - 2, minY: cornerA[1] - 2, maxX: cornerA[0] + 2, maxY: cornerA[1] + 2 } : null)) : null;
-    return { paths, highlights: [], markers, zone: z ? { minX: z.minX, minY: z.minY, maxX: z.maxX, maxY: z.maxY } : null, vehicles: mode === 'coverage' && result ? vehiclePoses : undefined };
+    const z: SceneOverlays['zone'] = mode !== 'coverage' ? null : zone ? zone : cornerA ? { kind: 'circle', cx: cornerA[0], cy: cornerA[1], r: 4 } : null;
+    return { paths, highlights: [], markers, zone: z, vehicles: mode === 'coverage' && result ? vehiclePoses : undefined };
   }, [city, mode, depot, dump, zone, cornerA, paths, result]);
 }

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Icon } from '../../components/Icon';
 import { useCity } from '../store';
-import { useCoverage } from '../coverageStore';
+import { useCoverage, zoneLabel } from '../coverageStore';
 import { useScenarios } from '../scenario';
 import { useShift } from '../shift';
 import { buildSchedule, clockLabel } from '../timeline';
@@ -30,8 +30,6 @@ export function CoverageReport({ onClose }: { onClose: () => void }) {
   const f = cv.fleet;
   const schedules = r.routes.map((v) => buildSchedule(v, f));
   const cost = estimateCost({ serviceM: r.totals.serviceM, transitM: r.totals.deadheadM + r.totals.repeatM, vehicleSeconds: r.routes.reduce((a, v) => a + v.seconds, 0) }, cv.costs);
-  const w = cv.zone.maxX - cv.zone.minX;
-  const h = cv.zone.maxY - cv.zone.minY;
   const checks = [...r.checks, ...(r.fleet?.checks ?? [])];
   return (
     <div className="cv-report" role="dialog" aria-modal="true" aria-label="Coverage plan report" data-testid="cov-report">
@@ -69,9 +67,7 @@ export function CoverageReport({ onClose }: { onClose: () => void }) {
         <h2>Service zone and scenario</h2>
         <dl className="cv-facts">
           <dt>Zone</dt>
-          <dd>
-            {fmtDist(w)} × {fmtDist(h)} ({((w * h) / 1e6).toFixed(2)} km²)
-          </dd>
+          <dd>{cv.zone.kind === 'circle' ? 'circle, ' : 'rectangle, '}{zoneLabel(cv.zone, fmtDist)}</dd>
           <dt>Required streets</dt>
           <dd data-testid="rep-required">
             {r.report.requiredSegments.toLocaleString('en-US')} segments, {r.report.requiredKm.toFixed(2)} km{cv.roadClasses ? ` (classes: ${cv.roadClasses.join(', ')})` : ' (all road classes)'}

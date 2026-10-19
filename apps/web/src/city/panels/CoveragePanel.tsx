@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { CityModel } from '@sweep/engine';
 import { Icon } from '../../components/Icon';
 import { useCity } from '../store';
-import { coverageKey, useCoverage, type PlanSummary } from '../coverageStore';
+import { coverageKey, useCoverage, zoneLabel, type PlanSummary } from '../coverageStore';
 import { useScenarios } from '../scenario';
 import { fmtDist, fmtTime, nodeLabel } from './RouteLab';
 import { estimateCost } from '../costModel';
@@ -108,8 +108,7 @@ export function CoveragePanel() {
   const classes = useClasses(city);
   const [report, setReport] = useState(false);
   const pick = (t: 'zone-a' | 'depot' | 'dump') => useCity.getState().setPickTarget(pickTarget === t || (t === 'zone-a' && pickTarget === 'zone-b') ? null : t);
-  const zoneW = cv.zone ? cv.zone.maxX - cv.zone.minX : 0;
-  const zoneH = cv.zone ? cv.zone.maxY - cv.zone.minY : 0;
+  const circle = cv.zoneShape === 'circle';
   const ready = cv.zone !== null && cv.depot !== null;
   const stale = cv.result !== null && cv.resultKey !== coverageKey(cv);
   const r = cv.result;
@@ -132,12 +131,20 @@ export function CoveragePanel() {
       </header>
 
       <div className="cv-inputs">
+        <div className="segmented segmented--sm" role="group" aria-label="Zone shape">
+          <button type="button" aria-pressed={!circle} onClick={() => cv.setZoneShape('rect')} data-testid="cov-shape-rect">
+            Rectangle
+          </button>
+          <button type="button" aria-pressed={circle} onClick={() => cv.setZoneShape('circle')} data-testid="cov-shape-circle">
+            Circle
+          </button>
+        </div>
         <div className="rl-end" data-testid="cov-zone-box">
           <div className="rl-end__body">
             <div className="rl-end__row">
               <span className="rl-end__label">Zone</span>
               <strong className="rl-end__value" data-testid="cov-zone">
-                {cv.zone ? `${fmtDist(zoneW)} × ${fmtDist(zoneH)} · ${((zoneW * zoneH) / 1e6).toFixed(2)} km²` : pickTarget === 'zone-a' ? 'Click the first corner' : pickTarget === 'zone-b' ? 'Click the opposite corner' : 'Not drawn'}
+                {cv.zone ? zoneLabel(cv.zone, fmtDist) : pickTarget === 'zone-a' ? (circle ? 'Click the centre' : 'Click the first corner') : pickTarget === 'zone-b' ? (circle ? 'Click a point on the edge' : 'Click the opposite corner') : 'Not drawn'}
               </strong>
               <button type="button" className={`btn btn--ghost btn--sm${pickTarget === 'zone-a' || pickTarget === 'zone-b' ? ' is-on' : ''}`} aria-pressed={pickTarget === 'zone-a' || pickTarget === 'zone-b'} onClick={() => pick('zone-a')} data-testid="cov-draw-zone">
                 <Icon name="focus" size={13} /> Draw

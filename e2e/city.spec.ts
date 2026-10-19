@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
-import { decodeCityBundle, RoutingEngine, reachability, solveZoneCoverage, zoneCoverageGraph } from './engine';
+import { decodeCityBundle, planFleet, RoutingEngine, reachability, solveZoneCoverage, zoneCoverageGraph } from './engine';
 import { contrastRatio, decodePng, luminanceAt } from './png';
 
 // The bundled real dataset; the UI must show exactly what the engine computes on it.
@@ -296,5 +296,63 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     if (!exp3.ok) throw new Error(exp3.message);
     expect(Math.abs(cmp.baseline.distanceM - exp2.route.totalDistance)).toBeLessThan(1e-6);
     expect(Math.abs(cmp.scenario.distanceM - exp3.route.totalDistance)).toBeLessThan(1e-6);
+  });
+
+  test('circle zone with a three-vehicle fleet and shift limit: the UI shows the engine plan and its bounds', async ({ page }) => {
+    await openCity(page);
+    await page.getByTestId('mode-coverage').click();
+    await page.getByTestId('cam-top').click();
+    await page.waitForTimeout(2500);
+    const box = (await page.getByTestId('city-stage').boundingBox())!;
+    type W = { __sweepCity: { project: (x: number, y: number, h: number) => [number, number] | null; state: () => { city: { focus: { xy: [number, number] } | null; nodeX: Float64Array; nodeY: Float64Array; nodeCount: number } }; coverage: () => { zone: { kind: 'circle'; cx: number; cy: number; r: number } | null; depot: number | null; result: { method: string; fleet: { totals: { distance: number; makespanSeconds: number; vehiclesUsed: number }; lowerBounds: { makespanSeconds: { value: number } } } | null; routes: unknown[] } | null } } };
+    const screen = async (x: number, y: number) => {
+      const p = (await page.evaluate(([a, b]) => (window as unknown as W).__sweepCity.project(a!, b!, 0), [x, y]))!;
+      return [box.x + ((p[0] + 1) / 2) * box.width, box.y + ((1 - p[1]) / 2) * box.height] as const;
+    };
+    const centre = await page.evaluate(() => (window as unknown as W).__sweepCity.state().city.focus?.xy ?? [0, 0]);
+    await page.getByTestId('cov-shape-circle').click();
+    await page.getByTestId('cov-draw-zone').click();
+    let [sx, sy] = await screen(centre[0], centre[1]);
+    await page.mouse.click(sx, sy);
+    [sx, sy] = await screen(centre[0] + 300, centre[1]);
+    await page.mouse.click(sx, sy);
+    await expect(page.getByTestId('cov-zone')).toContainText('radius');
+    const node = await page.evaluate(([cx, cy]) => {
+      const c = (window as unknown as W).__sweepCity.state().city;
+      let best = 0;
+      let bd = Infinity;
+      for (let i = 0; i < c.nodeCount; i++) {
+        const d = (c.nodeX[i]! - cx!) ** 2 + (c.nodeY[i]! - cy!) ** 2;
+        if (d < bd) [best, bd] = [i, d];
+      }
+      return { x: c.nodeX[best]!, y: c.nodeY[best]! };
+    }, centre);
+    await page.getByTestId('pick-depot').click();
+    [sx, sy] = await screen(node.x, node.y);
+    await page.mouse.click(sx, sy);
+    await expect(page.getByTestId('cov-depot')).not.toHaveText(/Not set|Click/);
+    await page.getByTestId('cov-vehicles').fill('3');
+    await page.getByTestId('cov-shift').fill('1');
+    await page.getByTestId('cov-run').click();
+    await expect(page.getByTestId('cov-makespan')).toBeVisible({ timeout: 90_000 });
+
+    const st = await page.evaluate(() => (window as unknown as W).__sweepCity.coverage());
+    expect(st.zone!.kind).toBe('circle');
+    const depotId = `n${city.nodeOsm[st.depot!]}`;
+    const zg = zoneCoverageGraph(city, { zone: st.zone!, direction: 'directed', depotId });
+    const cov = solveZoneCoverage(zg.graph, { direction: 'directed', depotId });
+    if (!cov.ok) throw new Error(cov.message);
+    const fp = planFleet(cov.graph, { vehicles: 3, depotId, direction: 'directed', objective: 'min-makespan', capacity: null, demandPerKm: 0, shiftSeconds: 3600, serviceSpeedKmh: 8, deadheadSpeedKmh: 20, dumpSeconds: 0, coverage: cov });
+    if (!fp.ok) throw new Error(fp.message);
+    const f = st.result!.fleet!;
+    expect(Math.abs(f.totals.distance - fp.totals.distance)).toBeLessThan(1e-6);
+    expect(Math.abs(f.totals.makespanSeconds - fp.totals.makespanSeconds)).toBeLessThan(1e-6);
+    expect(f.totals.vehiclesUsed).toBe(fp.totals.vehiclesUsed);
+    // A valid lower bound never exceeds the achieved makespan.
+    expect(f.lowerBounds.makespanSeconds.value).toBeLessThanOrEqual(f.totals.makespanSeconds + 1e-6);
+    await expect(page.getByTestId('cov-vehicles-table').locator('tbody tr')).toHaveCount(fp.routes.length);
+    // The timeline ends when the last vehicle is back.
+    const max = Number(await page.getByTestId('tl-scrub').getAttribute('max'));
+    expect(Math.abs(max - Math.ceil(fp.totals.makespanSeconds))).toBeLessThanOrEqual(1);
   });
 });

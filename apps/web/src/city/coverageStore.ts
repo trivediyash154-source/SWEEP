@@ -8,6 +8,21 @@ import { useCity } from './store';
 import { DEFAULT_COSTS, type CostAssumptions } from './costModel';
 
 export type RectZone = Extract<Zone, { kind: 'rect' }>;
+export type CircleZone = Extract<Zone, { kind: 'circle' }>;
+export type DrawnZone = RectZone | CircleZone;
+
+/** Bounding box of a drawn zone (city metres). */
+export function zoneBox(z: DrawnZone): { minX: number; minY: number; maxX: number; maxY: number } {
+  return z.kind === 'rect' ? { minX: z.minX, minY: z.minY, maxX: z.maxX, maxY: z.maxY } : { minX: z.cx - z.r, minY: z.cy - z.r, maxX: z.cx + z.r, maxY: z.cy + z.r };
+}
+
+/** Human description of a drawn zone, with its area. */
+export function zoneLabel(z: DrawnZone, fmt: (m: number) => string): string {
+  if (z.kind === 'circle') return `radius ${fmt(z.r)} · ${((Math.PI * z.r * z.r) / 1e6).toFixed(2)} km²`;
+  const w = z.maxX - z.minX;
+  const h = z.maxY - z.minY;
+  return `${fmt(w)} × ${fmt(h)} · ${((w * h) / 1e6).toFixed(2)} km²`;
+}
 
 /** Headline numbers of a plan, for scenario comparison. */
 export interface PlanSummary {
@@ -50,7 +65,8 @@ export const DEFAULT_FLEET: FleetSettings = {
 
 interface CoverageState {
   cornerA: [number, number] | null;
-  zone: RectZone | null;
+  zoneShape: 'rect' | 'circle';
+  zone: DrawnZone | null;
   depot: number | null;
   dump: number | null;
   /** OSM highway classes to service; null = every class present. */
@@ -69,6 +85,7 @@ interface CoverageState {
   comparing: boolean;
   compare: () => Promise<void>;
   setCorner: (which: 'a' | 'b', x: number, y: number) => void;
+  setZoneShape: (s: 'rect' | 'circle') => void;
   setDepot: (n: number | null) => void;
   setDump: (n: number | null) => void;
   setRoadClasses: (c: string[] | null) => void;
@@ -90,6 +107,7 @@ let runToken = 0;
 
 export const useCoverage = create<CoverageState>((set, get) => ({
   cornerA: null,
+  zoneShape: 'rect',
   zone: null,
   depot: null,
   dump: null,
@@ -108,9 +126,11 @@ export const useCoverage = create<CoverageState>((set, get) => ({
     else {
       const a = get().cornerA;
       if (!a) return;
-      set({ zone: { kind: 'rect', minX: Math.min(a[0], x), minY: Math.min(a[1], y), maxX: Math.max(a[0], x), maxY: Math.max(a[1], y) } });
+      if (get().zoneShape === 'circle') set({ zone: { kind: 'circle', cx: a[0], cy: a[1], r: Math.max(1, Math.hypot(x - a[0], y - a[1])) } });
+      else set({ zone: { kind: 'rect', minX: Math.min(a[0], x), minY: Math.min(a[1], y), maxX: Math.max(a[0], x), maxY: Math.max(a[1], y) } });
     }
   },
+  setZoneShape: (zoneShape) => set({ zoneShape, cornerA: null, zone: null }),
   setDepot: (depot) => set({ depot }),
   setDump: (dump) => set({ dump }),
   setRoadClasses: (roadClasses) => set({ roadClasses }),

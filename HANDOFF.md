@@ -313,8 +313,8 @@ Run `npx playwright test --reporter=line`.
 
 **Still to do:**
 
-* circle and polygon zones in the UI (the engine already supports them);
-* an e2e test for a multi-vehicle fleet with a shift limit, checking that the UI shows the engine's `planFleet` totals and bounds;
+* polygon zones in the UI (the engine supports them). Rectangles and circles are done.
+* ~~multi-vehicle fleet e2e~~: done ("circle zone with a three-vehicle fleet and shift limit…").
 * coverage in the scenario comparison (see §4.5).
 
 The original plan for this section is kept below for reference.

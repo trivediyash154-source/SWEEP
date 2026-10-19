@@ -75,8 +75,8 @@ export interface SceneOverlays {
   highlights: { ribbon: RibbonOut; color: string; opacity: number; key: string }[];
   /** Ref with the vehicles to draw this frame (shift simulation). */
   vehicles?: { current: VehiclePose[] };
-  /** Optional rectangle (city metres) outlining a service zone. */
-  zone?: { minX: number; minY: number; maxX: number; maxY: number } | null;
+  /** Optional service-zone outline (city metres): a rectangle or a circle. */
+  zone?: { kind: 'rect'; minX: number; minY: number; maxX: number; maxY: number } | { kind: 'circle'; cx: number; cy: number; r: number } | null;
 }
 
 export type PickResult = { kind: 'segment'; seg: number; x: number; y: number } | { kind: 'node'; node: number; x: number; y: number } | { kind: 'building'; building: number; x: number; y: number } | { kind: 'ground'; x: number; y: number };
@@ -365,7 +365,9 @@ function Vehicles({ vehicles, scale }: { vehicles: { current: VehiclePose[] }; s
 function ZoneOutline({ zone, theme }: { zone: NonNullable<SceneOverlays['zone']>; theme: ThemeName }) {
   const geo = useMemo(() => {
     const y = 1.4;
-    const pts = [zone.minX, y, zone.minY, zone.maxX, y, zone.minY, zone.maxX, y, zone.maxY, zone.minX, y, zone.maxY, zone.minX, y, zone.minY];
+    const pts: number[] = [];
+    if (zone.kind === 'rect') pts.push(zone.minX, y, zone.minY, zone.maxX, y, zone.minY, zone.maxX, y, zone.maxY, zone.minX, y, zone.maxY, zone.minX, y, zone.minY);
+    else for (let i = 0; i <= 96; i++) pts.push(zone.cx + zone.r * Math.cos((i / 96) * Math.PI * 2), y, zone.cy + zone.r * Math.sin((i / 96) * Math.PI * 2));
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts), 3));
     return g;

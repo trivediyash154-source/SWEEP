@@ -274,5 +274,21 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     await expect(page.getByTestId('cov-wrongway')).toBeVisible();
     if (exp2.method === 'heuristic-candidate-matching') await expect(page.getByTestId('cov-optimal')).toContainText('Within');
     if (st2.result!.lowerBoundM !== null) expect(st2.result!.lowerBoundM).toBeLessThanOrEqual(st2.result!.totals.distanceM + 1e-6);
+
+    // Scenario: close one required street in the zone; both plans are recomputed and match the engine.
+    const seg = zg2.edgeSegment[zg2.graph.edges.findIndex((e) => e.required && e.u !== depotId && e.v !== depotId)]!;
+    await page.evaluate((sg) => {
+      const sc = (window as unknown as { __sweepCity: { scenarios: () => { create: () => void; toggleClosed: (s: number) => void } } }).__sweepCity.scenarios();
+      sc.create();
+      sc.toggleClosed(sg);
+    }, seg);
+    await page.getByTestId('cov-compare').click();
+    await expect(page.getByTestId('cov-comparison')).toBeVisible({ timeout: 90_000 });
+    const cmp = await page.evaluate(() => (window as unknown as { __sweepCity: { coverage: () => { comparison: { baseline: { distanceM: number }; scenario: { distanceM: number } } } } }).__sweepCity.coverage().comparison);
+    const zg3 = zoneCoverageGraph(city, { zone, direction: 'undirected', depotId, closedSegments: [seg] });
+    const exp3 = solveZoneCoverage(zg3.graph, { direction: 'undirected', depotId });
+    if (!exp3.ok) throw new Error(exp3.message);
+    expect(Math.abs(cmp.baseline.distanceM - exp2.route.totalDistance)).toBeLessThan(1e-6);
+    expect(Math.abs(cmp.scenario.distanceM - exp3.route.totalDistance)).toBeLessThan(1e-6);
   });
 });

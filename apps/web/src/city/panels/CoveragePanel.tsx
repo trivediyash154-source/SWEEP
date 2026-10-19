@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { CityModel } from '@sweep/engine';
 import { Icon } from '../../components/Icon';
 import { useCity } from '../store';
-import { coverageKey, useCoverage } from '../coverageStore';
+import { coverageKey, useCoverage, type PlanSummary } from '../coverageStore';
 import { useScenarios } from '../scenario';
 import { fmtDist, fmtTime, nodeLabel } from './RouteLab';
 import { estimateCost } from '../costModel';
@@ -58,10 +58,51 @@ function NumberField({ label, value, onChange, min, max, step, placeholder, test
   );
 }
 
+const methodWord = (p: PlanSummary) => (p.optimal ? 'proven optimal' : p.method === 'heuristic-candidate-matching' ? 'heuristic, with bound' : 'exact, connectors added');
+
+function CompareTable({ baseline, scenario, name }: { baseline: PlanSummary | { error: string }; scenario: PlanSummary | { error: string }; name: string }) {
+  const ok = (x: PlanSummary | { error: string }): x is PlanSummary => !('error' in x);
+  const rows: [string, (p: PlanSummary) => number, (v: number) => string][] = [
+    ['Total distance', (p) => p.distanceM, fmtDist],
+    ['Transit (deadhead)', (p) => p.transitM, fmtDist],
+    ['Finish (makespan)', (p) => p.makespanS, fmtTime],
+    ['Vehicle hours', (p) => p.vehicleSeconds, fmtTime],
+  ];
+  return (
+    <table className="sc-table" data-testid="cov-comparison">
+      <thead>
+        <tr>
+          <th />
+          <th scope="col">Baseline</th>
+          <th scope="col">{name}</th>
+          <th scope="col">Change</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(([label, get, f]) => (
+          <tr key={label}>
+            <th scope="row">{label}</th>
+            <td>{ok(baseline) ? f(get(baseline)) : 'no plan'}</td>
+            <td>{ok(scenario) ? f(get(scenario)) : 'no plan'}</td>
+            <td>{ok(baseline) && ok(scenario) ? `${get(scenario) - get(baseline) >= 0 ? '+' : '−'}${f(Math.abs(get(scenario) - get(baseline)))}` : '–'}</td>
+          </tr>
+        ))}
+        <tr>
+          <th scope="row">Method</th>
+          <td>{ok(baseline) ? methodWord(baseline) : baseline.error}</td>
+          <td>{ok(scenario) ? methodWord(scenario) : scenario.error}</td>
+          <td />
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
 export function CoveragePanel() {
   const city = useCity((s) => s.city)!;
   const pickTarget = useCity((s) => s.pickTarget);
   const cv = useCoverage();
+  const activeScenario = useScenarios((s) => s.scenarios.find((x) => x.id === s.activeId));
   useScenarios((s) => s.activeId + s.scenarios.length); // re-render when the scenario changes (stale flag)
   const classes = useClasses(city);
   const pick = (t: 'zone-a' | 'depot' | 'dump') => useCity.getState().setPickTarget(pickTarget === t || (t === 'zone-a' && pickTarget === 'zone-b') ? null : t);
@@ -337,6 +378,25 @@ export function CoveragePanel() {
             })()}
             <p className="faint small">Estimates from the numbers you enter, applied to this plan's distances and vehicle hours. Nothing here is a measured municipal figure. The 2.68 kg/L default is the usual combustion factor for diesel; change it for other fuels.</p>
           </fieldset>
+
+          <section className="sc-compare" aria-label="Scenario impact on coverage">
+            <h3>Scenario impact</h3>
+            {!activeScenario || activeScenario.id === 'baseline' ? (
+              <p className="faint small">Create a scenario (closures, direction changes) in the Scenarios tab to compare this plan against the baseline network.</p>
+            ) : (
+              <>
+                <p className="faint small">
+                  Same zone, depot and fleet, planned on the baseline and on <strong>{activeScenario.name}</strong>.
+                </p>
+                <button type="button" className="btn btn--primary btn--sm" disabled={cv.comparing} onClick={() => void cv.compare()} data-testid="cov-compare">
+                  {cv.comparing ? <span className="spinner" aria-hidden="true" /> : null} Compare with baseline
+                </button>
+                {cv.comparison && cv.comparison.key === coverageKey(cv) && (
+                  <CompareTable baseline={cv.comparison.baseline} scenario={cv.comparison.scenario} name={activeScenario.name} />
+                )}
+              </>
+            )}
+          </section>
 
           <details className="cv-checks" data-testid="cov-checks">
             <summary>

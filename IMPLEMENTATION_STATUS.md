@@ -51,18 +51,18 @@ This is a living record of the city-scale redesign: what exists, what was verifi
 
 ## Implementation sequence
 
-| Phase | Scope | Status |
-|---|---|---|
-| 1 | Audit and baseline | done |
-| 2 | Pune data: tiled acquisition, merge, validation, provenance, bundled offline dataset | partial: the pipeline is done and tested, but the bundle was built from 34 of 85 tile files and the acquisition is still resuming (see `HANDOFF.md` §3) |
-| 3 | Real geographic renderer; Velvet and Porcelain materials | done in `/workspace`. Measured roof/ground contrast is 6.14:1 in Velvet and 1.52:1 in Porcelain (e2e). The landing page and lab Velvet materials were lifted. |
-| 4 | Point-to-point Dijkstra and A* with validation and a recorded search trace | done and tested (engine and e2e) |
-| 5 | Bidirectional search, ALT and Contraction Hierarchies, with equivalence tests | done and tested. All 5 algorithms agree to 1e-9 on the real network. |
-| 6 | Travel-time profiles, restrictions, reachability | done and tested: car, truck, bicycle and foot profiles; turn penalties; via-node restrictions; 5/10/15-minute reachability nests |
-| 7 | Coverage on real extracts: exact, directed, scalable heuristic with lower bound, multi-vehicle | engine done and tested (21 tests). **UI not built yet.** |
-| 8 | Fleet planning, scenarios, shift timeline, report | routing scenarios (closures and direction changes) done with baseline comparison. The fleet engine is done. Coverage UI, timeline, cost model and report are **not built yet**. |
-| 9 | Full test suite, browser inspection of both themes, performance measurements | partial. Engine 154/154; web 9/9; city e2e 8/8. The last full e2e run had 44 passing and 4 failing (listed in `HANDOFF.md` §3). |
-| 10 | Documentation | not started (beyond this file and `HANDOFF.md`) |
+| Phase | Scope | Status | Evidence |
+|---|---|---|---|
+| 1 | Audit and baseline | done | this file, Phase 1 section |
+| 2 | Pune data: tiled acquisition, merge, validation, provenance, bundled offline dataset | **partial data**; pipeline done | `scripts/city/*`: polite, resumable, with a quadrant fallback and Retry-After. Raw tiles are committed under `data/cache/osm/`. The bundled `pune-bibwewadi.json` was built from 34 of 85 tile files; the cache now holds 47. The UI shows "partial" and lists the missing tiles. |
+| 3 | Geographic renderer; Velvet and Porcelain scene materials | done | Measured roof/ground contrast is 6.14:1 in Velvet and 1.52:1 in Porcelain (e2e). The theme switch rebuilds the 3D scene (e2e). Same-camera captures are made by `scripts/city-screenshots.mjs`. |
+| 4 | Dijkstra and A* with validation and the real search trace | done | engine tests; e2e (UI cost equals the engine optimum) |
+| 5 | Bidirectional search, ALT and CH; equivalent queries and costs | done | all 5 agree to 1e-9 on synthetic and real networks (engine and e2e); bench in `TEST_PLAN.md` |
+| 6 | Travel time vs distance, profiles, restrictions, turn penalties, reachability | done | car, truck, bicycle and walking, with stated assumptions; via-node restrictions (via-way restrictions are counted as unsupported); the 5 ⊆ 10 ⊆ 15-minute nesting is tested |
+| 7 | Coverage: exact undirected preserved; directed min-cost flow; scalable heuristic with lower bound; multi-vehicle | done | engine (21 coverage tests); UI with rectangle and circle zones, e2e against `solveZoneCoverage` and `planFleet`. Polygon zones are engine-only. |
+| 8 | Fleet planning, scenarios with real recalculation, cost model, report | done | coverage vs baseline comparison (e2e); cost and CO₂ from user assumptions only (unit and e2e tests); printable coverage and route reports (e2e). Depot, fleet and profile variants stored inside a scenario are **not built**. |
+| 9 | Deterministic shift timeline replacing the speed buttons | done | `timeline.ts` (unit tests: exact times, determinism, monotonicity); e2e checks that it ends at the engine makespan |
+| 10 | Tests, measurements, docs, final report | in progress | Locally: engine 154, server 38, web 16, e2e 50 (49 of 49 passed in the last full run, before the circle-fleet test was added). CI was green on `17f7e22`. `ARCHITECTURE`, `MATHEMATICAL_SPEC`, `SECURITY`, `DEPLOYMENT` and `README` are updated; `TEST_PLAN` is pending a fresh `pnpm verify`. |
 
 ## Reference repository
 

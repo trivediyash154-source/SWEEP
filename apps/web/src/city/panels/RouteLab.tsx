@@ -6,9 +6,10 @@ import { ALL_ALGORITHMS, useRoute } from '../routeStore';
 import { ALGO_COLOR } from '../overlays';
 import { segmentLabel } from '../Inspector';
 import { useScenarios } from '../scenario';
+import { RouteReport } from './RouteReport';
 
-const ALGO_LABEL: Record<AlgorithmId, string> = { dijkstra: 'Dijkstra', astar: 'A*', bidirectional: 'Bidirectional', alt: 'ALT', ch: 'Contraction Hierarchies' };
-const PROFILE_LABEL: Record<ProfileId, string> = { car: 'Car', truck: 'Truck', bicycle: 'Bicycle', foot: 'Walking' };
+export const ALGO_LABEL: Record<AlgorithmId, string> = { dijkstra: 'Dijkstra', astar: 'A*', bidirectional: 'Bidirectional', alt: 'ALT', ch: 'Contraction Hierarchies' };
+export const PROFILE_LABEL: Record<ProfileId, string> = { car: 'Car', truck: 'Truck', bicycle: 'Bicycle', foot: 'Walking' };
 
 export const fmtDist = (m: number): string => (!Number.isFinite(m) ? '–' : m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`);
 export const fmtTime = (s: number): string => {
@@ -140,6 +141,7 @@ export function RouteLab() {
   const scenarioName = useScenarios((s) => s.scenarios.find((x) => x.id === s.activeId)?.name ?? '');
   const r = useRoute.getState();
   const [showAssumptions, setShowAssumptions] = useState(false);
+  const [report, setReport] = useState(false);
 
   const agree = useMemo(() => {
     if (!runs || runs.length < 2) return null;
@@ -273,6 +275,10 @@ export function RouteLab() {
             </button>
             <span className="faint small">The glow replays the recorded settle order of {active ? ALGO_LABEL[active] : 'the algorithm'}, then drives the route.</span>
           </div>
+          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setReport(true)} data-testid="route-open-report">
+            <Icon name="table" size={13} /> Printable report
+          </button>
+          {report && <RouteReport onClose={() => setReport(false)} />}
           {meta && (
             <p className="faint small">
               Graph: {meta.graphStats.allowedArcs.toLocaleString()} permitted directed arcs, {meta.graphStats.transitions.toLocaleString()} turn transitions{meta.graphBuildMs ? ` (built in ${meta.graphBuildMs.toFixed(0)} ms)` : ''}.

@@ -57,6 +57,11 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     const settled = async (a: string) => Number((await page.getByTestId(`settled-${a}`).innerText()).replace(/,/g, ''));
     expect(await settled('alt')).toBeLessThan(await settled('dijkstra'));
     expect(await settled('ch')).toBeLessThan(await settled('dijkstra'));
+    // The printable report carries the same rows.
+    await page.getByTestId('route-open-report').click();
+    await expect(page.getByTestId('rep-route')).toContainText('All 5 algorithms return the same optimal travel time');
+    for (const a of ['dijkstra', 'astar', 'bidirectional', 'alt', 'ch']) await expect(page.getByTestId(`rep-row-${a}`)).toContainText((await page.getByTestId(`settled-${a}`).innerText()).trim());
+    await page.getByTestId('route-report-close').click();
     // Shortest-distance objective is a different, equally exact query.
     await page.getByTestId('objective-distance').click();
     await expect(page.getByTestId('route-agreement')).toContainText('same optimal distance');

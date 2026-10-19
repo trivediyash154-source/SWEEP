@@ -401,7 +401,7 @@ Original plan, for reference:
 * Extend `scenario.ts` so a scenario also holds depot, fleet size, profile and cost assumptions.
 * Comparing with the baseline must rerun both coverage plans. Show the deltas in km, hours, vehicles and estimated cost and CO₂.
 
-### 4.6 Printable report: DONE for coverage plans (`panels/CoverageReport.tsx`, print CSS in `city.css`; e2e-checked). Still to do: a Route Lab report.
+### 4.6 Printable report: DONE for coverage plans (`panels/CoverageReport.tsx`, print CSS in `city.css`; e2e-checked). Route Lab report: DONE (`panels/RouteReport.tsx`, e2e-checked).
 
 Original plan, for reference:
 

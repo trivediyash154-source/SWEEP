@@ -11,6 +11,37 @@ SWEEP is an urban route-intelligence platform. You build, import or acquire a st
 
 No account is needed for any of it.
 
+## City workspace: real Pune (`/workspace`)
+
+The city workspace runs on real OpenStreetMap data for Pune, Bibwewadi and the VIT area (about 4 × 4 km). The bundled extract is **partial**; the app shows which tiles are missing.
+
+| Item | Count |
+|---|---|
+| Street segments | 3,103 (203.69 km) |
+| Building footprints | 6,725 |
+
+Most building heights are estimates, and the app flags them as such.
+
+* **Route lab: who reaches first, and why.**
+  * Five algorithms answer the same turn-aware query on the same graph with the same cost: Dijkstra, A*, bidirectional Dijkstra, ALT and contraction hierarchies.
+  * Profiles: car, truck, bicycle and walking.
+  * Every route is checked by an independent validator.
+  * Replay shows each algorithm's real settle order.
+  * Reachability bands show what can be reached in 5, 10 and 15 minutes.
+* **Coverage & fleet.**
+  * Draw a service zone and place a depot (and optionally a disposal site), then plan routes that cover every street in the zone.
+  * Methods:
+    * respecting one-way streets: exact directed min-cost flow;
+    * ignoring them: exact undirected matching, or for large zones a heuristic reported with a valid lower bound and gap.
+  * Multi-vehicle plans with shift and capacity limits, with their lower bounds.
+  * A deterministic shift timeline.
+  * Cost and CO₂ estimates from your own assumptions.
+  * A printable report.
+* **Scenarios.**
+  * Close a road or change its direction on the map, then recompute routes and coverage against the unchanged baseline.
+
+The original abstract-network laboratory (editor, proofs, Zurich sample) is at `/lab`. To refresh the Pune data, run `pnpm city:acquire pune-bibwewadi` (resumable and polite to the public Overpass servers), then `pnpm city:build pune-bibwewadi`. See `HANDOFF.md` and `IMPLEMENTATION_STATUS.md` for the current state.
+
 ![Workspace, Velvet theme: the 3D district with the spectral route and the vehicle](docs/screenshots/workspace-velvet.png)
 
 | Real OSM data, directed (Porcelain) | Mathematical investigation |
@@ -121,6 +152,7 @@ Street data acquired or bundled from OpenStreetMap is © OpenStreetMap contribut
 * **Disconnected required streets.** These make the rural postman problem NP-hard, so SWEEP refuses them, explains why, and suggests connectors.
 * **Fleets.** Fleet plans split one certified route and come with the stated bound; they are not proven min–max optima. There are no capacities, time windows or turn costs.
 * **Size.** Exact undirected matching is limited to 600 odd intersections in interactive use, and a map acquisition to 4 km².
-* **3D context.** Buildings in the 3D city are procedural context generated from the streets, not real footprints; the legend says so.
+* **3D context.** In the lab (`/lab`), buildings are procedural context generated from the streets. In the city workspace (`/workspace`) they are real OSM footprints, but most heights are flagged estimates.
+* **Pune extract.** The bundled Pune data is partial (public Overpass mirrors often time out). Turn restrictions are via-node only.
 * **Accounts.** There is no password reset, because no email service is configured.
 * **Hosting.** There is no public deployment yet; see [DEPLOYMENT.md](DEPLOYMENT.md).

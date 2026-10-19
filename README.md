@@ -37,6 +37,7 @@ Building heights come from the OSM `height` tag or `building:levels` for a handf
     * ignoring them: exact undirected matching, or for large zones a heuristic reported with a valid lower bound and gap.
   * Multi-vehicle plans with shift and capacity limits, with their lower bounds. When the limits need more vehicles than you have, the plan says how many routes it needs instead of claiming a result.
   * Several depots in one plan, each with its own vehicles: streets go to the depot with the cheapest round trip, and the lower bounds hold for any split between depots.
+  * Main roads within a deadline (optional): trunk to tertiary roads must be serviced within a set time of the shift start, for example before the morning traffic. The plan shows when each vehicle finishes them, and lower bounds on that finish time and on the vehicles needed. When those bounds prove the deadline impossible, the plan says so.
   * Turn-aware order (on by default): the same street traversals and the same distance, reordered to avoid U-turns and right turns (traffic keeps left). The plan reports the turn counts, the turn-penalty time and a lower bound on it.
   * A deterministic shift timeline.
   * Cost and CO₂ estimates from your own assumptions, applied to the distance and hours the vehicles actually drive.
@@ -134,12 +135,12 @@ Latest recorded run (2026-10-19, 55-tile Pune bundle): **all green**, locally an
 
 | Suite | Count |
 |---|---|
-| Engine | 170 tests |
+| Engine | 178 tests |
 | Server | 38 tests |
 | Web | 29 tests |
 | Oracle, undirected | 661 graphs, checked against networkx and brute force |
 | Oracle, directed and mixed | 1,401 graphs, checked against networkx min-cost flow and a state-space search |
-| Browser | 54 end-to-end and accessibility tests, desktop and mobile, both themes, including 14 on the real Pune data checked against independent engine runs |
+| Browser | 55 end-to-end and accessibility tests, desktop and mobile, both themes, including 15 on the real Pune data checked against independent engine runs |
 
 Details are in [TEST_PLAN.md](TEST_PLAN.md).
 
@@ -165,7 +166,7 @@ Street data acquired or bundled from OpenStreetMap is © OpenStreetMap contribut
 
 * **Mixed networks.** The *either direction* rule is exact only up to 12 required two-way streets; larger instances are refused with an explanation rather than approximated.
 * **Disconnected required streets.** These make the rural postman problem NP-hard. The lab refuses them, explains why and suggests connectors. The city workspace joins them with shortest connector paths and reports the result with a lower bound and gap, never as optimal.
-* **Fleets.** In the lab, fleet plans split one certified route and come with the stated bound; there are no capacities or time windows. In the city workspace, fleet plans handle capacity, a shift limit and a disposal site; they are heuristics reported with valid lower bounds and gaps, not proven optima. Coverage plans order their streets to reduce turn penalties, but they do not choose extra streets to avoid turns, and they do not model time windows.
+* **Fleets.** In the lab, fleet plans split one certified route and come with the stated bound; there are no capacities or time windows. In the city workspace, fleet plans handle capacity, a shift limit and a disposal site; they are heuristics reported with valid lower bounds and gaps, not proven optima. Coverage plans order their streets to reduce turn penalties, but they do not choose extra streets to avoid turns. The only time window is the main-roads deadline (latest finish, one depot); earliest-start windows are not modelled.
 * **Size.** Exact undirected matching is limited to 600 odd intersections in interactive use, and a map acquisition to 4 km².
 * **3D context.** In the lab (`/lab`), buildings are procedural context generated from the streets. In the city workspace (`/workspace`) they are real OSM footprints, but most heights are flagged estimates.
 * **Pune extract.** The bundled Pune data is partial: 55 of 85 tile downloads, because the public Overpass mirrors often time out and some environments block them. The region-wide turn-restriction query is among the missing downloads, so no turn restrictions are applied yet; when present, only via-node restrictions are supported.

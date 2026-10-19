@@ -64,6 +64,7 @@ export const DEFAULT_FLEET: FleetSettings = {
   serviceSpeedKmh: 8,
   deadheadSpeedKmh: 20,
   dumpSeconds: 0,
+  priorityDeadlineSeconds: null,
 };
 
 interface CoverageState {

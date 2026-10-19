@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { cityTurnOptions, decodeCityBundle, orderCoverageForTurns, planFleet, planMultiDepotFleet, solveZoneCoverage, TurnModel, zoneCoverageGraph, type CheckResult, type CityModel, type CoverageResult, type FleetPlan, type FleetTurns, type RouteStep, type TurnOptions, type TurnPenalties, type TurnTally, type Zone, type ZoneReport } from '@sweep/engine';
+import { cityTurnOptions, decodeCityBundle, orderCoverageForTurns, planFleet, planMultiDepotFleet, solveZoneCoverage, TurnModel, zoneCoverageGraph, type CheckResult, type CityModel, type CoverageResult, type FleetPlan, type FleetPriority, type FleetTurns, type RouteStep, type TurnOptions, type TurnPenalties, type TurnTally, type Zone, type ZoneReport } from '@sweep/engine';
 import type { ScenarioSpec } from './router.worker';
 
 /**
@@ -19,7 +19,12 @@ export interface FleetSettings {
   serviceSpeedKmh: number;
   deadheadSpeedKmh: number;
   dumpSeconds: number;
+  /** Main roads must be serviced within this many seconds of the shift start (null or absent: no deadline). */
+  priorityDeadlineSeconds?: number | null;
 }
+
+/** OSM highway classes treated as main roads for the priority deadline. */
+export const MAIN_ROAD_CLASSES: readonly string[] = ['trunk', 'trunk_link', 'primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link'];
 
 export type CoverageRequest =
   | { id: number; op: 'init'; url: string }
@@ -42,6 +47,8 @@ export interface VehicleRoute {
   seconds: number;
   trips: number;
   feasible: { capacity: boolean; shift: boolean };
+  /** When this vehicle's last main road is serviced, in seconds after the shift start (null: none, or no deadline). */
+  priorityFinishSeconds: number | null;
 }
 
 export interface CoveragePlanResult {
@@ -75,6 +82,8 @@ export interface CoveragePlanResult {
   routes: VehicleRoute[];
   /** Turns of the planned routes (truck turn penalties, left-hand traffic). Not included in the route times. */
   turns: PlanTurns;
+  /** The main-roads deadline: what the plan achieves and the engine's bounds (null: no deadline set). */
+  priority: FleetPriority | null;
 }
 
 export interface PlanTurns {
@@ -109,7 +118,7 @@ function fleetTurns(t: FleetTurns | null, graph: CoverageResult['graph'], steps:
 
 const KIND = { service: 0, repeat: 1, deadhead: 2 } as const;
 
-function toVehicleRoute(c: CityModel, nodeOfVertex: Map<string, number>, vehicle: number, steps: RouteStep[], extra: { depotNode: number; dumpAfterStep: number[]; seconds: number; trips: number; feasible: { capacity: boolean; shift: boolean } }): VehicleRoute {
+function toVehicleRoute(c: CityModel, nodeOfVertex: Map<string, number>, vehicle: number, steps: RouteStep[], extra: { depotNode: number; dumpAfterStep: number[]; seconds: number; trips: number; feasible: { capacity: boolean; shift: boolean }; priorityFinishSeconds?: number | null }): VehicleRoute {
   const arcs = new Int32Array(steps.length);
   const kinds = new Uint8Array(steps.length);
   const lengths = new Float64Array(steps.length);
@@ -126,7 +135,7 @@ function toVehicleRoute(c: CityModel, nodeOfVertex: Map<string, number>, vehicle
     if (s.kind === 'service') serviceM += s.weight;
     else deadheadM += s.weight;
   });
-  return { vehicle, arcs, kinds, lengths, distanceM, serviceM, deadheadM, ...extra };
+  return { vehicle, arcs, kinds, lengths, distanceM, serviceM, deadheadM, ...extra, priorityFinishSeconds: extra.priorityFinishSeconds ?? null };
 }
 
 function plan(req: Extract<CoverageRequest, { op: 'plan' }>): CoveragePlanResult {
@@ -148,16 +157,20 @@ function plan(req: Extract<CoverageRequest, { op: 'plan' }>): CoveragePlanResult
   zg.graph.vertices.forEach((v, i) => nodeOfVertex.set(v.id, zg.vertexNode[i]!));
 
   const f = req.fleet;
-  if (req.extraDepots && req.extraDepots.length > 0) return planSeveralDepots(req, zg, nodeOfVertex, depotId, dumpId);
+  const deadline = f.priorityDeadlineSeconds ?? null;
+  if (req.extraDepots && req.extraDepots.length > 0) {
+    if (deadline !== null) throw new Error('The main-roads deadline is supported for plans from one depot only. Remove the extra depots or switch the deadline off.');
+    return planSeveralDepots(req, zg, nodeOfVertex, depotId, dumpId);
+  }
 
   const turnAware = req.turnAware !== false;
   const raw = solveZoneCoverage(zg.graph, { direction: req.direction, depotId });
   if (!raw.ok) throw new Error(raw.message);
-  const needsFleet = f.vehicles > 1 || f.capacity !== null || f.shiftSeconds !== null || dumpId !== null;
+  const needsFleet = f.vehicles > 1 || f.capacity !== null || f.shiftSeconds !== null || dumpId !== null || deadline !== null;
   // A single route is reordered here; fleet routes are reordered by planFleet, one by one.
   const ordered = turnAware && !needsFleet ? orderCoverageForTurns(raw, rules!) : null;
   const cov = ordered ?? raw;
-  const base: Omit<CoveragePlanResult, 'fleet' | 'routes' | 'turns'> = {
+  const base: Omit<CoveragePlanResult, 'fleet' | 'routes' | 'turns' | 'priority'> = {
     report: zg.report,
     direction: cov.direction,
     method: cov.method,
@@ -180,7 +193,7 @@ function plan(req: Extract<CoverageRequest, { op: 'plan' }>): CoveragePlanResult
     const turns: PlanTurns = ordered
       ? { ordered: true, penalties: rules!.penalties, restrictions: restrictionCount, before: ordered.turns.before, after: ordered.turns.after, lowerBound: ordered.turns.lowerBound, optimal: ordered.turns.optimal, keptRoutes: 0 }
       : fleetTurns(null, cov.graph, [cov.route.steps]);
-    return { ...base, fleet: null, turns, routes: [toVehicleRoute(c, nodeOfVertex, 0, cov.route.steps, { depotNode: req.depotNode, dumpAfterStep: [], seconds, trips: 1, feasible: { capacity: true, shift: true } })] };
+    return { ...base, fleet: null, turns, priority: null, routes: [toVehicleRoute(c, nodeOfVertex, 0, cov.route.steps, { depotNode: req.depotNode, dumpAfterStep: [], seconds, trips: 1, feasible: { capacity: true, shift: true } })] };
   }
   const fp = planFleet(cov.graph, {
     vehicles: f.vehicles,
@@ -196,13 +209,15 @@ function plan(req: Extract<CoverageRequest, { op: 'plan' }>): CoveragePlanResult
     dumpSeconds: f.dumpSeconds,
     coverage: cov,
     turns: turnAware ? rules : null,
+    priority: deadline !== null ? { edgeIds: cov.graph.edges.filter((e) => e.required && MAIN_ROAD_CLASSES.includes(e.roadClass ?? '')).map((e) => e.id), deadlineSeconds: deadline } : null,
   });
   if (!fp.ok) throw new Error(fp.message);
   return {
     ...base,
     turns: fleetTurns(fp.turns, cov.graph, fp.routes.map((r) => r.steps)),
     fleet: { guarantee: fp.guarantee, totals: fp.totals, lowerBounds: fp.lowerBounds, gaps: fp.gaps, feasibility: fp.feasibility, validationOk: fp.validation.ok, checks: fp.validation.checks, timingsMs: fp.timingsMs },
-    routes: fp.routes.map((r) => toVehicleRoute(c, nodeOfVertex, r.vehicle, r.steps, { depotNode: req.depotNode, dumpAfterStep: r.dumpAfterStep, seconds: r.seconds, trips: r.tripLoads.length || 1, feasible: r.feasible })),
+    priority: fp.priority,
+    routes: fp.routes.map((r) => toVehicleRoute(c, nodeOfVertex, r.vehicle, r.steps, { depotNode: req.depotNode, dumpAfterStep: r.dumpAfterStep, seconds: r.seconds, trips: r.tripLoads.length || 1, feasible: r.feasible, priorityFinishSeconds: r.priorityFinishSeconds })),
   };
 }
 
@@ -268,6 +283,7 @@ function planSeveralDepots(req: Extract<CoverageRequest, { op: 'plan' }>, zg: Re
       timingsMs: { coverage: 0, table: 0, split: 0, localSearch: 0, expand: 0, verify: 0, total: md.timingsMs.total },
     },
     turns: fleetTurns(md.turns, zg.graph, md.routes.map((r) => r.steps)),
+    priority: null,
     routes: md.routes.map((r) => toVehicleRoute(c, nodeOfVertex, r.vehicle, r.steps, { depotNode: nodeOfDepot.get(r.depotId)!, dumpAfterStep: r.dumpAfterStep, seconds: r.seconds, trips: r.tripLoads.length || 1, feasible: r.feasible })),
   };
 }

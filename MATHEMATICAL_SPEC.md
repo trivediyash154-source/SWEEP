@@ -320,7 +320,36 @@ Distances, times, loads and every bound of §13–15 are unchanged. Turn penalty
 * On the real Pune network (directed and undirected), the reordered route keeps every traversal and passes the route verification.
 * End to end, the UI shows the engine's counts.
 
-## 17. References
+## 17. Priority deadline (`planFleet` option `priority`, `engine/coverage/carp.ts`)
+
+**Model.** A set P of required streets (in the UI: the main roads, trunk to tertiary with their links) must be serviced within a deadline T after the shift starts, for example before the morning traffic. In directed mode both directions of a two-way priority street are priority obligations. A route meets the deadline when the service of its last priority obligation ends by T. Times use the route's own timing (§14): service at v_service, every other movement at v_transit, plus the unloading time after each unloading. Earliest-start windows (service not before a time) are not modelled.
+
+**Method** (heuristic, never called optimal). The deadline is one more route constraint, next to capacity and shift: it applies in the route evaluation, in both splits (with and without a disposal site) and in the local search. Moves that would make a priority street late are rejected. The split runs from three starting points, and the better plan (by the objective) that meets the deadline is kept:
+
+1. the coverage route's task order (as without a deadline);
+2. the same order with the priority obligations first (stable);
+3. two-phase: the priority obligations split into at most k routes, the other obligations split likewise, and the longest priority part paired with the shortest remainder. A remainder appended after a priority part leaves that part's finish times unchanged.
+
+A turn-aware order (§16) that would service a priority street after a deadline the planned order met is not applied to that route. When even one priority obligation cannot be serviced by T if driven to first, straight from the depot, no fleet of any size can meet the deadline. The plan then ignores it, says so, and reports how late each vehicle is.
+
+**Lower bounds.** These are valid for every plan with at most k vehicles. Let a = the shortest access time from the depot to the start of any priority obligation, S = the total priority service time, and travel be timed at max(v_service, v_transit), so the bounds hold whichever speed applies.
+
+* **Finish time** ≥ max( max over priority obligations o of [access time to o + service time of o], a + S ÷ k ). Every obligation must be reached from the depot and serviced. Some vehicle services at least S ÷ k of priority streets, and before its first one it needs at least a.
+* **Vehicles needed** ≥ ⌈S ÷ (T − a)⌉ when T > a. Before the deadline, each vehicle services priority streets for at most T − a. When T ≤ a, no vehicle can even reach a priority street in time.
+
+When the finish bound exceeds T, or the vehicles needed exceed k, the plan states that no plan with k vehicles can meet the deadline. When the plan meets the bound exactly, its priority finish time is optimal for that fleet size.
+
+**Independent check.** `verifyFleetPlan` recomputes every route's priority finish time from the street-level steps and checks it against T and against the time the plan reports.
+
+**Tests.**
+
+* On a synthetic grid, a deadline that the coverage order misses is met. A deadline the bounds prove impossible for one vehicle gets the over-fleet diagnosis. A deadline no fleet can meet is planned without it, and the plan says so.
+* On 24 random priority sets, deadlines, fleets and directions, the independent check agrees with the plan, and the bounds hold whenever the plan has at most k routes. A proven-impossible deadline is never reported as met.
+* The verifier catches late and tampered finish times. A turn-aware order never makes a met deadline late.
+* On the real Pune network, main roads first, with and without turn order.
+* End to end, the UI shows the engine's finish times, verdict and bounds.
+
+## 18. References
 
 * L. Euler, *Solutio problematis ad geometriam situs pertinentis*, 1736.
 * C. Hierholzer, *Über die Möglichkeit, einen Linienzug ohne Wiederholung und ohne Unterbrechung zu umfahren*, Math. Ann., 1873.

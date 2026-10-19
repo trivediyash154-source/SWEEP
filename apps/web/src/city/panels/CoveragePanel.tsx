@@ -3,6 +3,7 @@ import type { CityModel } from '@sweep/engine';
 import { Icon } from '../../components/Icon';
 import { useCity } from '../store';
 import { coverageKey, effectiveInputs, summarise, useCoverage, type PlanSummary } from '../coverageStore';
+import type { FleetPriority } from '@sweep/engine';
 import type { PlanTurns } from '../coverage.worker';
 import { BASELINE, useScenarios, type Scenario } from '../scenario';
 import { fmtDist, fmtTime, nodeLabel } from './RouteLab';
@@ -65,6 +66,17 @@ export const inr = (x: number | null) => (x === null ? '–' : `₹${Math.round(
 export const pct = (x: number | null) => (x === null ? '–' : `${(x * 100).toFixed(2)} %`);
 
 /** One line on the plan's turns: counts, penalty time, and how the order compares with its bound. */
+/** The main-roads deadline in words: when the plan finishes them, against the deadline and the engine's bounds. */
+export function priorityText(p: FleetPriority, vehicles: number, routesUsed: number): string {
+  if (p.obligations === 0) return 'No main road in this zone; the deadline does not apply.';
+  const plural = vehicles === 1 ? '' : 's';
+  const verdict = p.met ? 'deadline met' : `late on vehicle${p.lateVehicles.length === 1 ? '' : 's'} ${p.lateVehicles.join(', ')}`;
+  const parts = [`${fmtDist(p.serviceMeters)} done ${fmtTime(p.finishSeconds)} after the start`, `deadline ${fmtTime(p.deadlineSeconds)}`, verdict];
+  if (p.provenInfeasible) parts.push(p.lowerBounds.vehicles === null ? 'no vehicle can reach a main road in time' : `impossible with ${vehicles} vehicle${plural}: at least ${p.lowerBounds.vehicles} needed, and no plan finishes them before ${fmtTime(p.lowerBounds.finishSeconds)}`);
+  else if (routesUsed <= vehicles) parts.push(`no plan with ${vehicles} vehicle${plural} finishes them before ${fmtTime(p.lowerBounds.finishSeconds)} (lower bound)`);
+  return parts.join(' · ');
+}
+
 export function turnSummary(t: PlanTurns): string {
   const a = t.after;
   const parts = [`${fmtTime(a.seconds)} of turn penalties: ${a.uturn} U-turns (${a.uturnsAwayFromDeadEnds} away from dead ends), ${a.right} right, ${a.left} left`];
@@ -370,7 +382,14 @@ export function CoveragePanel() {
           <NumberField label="Capacity" value={f.capacity} onChange={(v) => cv.setFleet({ capacity: v })} min={1} max={1e6} step={1} placeholder="none" unit="units" testid="cov-capacity" />
           <NumberField label="Demand" value={f.demandPerKm} onChange={(v) => cv.setFleet({ demandPerKm: v ?? 0 })} min={0} max={1e5} step={0.1} unit="units/km" testid="cov-demand" />
           <NumberField label="Unloading" value={f.dumpSeconds / 60} onChange={(v) => cv.setFleet({ dumpSeconds: Math.round((v ?? 0) * 60) })} min={0} max={240} step={1} unit="min" testid="cov-dump-min" />
+          <NumberField label="Main roads within" value={f.priorityDeadlineSeconds == null ? null : f.priorityDeadlineSeconds / 3600} onChange={(v) => cv.setFleet({ priorityDeadlineSeconds: v === null ? null : Math.round(v * 3600) })} min={0.25} max={24} step={0.25} placeholder="no deadline" unit="h" testid="cov-priority-deadline" />
         </div>
+        {f.priorityDeadlineSeconds != null && (
+          <p className="faint small" data-testid="cov-priority-note">
+            Main roads (trunk, primary, secondary and tertiary, with their links) in the zone must be serviced within {fmtTime(f.priorityDeadlineSeconds)} of the shift start, for example before the morning traffic.
+            {cv.extraDepots.length > 0 ? ' This deadline is supported for plans from one depot only: remove the extra depots or clear the deadline.' : ''}
+          </p>
+        )}
         <div className="segmented segmented--sm" role="group" aria-label="Fleet objective">
           <button type="button" aria-pressed={f.objective === 'min-makespan'} onClick={() => cv.setFleet({ objective: 'min-makespan' })} data-testid="cov-obj-makespan">
             Finish soonest
@@ -505,8 +524,8 @@ export function CoveragePanel() {
               </p>
               {r.fleet.totals.vehiclesUsed > eff.fleet.vehicles && (
                 <p className="notice notice--warn small" role="alert" data-testid="cov-overfleet">
-                  {eff.fleet.vehicles} vehicle{eff.fleet.vehicles === 1 ? '' : 's'} cannot do this work within the limits. The plan below uses {r.fleet.totals.vehiclesUsed} routes, each within the shift
-                  {r.fleet.lowerBounds.vehiclesByShift !== null ? `; any plan needs at least ${r.fleet.lowerBounds.vehiclesByShift} vehicles for this shift` : ''}. Add vehicles or lengthen the shift.
+                  {eff.fleet.vehicles} vehicle{eff.fleet.vehicles === 1 ? '' : 's'} cannot do this work within the limits. The plan below uses {r.fleet.totals.vehiclesUsed} routes, each within the shift{r.priority ? ' and the main-roads deadline' : ''}
+                  {r.fleet.lowerBounds.vehiclesByShift !== null ? `; any plan needs at least ${r.fleet.lowerBounds.vehiclesByShift} vehicles for this shift` : ''}. {r.priority ? 'Add vehicles, lengthen the shift or relax the deadline.' : 'Add vehicles or lengthen the shift.'}
                 </p>
               )}
               <dl className="cv-facts">
@@ -522,6 +541,12 @@ export function CoveragePanel() {
                   {r.fleet.lowerBounds.vehiclesByShift !== null ? ` · at least ${r.fleet.lowerBounds.vehiclesByShift} needed for the shift limit` : ''}
                   {r.fleet.lowerBounds.vehiclesByCapacity !== null ? ` · at least ${r.fleet.lowerBounds.vehiclesByCapacity} by capacity` : ''}
                 </dd>
+                {r.priority && (
+                  <>
+                    <dt>Main roads</dt>
+                    <dd data-testid="cov-priority">{priorityText(r.priority, eff.fleet.vehicles, r.fleet.totals.vehiclesUsed)}</dd>
+                  </>
+                )}
                 <dt>Feasible</dt>
                 <dd data-testid="cov-feasible">{r.fleet.feasibility.ok ? 'yes' : `no: ${r.fleet.feasibility.issues.join('; ')}`}</dd>
               </dl>
@@ -536,6 +561,7 @@ export function CoveragePanel() {
                 <th scope="col">Distance</th>
                 <th scope="col">Time</th>
                 <th scope="col">Trips</th>
+                {r.priority && <th scope="col">Main roads done</th>}
               </tr>
             </thead>
             <tbody>
@@ -549,6 +575,7 @@ export function CoveragePanel() {
                   <td>{fmtDist(v.distanceM)}</td>
                   <td>{fmtTime(v.seconds)}</td>
                   <td>{v.trips}</td>
+                  {r.priority && <td data-testid={`cov-vehicle-priority-${i}`}>{v.priorityFinishSeconds === null ? '–' : `${fmtTime(v.priorityFinishSeconds)}${v.priorityFinishSeconds > r.priority.deadlineSeconds + 1e-6 ? ' (late)' : ''}`}</td>}
                 </tr>
               ))}
             </tbody>

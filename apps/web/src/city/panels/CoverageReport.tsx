@@ -6,7 +6,7 @@ import { BASELINE, useScenarios } from '../scenario';
 import { useShift } from '../shift';
 import { buildSchedule, clockLabel } from '../timeline';
 import { estimateCost } from '../costModel';
-import { METHOD_LABEL, VEHICLE_COLORS, describeOverrides, inr, pct, turnSummary } from './CoveragePanel';
+import { METHOD_LABEL, VEHICLE_COLORS, describeOverrides, inr, pct, priorityText, turnSummary } from './CoveragePanel';
 import { fmtDist, fmtTime, nodeLabel } from './RouteLab';
 import { describeZone } from '../zoneShape';
 
@@ -121,8 +121,13 @@ export function CoverageReport({ onClose }: { onClose: () => void }) {
 
         <h2>Fleet</h2>
         <p className="small">
-          {f.vehicles} vehicle{f.vehicles === 1 ? '' : 's'} · objective {f.objective === 'min-makespan' ? 'finish soonest' : 'least total driving'} · service {f.serviceSpeedKmh} km/h, transit {f.deadheadSpeedKmh} km/h · shift limit {f.shiftSeconds === null ? 'none' : fmtTime(f.shiftSeconds)} · capacity {f.capacity ?? 'none'} · unloading {Math.round(f.dumpSeconds / 60)} min. These are planning inputs, not measured values.
+          {f.vehicles} vehicle{f.vehicles === 1 ? '' : 's'} · objective {f.objective === 'min-makespan' ? 'finish soonest' : 'least total driving'} · service {f.serviceSpeedKmh} km/h, transit {f.deadheadSpeedKmh} km/h · shift limit {f.shiftSeconds === null ? 'none' : fmtTime(f.shiftSeconds)} · capacity {f.capacity ?? 'none'} · unloading {Math.round(f.dumpSeconds / 60)} min{f.priorityDeadlineSeconds != null ? ` · main roads within ${fmtTime(f.priorityDeadlineSeconds)} of the shift start` : ''}. These are planning inputs, not measured values.
         </p>
+        {r.priority && r.fleet && (
+          <p className="small" data-testid="rep-priority">
+            <strong>Main roads:</strong> {priorityText(r.priority, f.vehicles, r.fleet.totals.vehiclesUsed)}. {r.priority.lowerBounds.basis}
+          </p>
+        )}
         {r.fleet && <p className="small">{r.fleet.guarantee}</p>}
         {r.fleet && r.fleet.totals.vehiclesUsed > f.vehicles && (
           <p className="small" data-testid="rep-overfleet">

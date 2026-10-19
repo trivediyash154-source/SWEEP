@@ -126,8 +126,12 @@ export interface FleetPriority {
   met: boolean;
   /** Vehicles whose last priority street is serviced after the deadline. */
   lateVehicles: number[];
-  /** Task order the split started from: the coverage route's, or priority streets first. */
-  tour: 'coverage-order' | 'priority-first';
+  /**
+   * How the routes were built before local search: the coverage route's task order split into routes; the same
+   * order with priority streets first; or two-phase (priority streets split among the vehicles, the other
+   * streets appended to the routes); or 'deadline-ignored' when no plan can meet the deadline.
+   */
+  tour: 'coverage-order' | 'priority-first' | 'two-phase' | 'deadline-ignored';
   lowerBounds: {
     /** No plan with at most `vehiclesAvailable` vehicles services every priority street earlier. */
     finishSeconds: number;
@@ -779,25 +783,54 @@ export function planFleet(graph: Graph, opts: FleetPlanOptions): FleetPlan | Fle
   // Split (allowing more vehicles than available only to diagnose infeasibility).
   const unconstrained = opts.objective === 'min-total' && !Number.isFinite(c.Q) && !Number.isFinite(c.shift) && !c.hasPri;
   // With a priority deadline the split also starts from the order with every priority task first (stable), and
-  // keeps whichever start gives the better plan that meets the deadline.
-  const priorityFirst = c.hasPri ? [...tour.filter((it) => tasks[it.t]!.pri), ...tour.filter((it) => !tasks[it.t]!.pri)] : null;
+  // from a two-phase construction, and keeps the better plan that meets the deadline.
+  const priTour = c.hasPri ? tour.filter((it) => tasks[it.t]!.pri) : [];
+  const restTour = c.hasPri ? tour.filter((it) => !tasks[it.t]!.pri) : [];
   let tourKind: FleetPriority['tour'] = 'coverage-order';
   const splitOf = (order: Item[], kk: number): { routes: Item[][] } | null =>
     // Without capacity, shift or deadline limits, one route is optimal for the min-total objective: splitting adds
     // depot visits, which by the triangle inequality never shorten the walk.
     unconstrained ? { routes: [order.slice()] } : c.hasDump && totalDemand > 0 ? splitWithDump(c, order, kk) : splitNoDump(c, order, kk);
-  const split = (kk: number): { routes: Item[][] } | null => {
-    const a = splitOf(tour, kk);
-    if (!priorityFirst) return a;
-    const b = splitOf(priorityFirst, kk);
-    const keyOf = (x: { routes: Item[][] }): PlanKey => planKey(c, x.routes.map((r) => evalRoute(c, r)));
-    if (b && (!a || better(keyOf(b), keyOf(a)))) {
-      tourKind = 'priority-first';
-      return b;
-    }
-    tourKind = 'coverage-order';
-    return a;
+  const routeOk = (r: Item[]): boolean => {
+    const e = evalRoute(c, r);
+    return e.feasCap && e.feasShift && e.feasDeadline;
   };
+  // Two-phase: the priority streets split into at most kk routes, the other streets split likewise, then the
+  // longest priority part is paired with the shortest remainder. Appending after the priority part leaves its
+  // finish times unchanged.
+  const twoPhase = (kk: number): { routes: Item[][] } | null => {
+    const a = splitOf(priTour, kk);
+    if (!a || restTour.length === 0) return a;
+    const b = splitOf(restTour, kk);
+    if (!b) return null;
+    const pa = a.routes.map((r) => ({ r, t: evalRoute(c, r).time })).sort((x, y) => y.t - x.t);
+    const rb = b.routes.map((r) => ({ r, t: evalRoute(c, r).time })).sort((x, y) => x.t - y.t);
+    const routes: Item[][] = [];
+    for (let i = 0; i < Math.max(pa.length, rb.length); i++) routes.push([...(pa[i]?.r ?? []), ...(rb[i]?.r ?? [])]);
+    return routes.length <= kk && routes.every(routeOk) ? { routes } : null;
+  };
+  const split = (kk: number): { routes: Item[][] } | null => {
+    const candidates: [FleetPriority['tour'], { routes: Item[][] } | null][] = [['coverage-order', splitOf(tour, kk)]];
+    if (c.hasPri) candidates.push(['priority-first', splitOf([...priTour, ...restTour], kk)], ['two-phase', twoPhase(kk)]);
+    let best: { routes: Item[][] } | null = null;
+    let bestKey: PlanKey | null = null;
+    for (const [kind, x] of candidates) {
+      if (!x) continue;
+      const key = planKey(c, x.routes.map((r) => evalRoute(c, r)));
+      if (!bestKey || better(key, bestKey)) {
+        best = x;
+        bestKey = key;
+        tourKind = kind;
+      }
+    }
+    return best;
+  };
+  // A priority street that cannot be serviced by the deadline even when driven to first, straight from the depot,
+  // makes the deadline impossible for any fleet: plan without it and report how late the streets are.
+  if (c.hasPri && latestSinglePriority(c, dp, s) > c.deadline + 1e-9) {
+    c.deadline = Infinity;
+    issues.push('No plan, with any number of vehicles, can service every priority street by the deadline (see the priority bounds); the plan below ignores the deadline.');
+  }
   let sp = split(k);
   let vehiclesOk = true;
   if (!sp) {
@@ -913,7 +946,7 @@ export function planFleet(graph: Graph, opts: FleetPlanOptions): FleetPlan | Fle
   if (!capOk) issues.push('At least one route exceeds the vehicle capacity.');
   if (!shiftOk) issues.push('At least one route exceeds the shift limit.');
   if (fleet.length > k) vehiclesOk = false;
-  const priority = opts.priority ? priorityReport(c, dp, s, k, fleet, opts.priority.deadlineSeconds, tourKind) : null;
+  const priority = opts.priority ? priorityReport(c, dp, s, k, fleet, opts.priority.deadlineSeconds, Number.isFinite(c.deadline) || !c.hasPri ? tourKind : 'deadline-ignored') : null;
   if (priority && !priority.met) issues.push(`Vehicle${priority.lateVehicles.length > 1 ? 's' : ''} ${priority.lateVehicles.join(', ')} service${priority.lateVehicles.length > 1 ? '' : 's'} priority streets after the deadline.`);
   if (priority?.provenInfeasible) issues.push(`No plan with ${k} vehicle(s) can service every priority street by the deadline (see the priority bounds).`);
   return {
@@ -944,6 +977,19 @@ export function planFleet(graph: Graph, opts: FleetPlanOptions): FleetPlan | Fle
     priority,
     timingsMs: { coverage: t1 - t0, table: t2 - t1, split: t3 - t2, localSearch: t4 - t3, expand: t5 - t4, verify: t6 - t5, total: t6 - t0 },
   };
+}
+
+/** The latest, over priority tasks, of the earliest time it can be serviced: driven to first, straight from the depot. */
+function latestSinglePriority(c: Ctx, depot: number, s: Int32Array[]): number {
+  const vmax = Math.max(c.vs, c.vd);
+  let latest = 0;
+  c.tasks.forEach((t, i) => {
+    if (!t.pri) return;
+    let single = Infinity;
+    for (let o = 0; o < 2; o++) if (t.arc[o]! >= 0) single = Math.min(single, fromScaled(d(c, depot, s[o]![i]!)) / vmax + fromScaled(t.cost[o]!) / c.vs);
+    latest = Math.max(latest, single);
+  });
+  return latest;
 }
 
 /**

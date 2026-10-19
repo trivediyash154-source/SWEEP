@@ -83,7 +83,7 @@ describe('priority deadline (streets that must be serviced by a given time)', ()
     expect(p.ok).toBe(true);
     expect(p.priority!.met).toBe(true);
     expect(p.priority!.finishSeconds).toBeLessThanOrEqual(deadline);
-    expect(p.priority!.tour).toBe('priority-first');
+    expect(['priority-first', 'two-phase']).toContain(p.priority!.tour);
     expect(p.priority!.obligations).toBe(pri.length);
     expect(p.validation.ok).toBe(true);
     expect(p.feasibility.ok).toBe(true);
@@ -103,6 +103,23 @@ describe('priority deadline (streets that must be serviced by a given time)', ()
     // The over-fleet diagnosis: the plan shown needs more vehicles than are available.
     expect(p.routes.length).toBeGreaterThan(1);
     priorityInvariants(p, 1);
+  });
+
+  it('plans without the deadline, and says so, when no fleet of any size could meet it', () => {
+    const { graph, cov, pri } = setup('undirected');
+    // 30 s is less than any single tertiary segment takes to reach and service from the depot.
+    const p = planFleet(graph, { ...speeds, vehicles: 2, depotId, direction: 'undirected', objective: 'min-makespan', coverage: cov, priority: { edgeIds: pri, deadlineSeconds: 30 } }) as FleetPlan;
+    expect(p.ok).toBe(true);
+    const pr = p.priority!;
+    expect(pr.tour).toBe('deadline-ignored');
+    expect(pr.provenInfeasible).toBe(true);
+    expect(pr.lowerBounds.finishSeconds).toBeGreaterThan(30);
+    expect(pr.met).toBe(false);
+    expect(p.routes.length).toBeLessThanOrEqual(2); // a normal plan, not one route per street
+    expect(p.feasibility.ok).toBe(false);
+    expect(p.feasibility.issues.join(' ')).toMatch(/any number of vehicles/);
+    expect(p.validation.checks.find((c) => c.id === 'priority-deadline')!.passed).toBe(false);
+    priorityInvariants(p, 2);
   });
 
   it('keeps every property on random priority sets, deadlines, fleets and directions', () => {

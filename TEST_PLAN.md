@@ -10,13 +10,13 @@ Fourth session of the city redesign, on the 55-tile Pune bundle, after the third
 
 | Typecheck (engine, server, web) | `pnpm typecheck` | passed |
 | Lint (ESLint, TypeScript rules, React hooks) | `pnpm lint` | passed, 0 warnings |
-| Engine unit + property tests | `pnpm --filter @sweep/engine test` | **170 / 170 passed** (16 files, including routing, coverage, several depots and turn order on the real Pune bundle) |
+| Engine unit + property tests | `pnpm --filter @sweep/engine test` | **178 / 178 passed** (17 files, including routing, coverage, several depots, turn order and the priority deadline on the real Pune bundle) |
 | Server integration tests | `pnpm --filter @sweep/server test` | **38 / 38 passed** |
 | Web unit tests | `pnpm --filter @sweep/web test` | **29 / 29 passed** (10 files) |
 | Python oracle, undirected | `pnpm test:oracle` | **661 graphs; 537 compared with networkx, 439 with brute force; all agree**. The other 124 were rejected by SWEEP, and the oracle confirmed each has genuinely disconnected required streets. The real Zurich sample is included as its explicit undirected relaxation (one-way restrictions ignored). |
 | Python oracle, directed and mixed | `pnpm test:oracle` | **1,401 graphs; 490 compared with networkx min-cost flow, 681 with a state-space search; all agree**. The other 610 were rejected by SWEEP, and the oracle confirmed each has no legal covering closed walk or has disconnected required streets. |
 | Production build | `pnpm build` (and `pnpm build:static`) | passed |
-| End-to-end + accessibility | `pnpm test:e2e` | **54 / 54 passed** in 11.7 min, one worker (desktop 1440×900 and mobile 390×844, both themes). The intermittent page-load freeze (about 1 page load in 200 in earlier runs) was fixed in the third session (`HANDOFF.md` §4.1) |
+| End-to-end + accessibility | `pnpm test:e2e` | **55 / 55 passed** in 12.4 min, one worker (desktop 1440×900 and mobile 390×844, both themes). The intermittent page-load freeze (about 1 page load in 200 in earlier runs) was fixed in the third session (`HANDOFF.md` §4.1) |
 
 Bugs that the end-to-end suite found during the workspace redesign, and that were then fixed:
 

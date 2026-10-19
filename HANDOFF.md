@@ -217,10 +217,10 @@ Four sessions have worked on this branch. The third added several depots, turn-a
 ### Checks that pass (2026-10-19, fourth session, 55-tile bundle)
 
 * `pnpm typecheck` ✓ and `pnpm lint` ✓ (0 warnings).
-* Unit tests: engine 170/170 (16 files), server 38/38, web 29/29.
+* Unit tests: engine 178/178 (17 files), server 38/38, web 29/29.
 * Both Python oracles: all comparisons agree.
 * `pnpm build` and `pnpm build:static` ✓.
-* E2E: **54 of 54 passed** in a full local run (11.7 min, one worker), 14 of them on the real Pune data.
+* E2E: **55 of 55 passed** in a full local run (12.4 min, one worker), 15 of them on the real Pune data (after the priority deadline was added).
 * CI (`verify` and `docker`) green on `c4ae948`.
 * The static build, served by a plain file server with no API, was checked in headless Chromium: landing page, lab, `/#/workspace` city load, the Route lab (all five algorithms agree) and a coverage plan, with no console errors or failed requests.
 
@@ -269,9 +269,9 @@ pnpm city:build pune-bibwewadi                                                  
 | 3 Renderer and themes | done for the workspace; same-camera screenshots of both themes in `docs/screenshots/city-*.png`; page-load freeze fixed (§4.1) |
 | 4–6 Routing, profiles, reachability | done and tested; printable Route lab report with route sheet done and tested |
 | 7 Coverage | done: rectangle, circle and polygon zones; turn-aware order; faster whole-network bound; engine and UI tested against each other |
-| 8 Fleet, scenarios, cost, report | done: multi-vehicle plans with honest over-fleet diagnosis, several depots, scenario plan overrides (depot, vehicles, shift, costs) with baseline comparison, cost from the routes actually driven, printable coverage report, GPX/CSV exports |
+| 8 Fleet, scenarios, cost, report | done: multi-vehicle plans with honest over-fleet diagnosis, several depots, a main-roads deadline with bounds, scenario plan overrides (depot, vehicles, shift, costs) with baseline comparison, cost from the routes actually driven, printable coverage report, GPX/CSV exports |
 | 9 Shift timeline | done, including multi-vehicle plans (e2e) |
-| 10 Docs, full verify, final report | docs refreshed in the fourth session (README, IMPLEMENTATION_STATUS, TEST_PLAN, DEPLOYMENT, this file, `docs/FINAL_REPORT.md`); MATHEMATICAL_SPEC §12–16 |
+| 10 Docs, full verify, final report | docs refreshed in the fourth session (README, IMPLEMENTATION_STATUS, TEST_PLAN, DEPLOYMENT, this file, `docs/FINAL_REPORT.md`); MATHEMATICAL_SPEC §12–17 |
 | 11 Public deployment | not done: the owner asked for the Vercel deployment to be updated; see §5 |
 
 ---
@@ -334,7 +334,14 @@ Profiled on the whole 47-tile network (3,032 odd intersections): the optional op
   * The bundle has no mapped turn restrictions yet: the region-wide restriction query has not been fetched. Banned-turn handling is tested on synthetic instances only.
   * UI: "Order turns" option (on by default), a Turns row in the results and the report.
   * Tests: engine (7, including exhaustive search), e2e against the engine.
-* **Not built:** coverage with time windows (streets that must be serviced within given hours). The coverage solvers also do not choose deadhead streets to reduce turns; only the order is turn-aware.
+* **Priority deadline (time windows, latest finish): DONE** (fourth session).
+  * Engine: `planFleet` option `priority: { edgeIds, deadlineSeconds }`. The deadline is a route constraint in evaluation, both splits and local search. Three starting points: coverage order, priority first, and two-phase (priority streets split among the vehicles, the rest appended). A turn order never makes a met deadline late.
+  * Bounds valid for any plan with k vehicles: the finish time, and the vehicles needed (MATHEMATICAL_SPEC §17). A proven-impossible deadline gets the over-fleet diagnosis. If no fleet of any size can meet it, the plan ignores it and says so.
+  * `verifyFleetPlan` recomputes every priority finish time from the steps.
+  * UI: "Main roads within" (hours) in the Fleet settings, a "Main roads" result row, a per-vehicle "Main roads done" column, and the report. Main roads are trunk to tertiary with their links. One depot only: the engine refuses it with several depots.
+  * Real Pune, 400 m zone, 2 vehicles: a 10-minute deadline is met (9.0 min) with a 159-minute shift, against 158.8 min at a 20-minute deadline.
+  * Tests: engine (8), e2e against the engine.
+* **Not built:** earliest-start windows (service not before a time), the deadline with several depots, and per-street windows chosen in the UI. The coverage solvers also do not choose deadhead streets to reduce turns; only the order is turn-aware.
 
 ## 5. Deployment note
 

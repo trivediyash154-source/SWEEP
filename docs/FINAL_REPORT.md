@@ -6,7 +6,7 @@
 
 ## 1. Files changed
 
-The redesign spans 45 commits since `918dac0` (plus two merge commits): 129 files, about 17,700 lines added. That count excludes the raw OSM tile cache and the bundled city file.
+The redesign spans 49 commits since `918dac0` (plus two merge commits): 128 files, about 18,400 lines added. That count excludes the raw OSM tile cache and the bundled city file.
 
 * **Data pipeline.**
   * `data/regions/pune-bibwewadi.json` (region definition);
@@ -20,7 +20,7 @@ The redesign spans 45 commits since `918dac0` (plus two merge commits): 129 file
   * `src/p2p/`: the turn-expanded routing graph, profiles, Dijkstra, A*, bidirectional search, ALT, CH, the validator and reachability;
   * `src/coverage/`: zone graphs, connectors, lower bounds, the scalable heuristic, zone coverage, multi-vehicle CARP, several depots (`multidepot.ts`), turn-aware order (`turns.ts`) and a sparse assignment solver for the lower bound (`assignment.ts`);
   * `src/mincostflow.ts` and `src/coverage/arcs.ts`: typed-array heaps (same ordering as before, so results are bit-identical);
-  * tests in `test/city.test.ts`, `p2p.test.ts`, `p2p.real.test.ts`, `coverage.test.ts`, `assignment.test.ts`, `multidepot.test.ts` and `turns.test.ts`; benchmarks in `bench/p2p.ts` and `bench/coverage.ts`.
+  * tests in `test/city.test.ts`, `p2p.test.ts`, `p2p.real.test.ts`, `coverage.test.ts`, `assignment.test.ts`, `multidepot.test.ts`, `turns.test.ts` and `priority.test.ts`; benchmarks in `bench/p2p.ts` and `bench/coverage.ts`.
 
   The exact undirected Chinese Postman solver and all of its tests are unchanged.
 * **Web.**
@@ -29,13 +29,13 @@ The redesign spans 45 commits since `918dac0` (plus two merge commits): 129 file
   * `components/WebGLBoundary.tsx` around every 3D scene, and `lib/webgl.ts` no longer creates a throwaway probe context (the cause of the intermittent page-load freeze).
   * The old abstract lab moved to `/lab`.
 * **Tests and CI.**
-  * `e2e/city.spec.ts`: 14 real-data tests, each checked against independent engine runs (routing, reachability, closures, theme contrast in both themes, building identification, rectangle, circle and free-outline zones, fleets with a shift limit, several depots, turn-aware order on and off, scenario comparisons, the route report, GPX and CSV downloads);
+  * `e2e/city.spec.ts`: 15 real-data tests, each checked against independent engine runs (routing, reachability, closures, theme contrast in both themes, building identification, rectangle, circle and free-outline zones, fleets with a shift limit, several depots, turn-aware order on and off, a main-roads deadline, scenario comparisons, the route report, GPX and CSV downloads);
   * web unit tests for zone geometry, the route sheet (on 60 real routes), the exports, formats, the cost model and the timeline;
   * `e2e/png.ts`: pixel contrast measurement;
   * Playwright now runs one worker with explicit SwiftShader;
   * the CI job timeout is now 45 min.
 * **Docs.**
-  * `README`, `ARCHITECTURE`, `MATHEMATICAL_SPEC` (§12–16, references in §17), `SECURITY`, `DEPLOYMENT`, `TEST_PLAN`, `IMPLEMENTATION_STATUS`, `HANDOFF`;
+  * `README`, `ARCHITECTURE`, `MATHEMATICAL_SPEC` (§12–17, references in §18), `SECURITY`, `DEPLOYMENT`, `TEST_PLAN`, `IMPLEMENTATION_STATUS`, `HANDOFF`;
   * screenshots in `docs/screenshots/city-*.png`.
 
 ## 2. Dataset and extent
@@ -80,6 +80,7 @@ Same-camera captures on the 55-tile bundle: `docs/screenshots/city-velvet.png` a
   * undirected relaxation: exact Edmonds–Johnson up to 600 odd intersections, otherwise a candidate-matching heuristic.
 * **Fleet.** Route-first, cluster-second CARP: an optimal split of the coverage tour under capacity, shift and disposal-site constraints, then deterministic local search. When the limits need more routes than there are vehicles, the UI says so instead of reporting a makespan.
 * **Several depots.** Streets go to the depot with the cheapest round trip, then each depot is planned as above. The lower bounds hold for any partition of the streets between depots.
+* **Main roads within a deadline.** Trunk to tertiary roads must be serviced within a set time of the shift start. The deadline is a route constraint in the split and the local search, with a two-phase start (main roads split among the vehicles, the other streets appended). On a 400 m zone with 2 vehicles, a 10-minute deadline is met (9.0 min) with a 159-minute shift, against 158.8 min at a 20-minute deadline.
 * **Turn-aware order.** The same street traversals in an order with fewer U-turns and right turns (traffic keeps left): an exact pairing of arrivals and departures at each intersection, then sub-tours merged cheapest first. The distance never changes. On a 600 m zone around VIT, with one-way streets respected, turn penalties fell from 229 to 143 min against a lower bound of 132 min, in about 20 ms.
 * **Scenarios.** Closures and direction changes, plus per-scenario operation changes (depot, fleet size, shift limit, fuel price and wage). "Compare with baseline" plans both sides and shows the change in distance, hours, vehicles, fuel, CO₂ and cost.
 * **Shift timeline.** A deterministic clock replaces the old speed buttons.
@@ -94,6 +95,7 @@ Same-camera captures on the 55-tile bundle: `docs/screenshots/city-velvet.png` a
   * The heuristic never claims optimality.
   * Lower bounds are the T-join bound (exact matching, or the fractional-matching LP dual) for undirected plans, and min-cost flow for directed ones.
 * **Fleet.** No optimality is claimed. Valid lower bounds on total distance, makespan and vehicles needed are reported with the gaps, and infeasible plans are reported as infeasible. With several depots the same holds, and the bounds are valid for any split of the streets between depots.
+* **Deadline.** Meeting the deadline is checked independently from the street-level steps. The plan reports lower bounds on the main-roads finish time and on the vehicles needed, valid for any plan with the available vehicles; when they prove the deadline impossible, the plan says so instead of claiming it.
 * **Turns.** The turn-aware order is a heuristic. Its turn-penalty time is reported with a lower bound that holds for every order of the same traversals; it never claims the fewest possible turns.
 * **Not modelled.** Live traffic, legal vehicle dimensions, time-of-day rules and measured fuel. Speeds, turn penalties, fleet parameters and cost rates are labelled assumptions or user inputs.
 
@@ -102,12 +104,12 @@ Same-camera captures on the 55-tile bundle: `docs/screenshots/city-velvet.png` a
 | Suite | Result |
 |---|---|
 | Typecheck and lint | clean (0 warnings) |
-| Engine | 170 / 170 (16 files) |
+| Engine | 178 / 178 (17 files) |
 | Server | 38 / 38 |
 | Web | 29 / 29 |
 | Python oracle | 661 undirected and 1,401 directed/mixed graphs; all comparisons agree |
 | Build (server and static) | passed |
-| End-to-end and axe (both themes, desktop and mobile) | 54 / 54 (11.7 min, one worker), 14 of them on the real Pune data |
+| End-to-end and axe (both themes, desktop and mobile) | 55 / 55 (12.4 min, one worker), 15 of them on the real Pune data |
 | Static build in a browser, no API server | landing, lab, city load, Route lab and a coverage plan; no console errors or failed requests |
 
 These are the fourth session's runs on the 55-tile bundle, as the separate steps of `pnpm verify`. CI (`verify` and `docker`) was green on `c4ae948`. Test expectations are computed from the bundle, never hard-coded. The intermittent page-load freeze (about 1 page load in 200 in test runs) was traced to a throwaway WebGL probe context and fixed: in a tight reload loop, 0 stalls in 120 page loads after the fix, against 11 in 60 before.
@@ -156,6 +158,6 @@ docker compose up --build
 * **Data.** 30 of 85 tile files, including the restriction query, are still missing. The current environment's proxy refuses every Overpass host (HTTP 403); the owner must allow one (for example `maps.mail.ru`) in the environment's network settings. The acquisition then resumes from its manifest.
 * **Building heights.** OSM has height data for 15 of 11,854 footprints, so almost all heights are flagged estimates.
 * **Turn restrictions.** None are mapped yet (the restriction query is missing), so banned-turn handling in the turn-aware order is tested on synthetic instances only.
-* **Not built.** A per-scenario travel-profile variant, and coverage with time windows. The coverage solvers do not choose extra deadhead streets to avoid turns; only the order is turn-aware.
+* **Not built.** A per-scenario travel-profile variant, earliest-start windows, and the main-roads deadline with several depots. The coverage solvers do not choose extra deadhead streets to avoid turns; only the order is turn-aware.
 * **Reference repository.** The "reverse engineering" repository mentioned at the start was never received (no URL arrived), so it has **not** been reviewed.
 * **Deployment.** The Vercel deployment (https://sweep-ashy.vercel.app) is an earlier static build without the city workspace. The owner has asked for it to be updated; the fourth session could not, because its Vercel connector was refused (HTTP 403) for the project's team. The static build itself is ready and was checked in a browser (§7).

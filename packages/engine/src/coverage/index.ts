@@ -6,3 +6,4 @@ export * from './heuristic.js';
 export * from './solveCoverage.js';
 export * from './carp.js';
 export * from './multidepot.js';
+export * from './turns.js';

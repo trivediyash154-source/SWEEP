@@ -2,6 +2,7 @@ import type { CheckResult, Graph, RouteStep } from '../types.js';
 import { fromScaled, toScaled } from '../units.js';
 import { arcDijkstra, buildArcGraph, treePath, type ArcGraph } from './arcs.js';
 import { solveZoneCoverage, type CoverageResult } from './solveCoverage.js';
+import { addTallies, orderForTurns, TurnModel, type TurnOptions, type TurnTally } from './turns.js';
 
 /**
  * Multi-vehicle street coverage: the capacitated arc routing problem (CARP)
@@ -64,6 +65,8 @@ export interface FleetPlanOptions {
   maxEvaluations?: number;
   /** Refuse instances whose distance table would exceed this many endpoints (default 4 000). */
   maxEndpoints?: number;
+  /** Reorder each route's turns (same streets and length; see turns.ts). Routes that unload mid-way keep their order. */
+  turns?: TurnOptions | null;
 }
 
 export interface FleetRoute {
@@ -81,6 +84,20 @@ export interface FleetRoute {
   tripLoads: number[];
   intermediateDumps: number;
   feasible: { capacity: boolean; shift: boolean };
+  /** Turns of this route, when turn rules were given. */
+  turns?: TurnTally;
+}
+
+/** Turns over all routes (turn rules given). Penalty seconds are reported apart from the route times. */
+export interface FleetTurns {
+  before: TurnTally;
+  after: TurnTally;
+  /** Valid for every order of the same traversals; null when a route that unloads mid-way kept its order. */
+  lowerBound: { seconds: number; banned: number } | null;
+  reorderedRoutes: number;
+  /** Routes that unload at the disposal site keep their order (the loads between unloadings depend on it). */
+  keptRoutes: number;
+  optimal: boolean;
 }
 
 export interface FleetLowerBounds {
@@ -107,6 +124,7 @@ export interface FleetPlan {
   localSearch: { evaluations: number; applied: number; before: { distance: number; makespanSeconds: number }; after: { distance: number; makespanSeconds: number } };
   validation: { ok: boolean; checks: CheckResult[]; perVehicle: CheckResult[][] };
   coverage: CoverageResult;
+  turns: FleetTurns | null;
   timingsMs: { coverage: number; table: number; split: number; localSearch: number; expand: number; verify: number; total: number };
 }
 
@@ -670,7 +688,29 @@ export function planFleet(graph: Graph, opts: FleetPlanOptions): FleetPlan | Fle
   const t4 = now();
 
   // Expand routes into street-level steps.
-  const fleet: FleetRoute[] = routes.map((seq, vi) => expandRoute(c, work, seq, vi + 1));
+  let fleet: FleetRoute[] = routes.map((seq, vi) => expandRoute(c, work, seq, vi + 1));
+  let turns: FleetTurns | null = null;
+  if (opts.turns) {
+    const model = new TurnModel(work, opts.turns);
+    const orders = fleet.map((r) => (r.dumpAfterStep.length ? null : orderForTurns(work, r.steps, opts.depotId, opts.turns!)));
+    const beforeT = fleet.map((r, i) => orders[i]?.before ?? model.tally(r.steps));
+    fleet = fleet.map((r, i) => {
+      const o = orders[i];
+      if (!o?.reordered) return { ...r, turns: beforeT[i]! };
+      return { ...r, steps: o.steps, tasks: o.steps.filter((x) => x.kind === 'service').map((x) => ({ edgeId: x.edgeId, from: x.from, to: x.to })), turns: o.after };
+    });
+    const kept = orders.filter((o) => o === null).length;
+    const lb = kept ? null : orders.reduce((x, o) => ({ seconds: x.seconds + o!.lowerBound.seconds, banned: x.banned + o!.lowerBound.banned }), { seconds: 0, banned: 0 });
+    const after = addTallies(fleet.map((r) => r.turns!));
+    turns = {
+      before: addTallies(beforeT),
+      after,
+      lowerBound: lb,
+      reorderedRoutes: orders.filter((o) => o?.reordered).length,
+      keptRoutes: kept,
+      optimal: !!lb && after.seconds <= lb.seconds + 1e-9 && after.banned <= lb.banned,
+    };
+  }
   const t5 = now();
   const v = verifyFleetPlan(work, fleet, { depotId: opts.depotId, dumpId: opts.dumpId ?? null, directed, capacity: c.Q, shiftSeconds: c.shift, serviceSpeedKmh: opts.serviceSpeedKmh, deadheadSpeedKmh: opts.deadheadSpeedKmh, dumpSeconds: c.dumpSec, demandPerKm });
   const t6 = now();
@@ -745,6 +785,7 @@ export function planFleet(graph: Graph, opts: FleetPlanOptions): FleetPlan | Fle
     },
     validation: v,
     coverage,
+    turns,
     timingsMs: { coverage: t1 - t0, table: t2 - t1, split: t3 - t2, localSearch: t4 - t3, expand: t5 - t4, verify: t6 - t5, total: t6 - t0 },
   };
 }

@@ -6,6 +6,7 @@ import { verifyRoute, verifyDirectedRoute } from '../verify.js';
 import { buildArcGraph } from './arcs.js';
 import { planConnectors, undirectedLowerBound, directedLowerBound, type LowerBound } from './bounds.js';
 import { undirectedCoverageHeuristic, type HeuristicResult } from './heuristic.js';
+import { orderForTurns, type TurnOptions, type TurnOrder } from './turns.js';
 
 /**
  * Coverage of a zone's required streets by one closed route from a depot.
@@ -80,7 +81,7 @@ export interface CoverageFailure {
 const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 /** Recompute kinds and cumulative distances of a route against the given graph and service rule. */
-function relabel(graph: Graph, steps: RouteStep[], directed: boolean): CoverageRoute {
+export function relabelCoverageRoute(graph: Graph, steps: RouteStep[], directed: boolean): CoverageRoute {
   const edges = new Map(graph.edges.map((e) => [e.id, e]));
   const done = new Set<string>();
   let cum = 0;
@@ -205,7 +206,7 @@ export function solveZoneCoverage(zoneGraph: Graph, opts: CoverageOptions): Cove
 
   // 4. Lower bound for the original (serviceable) problem.
   const exactOriginal = method !== 'heuristic-candidate-matching' && plan.arcs.length === 0;
-  const route = relabel(graph, rawSteps, directed);
+  const route = relabelCoverageRoute(graph, rawSteps, directed);
   let lowerBound: LowerBound | null;
   if (exactOriginal) lowerBound = { value: route.totalDistance, method: directed ? 'min-cost-flow-balance' : 't-join-exact-matching', requiredLength: route.requiredDistance, detail: 'The exact optimum of the original problem (no connector was needed).' };
   else lowerBound = directed ? directedLowerBound(graph) : undirectedLowerBound(graph, opts.forceHeuristic ? 0 : (opts.exactMaxOdd ?? 600));
@@ -246,4 +247,19 @@ export function solveZoneCoverage(zoneGraph: Graph, opts: CoverageOptions): Cove
     checks,
     timingsMs: { prepare: t1 - t0, solve: t2 - t1, bound: t3 - t2, verify: t4 - t3, total: t4 - t0 },
   };
+}
+
+/**
+ * The same coverage route with its turns reordered (`orderForTurns`): identical
+ * traversals and length, fewer turn penalties and banned turns where possible.
+ * The route is re-verified on the zone graph.
+ */
+export function orderCoverageForTurns(cov: CoverageResult, opts: TurnOptions): CoverageResult & { turns: TurnOrder } {
+  const directed = cov.direction === 'directed';
+  const turns = orderForTurns(cov.graph, cov.route.steps, cov.depotId, opts);
+  if (!turns.reordered) return { ...cov, turns };
+  const route = relabelCoverageRoute(cov.graph, turns.steps, directed);
+  const v = directed ? verifyDirectedRoute(cov.graph, route.steps, { depotId: cov.depotId, twoWay: 'both', expectedTotal: route.totalDistance }) : verifyRoute(cov.graph, route.steps, { depotId: cov.depotId, expectedTotal: route.totalDistance });
+  const lb = cov.checks.find((c) => c.id === 'lower-bound');
+  return { ...cov, route, checks: [...v.checks, ...(lb ? [lb] : [])], turns: { ...turns, steps: route.steps } };
 }

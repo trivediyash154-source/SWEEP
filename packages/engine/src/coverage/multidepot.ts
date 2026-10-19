@@ -1,7 +1,8 @@
 import type { CheckResult, Graph } from '../types.js';
 import { fromScaled } from '../units.js';
 import { arcDijkstra, buildArcGraph } from './arcs.js';
-import { planFleet, type FleetFailure, type FleetPlan, type FleetPlanOptions, type FleetRoute } from './carp.js';
+import { planFleet, type FleetFailure, type FleetPlan, type FleetPlanOptions, type FleetRoute, type FleetTurns } from './carp.js';
+import { addTallies } from './turns.js';
 import { solveZoneCoverage, type CoverageResult } from './solveCoverage.js';
 
 /**
@@ -59,6 +60,8 @@ export interface MultiDepotPlan {
   unserviceable: string[];
   feasibility: { ok: boolean; issues: string[] };
   validation: { ok: boolean; checks: CheckResult[] };
+  /** Turns over all depots' routes (turn rules given). */
+  turns: FleetTurns | null;
   timingsMs: { partition: number; plans: number; total: number };
 }
 
@@ -185,6 +188,21 @@ export function planMultiDepotFleet(graph: Graph, opts: MultiDepotOptions): Mult
   const totalSeconds = routes.reduce((x, r) => x + r.seconds, 0);
   const vehiclesAvailable = opts.depots.reduce((x, d) => x + d.vehicles, 0);
   const lbMakespan = Math.max(worstRoundTripS, serviceM / vs / vehiclesAvailable);
+  const depotTurns = depots.filter((d) => d.plan).map((d) => d.plan!.turns);
+  let turns: FleetTurns | null = null;
+  if (opts.turns && depotTurns.length && depotTurns.every((t) => t)) {
+    const ts = depotTurns as FleetTurns[];
+    const lb = ts.every((t) => t.lowerBound) ? ts.reduce((x, t) => ({ seconds: x.seconds + t.lowerBound!.seconds, banned: x.banned + t.lowerBound!.banned }), { seconds: 0, banned: 0 }) : null;
+    const after = addTallies(ts.map((t) => t.after));
+    turns = {
+      before: addTallies(ts.map((t) => t.before)),
+      after,
+      lowerBound: lb,
+      reorderedRoutes: ts.reduce((x, t) => x + t.reorderedRoutes, 0),
+      keptRoutes: ts.reduce((x, t) => x + t.keptRoutes, 0),
+      optimal: !!lb && after.seconds <= lb.seconds + 1e-9 && after.banned <= lb.banned,
+    };
+  }
   return {
     ok: true,
     method: 'nearest-depot-partition',
@@ -201,6 +219,7 @@ export function planMultiDepotFleet(graph: Graph, opts: MultiDepotOptions): Mult
     unserviceable: [...excluded],
     feasibility: { ok: issues.length === 0, issues },
     validation: { ok: checks.every((c) => c.passed), checks },
+    turns,
     timingsMs: { partition: tPartition, plans: tPlans, total: now() - t0 },
   };
 }

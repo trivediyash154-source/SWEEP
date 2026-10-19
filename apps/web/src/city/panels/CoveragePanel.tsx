@@ -3,6 +3,7 @@ import type { CityModel } from '@sweep/engine';
 import { Icon } from '../../components/Icon';
 import { useCity } from '../store';
 import { coverageKey, effectiveInputs, summarise, useCoverage, type PlanSummary } from '../coverageStore';
+import type { PlanTurns } from '../coverage.worker';
 import { BASELINE, useScenarios, type Scenario } from '../scenario';
 import { fmtDist, fmtTime, nodeLabel } from './RouteLab';
 import { estimateCost, type CostAssumptions } from '../costModel';
@@ -62,6 +63,19 @@ function useClasses(city: CityModel) {
 
 export const inr = (x: number | null) => (x === null ? '–' : `₹${Math.round(x).toLocaleString('en-IN')}`);
 export const pct = (x: number | null) => (x === null ? '–' : `${(x * 100).toFixed(2)} %`);
+
+/** One line on the plan's turns: counts, penalty time, and how the order compares with its bound. */
+export function turnSummary(t: PlanTurns): string {
+  const a = t.after;
+  const parts = [`${fmtTime(a.seconds)} of turn penalties: ${a.uturn} U-turns (${a.uturnsAwayFromDeadEnds} away from dead ends), ${a.right} right, ${a.left} left`];
+  if (t.ordered) {
+    parts.push(`was ${fmtTime(t.before.seconds)} before ordering`);
+    if (t.lowerBound) parts.push(t.optimal ? `optimal order for these streets (bound ${fmtTime(t.lowerBound.seconds)} reached)` : `at least ${fmtTime(t.lowerBound.seconds)} for these streets`);
+    if (t.keptRoutes) parts.push(`${t.keptRoutes} route${t.keptRoutes === 1 ? '' : 's'} that unload mid-way kept their order`);
+  } else parts.push('turn order not optimised');
+  parts.push(t.restrictions ? `${a.banned} banned turn${a.banned === 1 ? '' : 's'}` : 'no turn restrictions are mapped in this extract');
+  return `${parts.join(' · ')}. Not included in the route times.`;
+}
 
 export function NumberField({ label, value, onChange, min, max, step, placeholder, testid, unit }: { label: string; value: number | null; onChange: (v: number | null) => void; min: number; max: number; step: number; placeholder?: string; testid: string; unit?: string }) {
   return (
@@ -338,6 +352,15 @@ export function CoveragePanel() {
       </fieldset>
 
       <fieldset className="cv-group">
+        <legend>Turns</legend>
+        <label className={`rl-algo${cv.turnAware ? ' is-on' : ''}`}>
+          <input type="checkbox" checked={cv.turnAware} onChange={() => cv.setTurnAware(!cv.turnAware)} data-testid="cov-turn-aware" />
+          Order turns: fewer U-turns and right turns
+        </label>
+        <p className="faint small">Same streets, same directions, same distance: only the order at intersections changes. Truck turn penalties (left-hand traffic): left 4 s, right 10 s, U-turn 20 s.</p>
+      </fieldset>
+
+      <fieldset className="cv-group">
         <legend>Fleet</legend>
         <div className="cv-grid">
           <NumberField label="Vehicles" value={f.vehicles} onChange={(v) => cv.setFleet({ vehicles: v ?? 1 })} min={1} max={20} step={1} testid="cov-vehicles" />
@@ -441,6 +464,8 @@ export function CoveragePanel() {
                 </dd>
               </>
             )}
+            <dt>Turns</dt>
+            <dd data-testid="cov-turns">{turnSummary(r.turns)}</dd>
             {r.direction === 'undirected' && (
               <>
                 <dt>Wrong-way traversals</dt>

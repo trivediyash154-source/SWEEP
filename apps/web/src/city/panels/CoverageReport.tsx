@@ -6,7 +6,7 @@ import { BASELINE, useScenarios } from '../scenario';
 import { useShift } from '../shift';
 import { buildSchedule, clockLabel } from '../timeline';
 import { estimateCost } from '../costModel';
-import { METHOD_LABEL, VEHICLE_COLORS, describeOverrides, inr, pct } from './CoveragePanel';
+import { METHOD_LABEL, VEHICLE_COLORS, describeOverrides, inr, pct, turnSummary } from './CoveragePanel';
 import { fmtDist, fmtTime, nodeLabel } from './RouteLab';
 import { describeZone } from '../zoneShape';
 
@@ -103,6 +103,8 @@ export function CoverageReport({ onClose }: { onClose: () => void }) {
         <dl className="cv-facts">
           <dt>{r.fleet ? 'Total distance, all vehicles' : 'Total distance'}</dt>
           <dd data-testid="rep-total">{fmtDist(sum.distanceM)}</dd>
+          <dt>Turns</dt>
+          <dd data-testid="rep-turns">{turnSummary(r.turns)}</dd>
           {r.fleet && (
             <>
               <dt>Single closed route</dt>

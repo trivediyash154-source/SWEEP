@@ -321,7 +321,15 @@ Profiled on the whole 47-tile network (3,032 odd intersections): the optional op
   * The lower bounds hold for any partition (MATHEMATICAL_SPEC §15).
   * UI: "Add another depot" in the Coverage panel, with vehicles per depot, per-depot results, a depot column per vehicle, map markers and the report.
   * Tests: engine (4), and e2e against the engine.
-* **Not built:** coverage with time windows or turn costs. Turn penalties exist in point-to-point routing, but the coverage solvers ignore them. Exact coverage with turn costs is NP-hard, so any version must be a heuristic with a stated bound.
+* **Turn costs in coverage: DONE** (third session), as a turn-aware order of the same traversals.
+  * Engine: `orderForTurns` (`coverage/turns.ts`). It pairs arrivals and departures exactly at each intersection, then merges the sub-tours cheapest first. The distance is unchanged.
+  * It reports the turn counts, the penalty time, and lower bounds valid for every order of the same traversals (MATHEMATICAL_SPEC §16).
+  * It runs on single routes and on fleet routes, including several depots. Routes that unload mid-way keep their order.
+  * Real Pune, 600 m zone around VIT, one-ways respected: 229 → 143 min of turn penalties, against a bound of 132 min, in about 20 ms.
+  * The bundle has no mapped turn restrictions yet: the region-wide restriction query has not been fetched. Banned-turn handling is tested on synthetic instances only.
+  * UI: "Order turns" option (on by default), a Turns row in the results and the report.
+  * Tests: engine (7, including exhaustive search), e2e against the engine.
+* **Not built:** coverage with time windows (streets that must be serviced within given hours). The coverage solvers also do not choose deadhead streets to reduce turns; only the order is turn-aware.
 
 ## 5. Deployment note
 

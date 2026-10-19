@@ -81,6 +81,8 @@ interface CoverageState {
   /** OSM highway classes to service; null = every class present. */
   roadClasses: string[] | null;
   direction: 'directed' | 'undirected';
+  /** Reorder each route's turns (fewer U-turns and right turns; same streets and distance). */
+  turnAware: boolean;
   fleet: FleetSettings;
   /** Operating-cost assumptions (user inputs; never measured values). */
   costs: CostAssumptions;
@@ -108,6 +110,7 @@ interface CoverageState {
   setDump: (n: number | null) => void;
   setRoadClasses: (c: string[] | null) => void;
   setDirection: (d: 'directed' | 'undirected') => void;
+  setTurnAware: (on: boolean) => void;
   setFleet: (f: Partial<FleetSettings>) => void;
   setCosts: (c: Partial<CostAssumptions>) => void;
   clear: () => void;
@@ -115,10 +118,10 @@ interface CoverageState {
 }
 
 /** Stable description of every input of a coverage plan, including the active scenario. */
-export function coverageKey(s: Pick<CoverageState, 'zone' | 'depot' | 'extraDepots' | 'dump' | 'roadClasses' | 'direction' | 'fleet'>): string {
+export function coverageKey(s: Pick<CoverageState, 'zone' | 'depot' | 'extraDepots' | 'dump' | 'roadClasses' | 'direction' | 'turnAware' | 'fleet'>): string {
   const active = activeScenario();
   const plan = active.plan ? { ...active.plan, costs: undefined } : null; // cost assumptions do not change the plan itself
-  return JSON.stringify([s.zone, s.depot, s.extraDepots, s.dump, s.roadClasses, s.direction, s.fleet, specOf(active).key, plan]);
+  return JSON.stringify([s.zone, s.depot, s.extraDepots, s.dump, s.roadClasses, s.direction, s.turnAware, s.fleet, specOf(active).key, plan]);
 }
 
 let runToken = 0;
@@ -136,6 +139,7 @@ export const useCoverage = create<CoverageState>((set, get) => ({
   dump: null,
   roadClasses: null,
   direction: 'directed',
+  turnAware: true,
   fleet: DEFAULT_FLEET,
   costs: DEFAULT_COSTS,
   status: 'idle',
@@ -196,6 +200,7 @@ export const useCoverage = create<CoverageState>((set, get) => ({
   setDump: (dump) => set({ dump }),
   setRoadClasses: (roadClasses) => set({ roadClasses }),
   setDirection: (direction) => set({ direction }),
+  setTurnAware: (turnAware) => set({ turnAware }),
   setFleet: (f) => set({ fleet: { ...get().fleet, ...f } }),
   setCosts: (c) => set({ costs: { ...get().costs, ...c } }),
   clear: () => set({ draft: [], zoneHint: null, zone: null, depot: null, extraDepots: [], dump: null, result: null, resultKey: null, status: 'idle', error: null }),
@@ -210,7 +215,7 @@ export const useCoverage = create<CoverageState>((set, get) => ({
     const key = coverageKey(s);
     const ask = async (scenario: ReturnType<typeof specOf>, depotNode: number, fleet: FleetSettings): Promise<PlanSummary | { error: string }> => {
       try {
-        const res = await coverage.send<Extract<CoverageResponse, { op: 'plan' }>>({ op: 'plan', zone: s.zone!, roadClasses: s.roadClasses, direction: s.direction, scenario, depotNode, dumpNode: s.dump, fleet, extraDepots: s.extraDepots });
+        const res = await coverage.send<Extract<CoverageResponse, { op: 'plan' }>>({ op: 'plan', zone: s.zone!, roadClasses: s.roadClasses, direction: s.direction, scenario, depotNode, dumpNode: s.dump, fleet, extraDepots: s.extraDepots, turnAware: s.turnAware });
         return summarise(res.result);
       } catch (e) {
         return { error: e instanceof Error ? e.message : String(e) };
@@ -249,6 +254,7 @@ export const useCoverage = create<CoverageState>((set, get) => ({
         dumpNode: s.dump,
         fleet: eff.fleet,
         extraDepots: s.extraDepots,
+        turnAware: s.turnAware,
       });
       if (token !== runToken) return;
       set({ status: 'done', result: res.result, resultKey: key });

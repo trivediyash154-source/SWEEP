@@ -282,7 +282,45 @@ The bundled Zurich sample (see `packages/engine/src/examples/data/README.md`) is
 
 The final duals satisfy u_i + v_j ≤ c_ij on every edge and are tight on the assignment, so they are optimal. The bound then clips them against every known pair and the pricing radius, as before.
 
-## 16. References
+## 16. Turns along coverage routes (`orderForTurns`, `engine/coverage/turns.ts`)
+
+Every closed walk that drives the same multiset of street traversals (same streets, same directions, same number of times) has the same length. The order in which a vehicle leaves an intersection after each arrival is still free, and it decides the turns. Choosing that order to minimise turn costs is NP-hard in general, so the method is a heuristic with a lower bound.
+
+**Turn model.** A turn from traversal a into traversal b at vertex v is:
+
+* a **U-turn** when b drives a's street back (the same rule as point-to-point routing, §12);
+* otherwise **straight**, **left** or **right** by the angle between a's last direction into v and b's first direction out of v, read from the street geometry (|angle| < 30° is straight).
+
+Penalties are the truck profile's (left-hand traffic): straight 0 s, left 4 s, right 10 s, U-turn 20 s. A mapped turn restriction that applies to trucks marks a turn as **banned**. In the optimisation a banned turn weighs 10⁶ penalty seconds, more than any difference in penalties at one intersection.
+
+**Method.**
+
+1. **Pairing.** At every vertex v, an exact assignment (§15) pairs each arrival at v with a departure from v at minimum cost. At the depot, a virtual traversal S stands for the start and the end: S → b and a → S cost nothing, and S → S is not allowed.
+2. **Merging.** The pairing splits the traversals into closed sub-tours. Two arrivals a, c at a shared vertex lie in different sub-tours. Swapping their departures (a → succ(c), c → succ(a)) joins the two sub-tours, at an added cost of c(a, succ c) + c(c, succ a) − c(a, succ a) − c(c, succ c). Merges are applied cheapest first, from a priority queue with lazy re-evaluation, until one tour remains. The traversal multigraph is connected, so this always ends in one tour.
+3. **Safeguard.** The new order is kept only if its penalised cost is no worse than the original order's.
+
+**Lower bounds.** These are valid for every order of the same traversals. Each order induces one arrival-to-departure pairing at every vertex, so its cost is at least the sum of the per-vertex optimal pairings. This gives:
+
+* a bound on penalty seconds (assignment on seconds alone);
+* separately, a bound on the number of banned turns (assignment on 0/1 costs).
+
+When the order reaches both bounds it is optimal for these traversals. A different choice of deadhead streets could turn less; the bound does not cover that.
+
+**Where it is applied.**
+
+* A single coverage route is reordered and then re-verified on the zone graph.
+* Fleet routes are reordered one by one, before the fleet verification.
+* A route that unloads at the disposal site mid-way keeps its order, because its trip loads depend on it.
+
+Distances, times, loads and every bound of §13–15 are unchanged. Turn penalty time is reported separately and is not added to route times.
+
+**Tests.**
+
+* On 140 random Euler instances, an exhaustive search over every order confirms bound ≤ optimum ≤ result ≤ original. The test also confirms that the result is optimal whenever it reaches the bound, with and without banned turns.
+* On the real Pune network (directed and undirected), the reordered route keeps every traversal and passes the route verification.
+* End to end, the UI shows the engine's counts.
+
+## 17. References
 
 * L. Euler, *Solutio problematis ad geometriam situs pertinentis*, 1736.
 * C. Hierholzer, *Über die Möglichkeit, einen Linienzug ohne Wiederholung und ohne Unterbrechung zu umfahren*, Math. Ann., 1873.

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type CDPSession, type Page } from '@playwright/test';
-import { planMultiDepotFleet, decodeCityBundle, planFleet, RoutingEngine, reachability, solveZoneCoverage, zoneCoverageGraph } from './engine';
+import { planMultiDepotFleet, decodeCityBundle, planFleet, RoutingEngine, reachability, solveZoneCoverage, zoneCoverageGraph, orderCoverageForTurns, cityTurnOptions, TurnModel } from './engine';
 import { contrastRatio, decodePng, luminanceAt } from './png';
 
 // The bundled real dataset; the UI must show exactly what the engine computes on it.
@@ -759,5 +759,78 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     // Every route belongs to one of the two depots; both depots are used.
     expect(new Set(r.routes.map((v) => v.depotNode))).toEqual(new Set([st.depot!, st.extraDepots[0]!.node]));
     for (const c of exp.validation.checks) expect(c.passed, c.detail).toBe(true);
+  });
+
+  test('turn-aware order: same streets and distance as the engine route, the engine turn counts, and a valid bound', async ({ page }) => {
+    type T = { straight: number; left: number; right: number; uturn: number; uturnsAwayFromDeadEnds: number; banned: number; seconds: number };
+    type W = {
+      __sweepCity: {
+        project: (x: number, y: number, h: number) => [number, number] | null;
+        state: () => { city: { focus: { xy: [number, number] } | null; nodeX: Float64Array; nodeY: Float64Array; nodeCount: number } };
+        coverage: () => { zone: { kind: 'circle'; cx: number; cy: number; r: number } | null; depot: number | null; result: { totals: { distanceM: number; serviceM: number }; turns: { ordered: boolean; before: T; after: T; lowerBound: { seconds: number; banned: number } | null; optimal: boolean } } | null };
+      };
+    };
+    await openCity(page);
+    await page.getByTestId('mode-coverage').click();
+    await page.getByTestId('cam-top').click();
+    await waitForCamera(page);
+    const box = (await page.getByTestId('city-stage').boundingBox())!;
+    const [cx, cy] = await page.evaluate(() => (window as unknown as W).__sweepCity.state().city.focus?.xy ?? [0, 0]);
+    const click = async (x: number, y: number) => {
+      const p = (await page.evaluate(([a, b]) => (window as unknown as W).__sweepCity.project(a!, b!, 0), [x, y]))!;
+      await page.mouse.click(box.x + ((p[0] + 1) / 2) * box.width, box.y + ((1 - p[1]) / 2) * box.height);
+    };
+    await page.getByTestId('cov-shape-circle').click();
+    await page.getByTestId('cov-draw-zone').click();
+    await click(cx, cy);
+    await click(cx + 350, cy);
+    await expect(page.getByTestId('cov-zone')).toContainText('Radius');
+    const node = await page.evaluate(([x, y]) => {
+      const c = (window as unknown as W).__sweepCity.state().city;
+      let best = 0;
+      let bd = Infinity;
+      for (let i = 0; i < c.nodeCount; i++) {
+        const d = (c.nodeX[i]! - x!) ** 2 + (c.nodeY[i]! - y!) ** 2;
+        if (d < bd) [best, bd] = [i, d];
+      }
+      return { x: c.nodeX[best]!, y: c.nodeY[best]! };
+    }, [cx, cy]);
+    await page.getByTestId('pick-depot').click();
+    await click(node.x, node.y);
+    await expect(page.getByTestId('cov-depot')).not.toHaveText(/Not set|Click/);
+    await expect(page.getByTestId('cov-turn-aware')).toBeChecked();
+    await page.getByTestId('cov-run').click();
+    await expect(page.getByTestId('cov-turns')).toBeVisible({ timeout: 120_000 });
+
+    const st = await page.evaluate(() => (window as unknown as W).__sweepCity.coverage());
+    const depotId = `n${city.nodeOsm[st.depot!]}`;
+    const zg = zoneCoverageGraph(city, { zone: st.zone!, direction: 'directed', depotId });
+    const raw = solveZoneCoverage(zg.graph, { direction: 'directed', depotId });
+    if (!raw.ok) throw new Error(raw.message);
+    const rules = cityTurnOptions(city, 'truck');
+    const exp = orderCoverageForTurns(raw, rules);
+    const on = st.result!;
+    expect(on.turns.ordered).toBe(true);
+    // Reordering never changes what is driven: the distance is the engine route's, to the millimetre.
+    expect(Math.abs(on.totals.distanceM - raw.route.totalDistance)).toBeLessThan(1e-6);
+    expect(Math.abs(on.totals.serviceM - raw.route.serviceDistance)).toBeLessThan(1e-6);
+    expect(on.turns.after).toEqual(exp.turns.after);
+    expect(on.turns.before).toEqual(exp.turns.before);
+    expect(on.turns.after.seconds).toBeLessThan(on.turns.before.seconds);
+    expect(on.turns.lowerBound!.seconds).toBeLessThanOrEqual(on.turns.after.seconds + 1e-9);
+    for (const ch of exp.checks) expect(ch.passed, `${ch.id}: ${ch.detail}`).toBe(true);
+    await expect(page.getByTestId('cov-turns')).toContainText(`${exp.turns.after.uturn} U-turns`);
+    await expect(page.getByTestId('cov-turns')).toContainText('Not included in the route times');
+
+    // Off: the engine's own order, with its turn counts.
+    await page.getByTestId('cov-turn-aware').uncheck();
+    await expect(page.getByTestId('cov-stale')).toBeVisible();
+    await page.getByTestId('cov-run').click();
+    await expect(page.getByTestId('cov-stale')).toHaveCount(0, { timeout: 120_000 });
+    const off = (await page.evaluate(() => (window as unknown as W).__sweepCity.coverage())).result!;
+    expect(off.turns.ordered).toBe(false);
+    expect(off.turns.after).toEqual(new TurnModel(raw.graph, rules).tally(raw.route.steps));
+    expect(Math.abs(off.totals.distanceM - on.totals.distanceM)).toBeLessThan(1e-6);
+    await expect(page.getByTestId('cov-turns')).toContainText('turn order not optimised');
   });
 });

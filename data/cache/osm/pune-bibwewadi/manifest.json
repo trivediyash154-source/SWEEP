@@ -794,6 +794,20 @@
    "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
    "fetchedAt": "2026-10-19T13:17:21.799Z",
    "attempts": 1
+  },
+  "t3_3:streets": {
+   "key": "t3_3",
+   "kind": "streets",
+   "bbox": [
+    18.463,
+    73.868,
+    18.469,
+    73.874
+   ],
+   "status": "failed",
+   "file": "t3_3_streets.json",
+   "attempts": 6,
+   "lastError": "HTTP 500"
   }
  }
 }

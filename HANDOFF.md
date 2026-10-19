@@ -214,8 +214,8 @@ Helpers: `e2e/png.ts` decodes screenshots for pixel measurements; `e2e/engine.ts
 
 * `pnpm typecheck` ✓ and `pnpm lint` ✓ (0 warnings).
 * Unit tests: engine 154/154, server 38/38, web 26/26.
-* E2E: **51 of 51 passed** in the last full local run (10.9 min, one worker), on the 47-tile bundle.
-* See §4.7 for the full `pnpm verify` result.
+* E2E: **51 of 51 passed** in a full local run (10.9 min, one worker), on the 47-tile bundle.
+* Last `pnpm verify` (final code of the second session): typecheck, lint, unit tests, both oracles and the build passed; the browser suite had **50 of 51**. The one failure was the known intermittent page-load freeze (§4.1) in "every algorithm returns the engine optimum"; that test and the whole city spec then passed when rerun. So `pnpm verify` did **not** exit 0 on that run.
 
 ### Bundled dataset
 
@@ -273,6 +273,8 @@ pnpm city:build pune-bibwewadi                                                  
 ### 4.1 Keep the suite green and confirm on CI
 
 Run `npx playwright test --reporter=line`. Inspect failures with `test-results/<name>/trace.zip` (unzip and read `0-trace.trace`, or `npx playwright show-trace`). Fix root causes; never weaken or delete tests.
+
+**Still open: the intermittent page-load freeze** (about 1 in 200 page loads in the second session). Evidence from the latest trace: the city JSON arrives (200), the app then requests the scene chunk, its dependencies and the geometry worker, and none of them ever reports a response; the screen stays at "Loading city…" and Playwright cannot query the DOM for 60 s. That pattern means the renderer's main thread stopped running tasks just after the city data was decoded. `openCity` in `e2e/city.spec.ts` now opens a DevTools session with the debugger enabled before navigation (detached once the city loads) and, if the city never appears, pauses the page and attaches the JavaScript stack, or reports that the thread is stuck outside JavaScript (native or GPU), as a `freeze-diagnosis` attachment. The assertion is unchanged. Read that attachment the next time it happens.
 
 **Resolved in the second session:** the intermittent "close a road" failure. The click arrived, but the picker still had the previous pick mode because the prop had not yet reached the R3F reconciler (main-thread frame gaps of up to 3 s in SwiftShader). The picker now reads the mode from a DOM-side ref.
 

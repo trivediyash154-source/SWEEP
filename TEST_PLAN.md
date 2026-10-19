@@ -6,7 +6,7 @@
 
 ## Latest recorded run (2026-10-19)
 
-The run used Linux 6.18, a 4-core Intel Xeon at 2.10 GHz, Node 22.22.0, Python 3.13 with networkx 3.5, and Chromium 141 headless (Playwright 1.56.1, software WebGL via SwiftShader). `pnpm verify` **exited with status 0**. The same checks run on GitHub Actions in the `verify` job; the `docker` job builds and smoke-tests the image (see [DEPLOYMENT.md](DEPLOYMENT.md)).
+Second session of the city redesign. The run used Linux 6.18, a 4-core Intel Xeon at 2.10 GHz, Node 22.22.0, Python 3.13 with networkx 3.5, and Chromium 141 headless (Playwright 1.56.1, software WebGL via SwiftShader). In the final `pnpm verify` every stage passed except one browser test (the intermittent page-load freeze, see the end-to-end row), so that run **exited with status 1**; the test passed on rerun, and an earlier full browser run passed 51 of 51. The same checks run on GitHub Actions in the `verify` job; the `docker` job builds and smoke-tests the image (see [DEPLOYMENT.md](DEPLOYMENT.md)).
 
 | Suite | Command | Result |
 |---|---|---|
@@ -18,7 +18,7 @@ The run used Linux 6.18, a 4-core Intel Xeon at 2.10 GHz, Node 22.22.0, Python 3
 | Python oracle, undirected | `pnpm test:oracle` | **661 graphs; 537 compared with networkx, 439 with brute force; all agree**. The other 124 were rejected by SWEEP, and the oracle confirmed each has genuinely disconnected required streets. The real Zurich sample is included as its explicit undirected relaxation (one-way restrictions ignored). |
 | Python oracle, directed and mixed | `pnpm test:oracle` | **1,401 graphs; 490 compared with networkx min-cost flow, 681 with a state-space search; all agree**. The other 610 were rejected by SWEEP, and the oracle confirmed each has no legal covering closed walk or has disconnected required streets. |
 | Production build | `pnpm build` (and `pnpm build:static`) | passed |
-| End-to-end + accessibility | `pnpm test:e2e` | **37 / 37 passed** (desktop 1440×900 and mobile 390×844, both themes) |
+| End-to-end + accessibility | `pnpm test:e2e` | **51 / 51 passed** in a full run (desktop 1440×900 and mobile 390×844, both themes). In the final `pnpm verify` run, 50 / 51: one city test hit the known intermittent page-load freeze (see `HANDOFF.md` §4.1) and passed on rerun |
 
 Bugs that the end-to-end suite found during the workspace redesign, and that were then fixed:
 

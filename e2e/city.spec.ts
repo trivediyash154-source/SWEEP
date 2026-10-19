@@ -1,15 +1,47 @@
 import { readFileSync } from 'node:fs';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type CDPSession, type Page } from '@playwright/test';
 import { decodeCityBundle, planFleet, RoutingEngine, reachability, solveZoneCoverage, zoneCoverageGraph } from './engine';
 import { contrastRatio, decodePng, luminanceAt } from './png';
 
 // The bundled real dataset; the UI must show exactly what the engine computes on it.
 const city = decodeCityBundle(JSON.parse(readFileSync(new URL('../apps/web/public/cities/pune-bibwewadi.json', import.meta.url), 'utf8')));
 
+/**
+ * Diagnostic for the rare page-load freeze (HANDOFF §4.1): pause the page's JavaScript through the DevTools
+ * protocol and attach where it stopped. If it never pauses, the main thread is inside native code (for example
+ * a synchronous call into the software GPU process). The session is opened and the debugger enabled before
+ * navigation: attaching to, or enabling the debugger on, an already-stuck page never answers, while a pause
+ * request interrupts running JavaScript. With no breakpoints the enabled debugger does not stop the page.
+ * Every call here is time-bounded; the original failure is kept.
+ */
+async function attachFreezeDiagnosis(cdp: CDPSession): Promise<void> {
+  const within = <T,>(p: Promise<T>, ms: number) => Promise.race([p, new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), ms))]);
+  let report: string;
+  try {
+    const paused = new Promise<string>((resolve) =>
+      cdp.on('Debugger.paused', (e) => resolve(e.callFrames.slice(0, 15).map((f) => `${f.functionName || '(anonymous)'} ${f.url.split('/').pop() || '(eval)'}:${f.location.lineNumber + 1}:${(f.location.columnNumber ?? 0) + 1}`).join('\n'))),
+    );
+    void cdp.send('Debugger.pause').catch(() => undefined);
+    const stack = await within(paused, 10_000);
+    report = stack === 'timeout' ? 'Debugger.pause did not take effect in 10 s: the main thread is stuck outside JavaScript (native or GPU call).' : `JavaScript stack when paused:\n${stack}`;
+  } catch (e) {
+    report = `Could not attach the debugger: ${String(e)}`;
+  }
+  await test.info().attach('freeze-diagnosis', { body: report, contentType: 'text/plain' });
+}
+
 async function openCity(page: Page, theme: 'velvet' | 'porcelain' = 'velvet'): Promise<void> {
   await page.addInitScript((t) => localStorage.setItem('sweep.theme', t), theme);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Debugger.enable');
   await page.goto('/workspace');
-  await expect(page.getByTestId('city-name')).toContainText('Pune', { timeout: 60_000 });
+  try {
+    await expect(page.getByTestId('city-name')).toContainText('Pune', { timeout: 60_000 });
+  } catch (e) {
+    await attachFreezeDiagnosis(cdp);
+    throw e;
+  }
+  await cdp.detach();
   await page.waitForFunction(() => (window as unknown as { __sweepCity?: { state: () => { meshes: unknown } } }).__sweepCity?.state().meshes, null, { timeout: 60_000 });
 }
 

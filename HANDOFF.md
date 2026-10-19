@@ -216,7 +216,7 @@ Helpers: `e2e/png.ts` decodes screenshots for pixel measurements; `e2e/engine.ts
 * `pnpm typecheck` ✓ and `pnpm lint` ✓ (0 warnings).
 * Unit tests: engine 156/156, server 38/38, web 29/29 (after the exports were added; see TEST_PLAN for the run figures).
 * E2E: **52 of 52 passed** in a full local run after the merge (one worker), on the 51-tile bundle, and in CI on `e233ff5`.
-* Latest `pnpm verify` (after the merge, docs-only changes since): typecheck, lint, unit tests, both oracles and the build passed; it was stopped at the owner's request after 39 of 52 browser tests, all passed.
+* Latest full `pnpm verify` (after the merge, docs-only changes since): **exit 0 in 745 s**; typecheck, lint, unit tests, both oracles, build and 52/52 browser tests.
 * Last `pnpm verify` (final code of the second session): typecheck, lint, unit tests, both oracles and the build passed; the browser suite had **50 of 51**. The one failure was the known intermittent page-load freeze (§4.1) in "every algorithm returns the engine optimum"; that test and the whole city spec then passed when rerun. So `pnpm verify` did **not** exit 0 on that run.
 
 ### Bundled dataset

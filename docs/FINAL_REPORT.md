@@ -105,7 +105,7 @@ Same-camera captures: `docs/screenshots/city-velvet.png` and `city-porcelain.png
 | Build | passed |
 | End-to-end and axe (both themes, desktop and mobile) | 52 / 52 in a full local run after the merge, and in CI on `e233ff5` |
 
-The last local `pnpm verify` (after the merge, docs-only changes since) passed every step up to the browser suite; that run was stopped at the owner's request after 39 of 52 browser tests, all passed. Test expectations are computed from the bundle, never hard-coded. The known intermittent page-load freeze (§11) has made single runs fail before; rerun once and read the `freeze-diagnosis` attachment if it does.
+The last full local `pnpm verify` after the merge (docs-only changes since) exited 0 in 745 s, with 52 of 52 browser tests. Test expectations are computed from the bundle, never hard-coded. The known intermittent page-load freeze (§11) has made single runs fail before; rerun once and read the `freeze-diagnosis` attachment if it does.
 
 ## 8. Performance (4-core Xeon at 2.80 GHz, Node 22.22, 51-tile bundle; details in `TEST_PLAN.md` §5)
 

@@ -63,7 +63,8 @@ const SEVERITY_ORDER: Record<Issue['severity'], number> = { error: 0, warning: 1
 
 export function Inspector() {
   const ws = useWorkspace();
-  const { graph, selection, validation, result, stale } = ws;
+  const { graph, selection, result, stale } = ws;
+  const validation = ws.failure ?? ws.validation;
   const [streetsOpen, setStreetsOpen] = useState(false);
 
   const degree = useMemo(() => {
@@ -132,12 +133,29 @@ export function Inspector() {
               )}
             </div>
             <TextField label="Street name" value={e.name ?? ''} placeholder="Unnamed street" onCommit={(name) => ws.updateEdge(e.id, { name })} />
-            <NumberField label="Length (m)" value={e.weight} onCommit={(weight) => ws.updateEdge(e.id, { weight })} testId="edge-weight" />
+            <NumberField label={e.oneway ? `Length ${e.u} → ${e.v} (m)` : 'Length (m)'} value={e.weight} onCommit={(weight) => ws.updateEdge(e.id, { weight })} testId="edge-weight" />
             <label className="switch">
               <input type="checkbox" checked={e.required} onChange={(ev) => ws.updateEdge(e.id, { required: ev.target.checked })} data-testid="edge-required" />
               <span className="switch__track" aria-hidden="true" />
               Required service street
             </label>
+            <label className="switch">
+              <input type="checkbox" checked={!!e.oneway} onChange={(ev) => ws.updateEdge(e.id, { oneway: ev.target.checked })} data-testid="edge-oneway" />
+              <span className="switch__track" aria-hidden="true" />
+              One-way ({e.u} → {e.v})
+            </label>
+            {e.oneway ? (
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => ws.reverseEdge(e.id)} data-testid="edge-reverse">
+                Reverse direction
+              </button>
+            ) : (
+              <NumberField
+                label={`Reverse cost ${e.v} → ${e.u} (directed mode)`}
+                value={e.reverseWeight ?? e.weight}
+                onCommit={(reverseWeight) => ws.updateEdge(e.id, { reverseWeight: reverseWeight === e.weight ? undefined : reverseWeight })}
+                testId="edge-reverse-weight"
+              />
+            )}
             <div className="btn-row">
               <button type="button" className="btn btn--danger btn--sm" onClick={() => ws.removeEdge(e.id)}>
                 <Icon name="delete" size={14} /> Delete street

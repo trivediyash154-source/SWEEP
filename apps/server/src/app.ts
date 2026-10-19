@@ -14,13 +14,16 @@ import {
   validateGraph,
   routeToCsv,
   edgesToCsv,
+  fleetToCsv,
   type Graph,
-  type OptimizationRecord,
+  type RoutingResult,
+  type SingleRouteRecord,
 } from './engine.js';
 import type { Db } from './db.js';
 import type { ServerConfig } from './config.js';
 import type { Solver } from './solver.js';
 import { ApiError, fail, ok } from './http.js';
+import { mapRoutes } from './maps.js';
 import {
   CSRF_COOKIE,
   SESSION_COOKIE,
@@ -40,6 +43,7 @@ import {
   geojsonImportSchema,
   graphSchema,
   optimizeSchema,
+  routeSchema,
   passwordChangeSchema,
   registerSchema,
   runCreateSchema,
@@ -63,6 +67,8 @@ export interface AppDeps {
   /** Override the clock (tests). */
   now?: () => number;
   log?: (msg: string, meta?: Record<string, unknown>) => void;
+  /** Outbound HTTP for map providers (tests inject a mock). Defaults to the global fetch. */
+  fetch?: typeof fetch;
 }
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -89,17 +95,33 @@ async function parseBody<S extends ZodType>(c: Context, schema: S): Promise<z.in
   return parsed.data;
 }
 
-function summarize(record: OptimizationRecord) {
+type RoutingOk = Extract<RoutingResult, { ok: true }>;
+
+function summarize(routing: RoutingOk) {
+  const record = routing.single;
   return {
+    mode: record.mode,
     totalDistance: record.route.totalDistance,
     requiredDistance: record.route.requiredDistance,
     repeatedDistance: record.route.repeatedDistance,
-    oddVertexCount: record.oddVertexIds.length,
+    oddVertexCount: record.mode === 'directed' ? 0 : record.oddVertexIds.length,
+    imbalancedVertexCount: record.mode === 'directed' ? record.imbalancedVertexIds.length : 0,
     steps: record.route.steps.length,
     optimal: record.algorithm.optimal,
     checksPassed: record.checks.every((ch) => ch.passed),
+    vehicles: routing.settings.vehicles,
+    makespan: routing.fleet?.makespan ?? record.route.totalDistance,
+    fleetTotal: routing.fleet?.totalDistance ?? record.route.totalDistance,
     engineVersion: record.engine.version,
   };
+}
+
+/** Runs stored before routing settings existed hold a bare undirected record. */
+function asRouting(stored: unknown): RoutingOk {
+  const r = stored as RoutingOk | (SingleRouteRecord & { single?: undefined });
+  if (r.single) return r as RoutingOk;
+  const single = { ...(r as SingleRouteRecord), mode: (r as SingleRouteRecord).mode ?? 'undirected' } as SingleRouteRecord;
+  return { ok: true, settings: { mode: 'undirected', twoWay: 'both', ignoreOneway: false, vehicles: 1, objective: 'balance', maxRouteLength: null }, single, fleet: null, fleetIssues: [] };
 }
 
 export function createApp(deps: AppDeps): Hono<Env> {
@@ -221,6 +243,13 @@ export function createApp(deps: AppDeps): Hono<Env> {
   api.post('/optimize', optimizeLimiter, async (c) => {
     const body = await parseBody(c, optimizeSchema);
     const result = await solver.solve(body.graph as Graph, body.depotId ?? body.graph.depotId ?? null);
+    return ok(c, result);
+  });
+
+  // Routing with scenario settings: undirected, directed/mixed (one-way streets) and multi-vehicle.
+  api.post('/route', optimizeLimiter, async (c) => {
+    const body = await parseBody(c, routeSchema);
+    const result = await solver.route(body.graph as Graph, body.depotId ?? body.graph.depotId ?? null, body.settings);
     return ok(c, result);
   });
 
@@ -377,14 +406,15 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const graphCheck = graphSchema.safeParse(scenario.graph);
     if (!graphCheck.success) throw new ApiError(422, 'INVALID_SCENARIO', 'Stored scenario graph is invalid.');
     const depotId = body.depotId ?? scenario.graph.depotId ?? null;
-    const result = await solver.solve(scenario.graph, depotId);
-    if (!result.ok) return ok(c, { run: null, result });
+    const routing = await solver.route(scenario.graph, depotId, body.settings);
+    if (!routing.ok) return ok(c, { run: null, result: routing });
+    const result = routing.single;
     const id = randomUUID();
     const t = now();
     db.prepare(
       'INSERT INTO runs (id, scenario_id, owner_id, engine_version, graph_hash, config_json, graph_json, summary_json, record_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    ).run(id, scenario.id, user.id, result.engine.version, result.input.graphHash, JSON.stringify({ depotId: result.input.depotId }), JSON.stringify(scenario.graph), JSON.stringify(summarize(result)), JSON.stringify(result), t);
-    return ok(c, { run: { id, scenarioId: scenario.id, createdAt: t, summary: summarize(result) }, result }, 201);
+    ).run(id, scenario.id, user.id, result.engine.version, result.input.graphHash, JSON.stringify({ depotId: result.input.depotId, ...routing.settings }), JSON.stringify(scenario.graph), JSON.stringify(summarize(routing)), JSON.stringify(routing), t);
+    return ok(c, { run: { id, scenarioId: scenario.id, createdAt: t, summary: summarize(routing) }, result, routing }, 201);
   });
 
   api.get('/scenarios/:id/runs', (c) => {
@@ -401,7 +431,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
       .prepare('SELECT r.id, r.scenario_id AS scenarioId, s.name AS scenarioName, r.graph_json AS graph, r.record_json AS record, r.created_at AS createdAt FROM runs r JOIN scenarios s ON s.id = r.scenario_id WHERE r.id = ? AND r.owner_id = ?')
       .get(id, user.id) as { id: string; scenarioId: string; scenarioName: string; graph: string; record: string; createdAt: number } | undefined;
     if (!row) throw new ApiError(404, 'NOT_FOUND', 'Run not found.');
-    return { ...row, graph: JSON.parse(row.graph) as Graph, record: JSON.parse(row.record) as OptimizationRecord };
+    const routing = asRouting(JSON.parse(row.record));
+    return { ...row, graph: JSON.parse(row.graph) as Graph, record: routing.single, routing };
   };
 
   api.get('/runs/:id', (c) => ok(c, loadRun(requireUser(c), c.req.param('id'))));
@@ -412,15 +443,29 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const base = `sweep-${run.scenarioName.replace(/[^A-Za-z0-9_-]+/g, '-').slice(0, 40) || 'run'}-${run.id.slice(0, 8)}`;
     if (format === 'json') {
       c.header('Content-Disposition', `attachment; filename="${base}.json"`);
-      return c.json({ format: 'sweep.run', version: 1, scenario: run.scenarioName, createdAt: new Date(run.createdAt).toISOString(), graph: run.graph, result: run.record });
+      return c.json({
+        format: 'sweep.run',
+        version: 2,
+        scenario: run.scenarioName,
+        createdAt: new Date(run.createdAt).toISOString(),
+        graph: run.graph,
+        settings: run.routing.settings,
+        result: run.record,
+        fleet: run.routing.fleet,
+      });
     }
-    if (format === 'route.csv' || format === 'edges.csv') {
+    if (format === 'route.csv' || format === 'edges.csv' || format === 'fleet.csv') {
+      if (format === 'fleet.csv' && !run.routing.fleet) throw new ApiError(400, 'INVALID_FORMAT', 'This run has a single vehicle; use route.csv.');
       c.header('Content-Type', 'text/csv; charset=utf-8');
       c.header('Content-Disposition', `attachment; filename="${base}-${format}"`);
+      if (format === 'fleet.csv') return c.body(fleetToCsv(run.routing.fleet!, run.graph));
       return c.body(format === 'route.csv' ? routeToCsv(run.record, run.graph) : edgesToCsv(run.record, run.graph));
     }
-    throw new ApiError(400, 'INVALID_FORMAT', 'Use format=json, route.csv or edges.csv.');
+    throw new ApiError(400, 'INVALID_FORMAT', 'Use format=json, route.csv, edges.csv or fleet.csv.');
   });
+
+  // ---- Live map acquisition: /api/maps/status, /api/maps/acquire, /api/maps/geocode (see maps.ts) ----
+  api.route('/maps', mapRoutes({ config, fetch: deps.fetch ?? ((input, init) => globalThis.fetch(input, init)), now, log, clientIp, parseBody }));
 
   api.all('*', (c) => fail(c, new ApiError(404, 'NOT_FOUND', 'No such endpoint.')));
 

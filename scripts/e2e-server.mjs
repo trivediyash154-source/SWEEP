@@ -8,7 +8,7 @@ mkdirSync('test-results', { recursive: true });
 for (const f of ['test-results/e2e.db', 'test-results/e2e.db-wal', 'test-results/e2e.db-shm']) rmSync(f, { force: true });
 const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'apps/server/dist/index.js'], {
   stdio: 'inherit',
-  env: { ...process.env, PORT: port, SWEEP_STATIC_DIR: 'apps/web/dist', SWEEP_DB_PATH: 'test-results/e2e.db', SWEEP_RATE_LIMIT: 'off' },
+  env: { ...process.env, PORT: port, SWEEP_STATIC_DIR: 'apps/web/dist', SWEEP_DB_PATH: 'test-results/e2e.db', SWEEP_RATE_LIMIT: 'off', SWEEP_MAP_CACHE_DIR: 'test-results/map-cache' },
 });
 const stop = () => child.kill('SIGTERM');
 process.on('SIGTERM', stop);

@@ -17,7 +17,7 @@ interface RemoteScenario {
   edgeCount: number;
 }
 
-const CATEGORY_LABEL: Record<string, string> = { learn: 'Learn', core: 'Core', 'edge-case': 'Edge case', scale: 'Scale' };
+const CATEGORY_LABEL: Record<string, string> = { learn: 'Learn', core: 'Core', 'edge-case': 'Edge case', scale: 'Scale', 'real-data': 'Real map' };
 
 export function LibraryPanel({ refreshKey }: { refreshKey: number }) {
   const ws = useWorkspace();
@@ -177,9 +177,10 @@ export function LibraryPanel({ refreshKey }: { refreshKey: number }) {
           type="button"
           className="btn btn--ghost btn--sm"
           onClick={() => {
-            ws.loadGraph({ format: 'sweep.graph', version: 1, name: 'Untitled network', vertices: [], edges: [] }, { kind: 'blank', id: 'blank' }, 'Untitled network');
+            ws.loadGraph({ format: 'sweep.graph', version: 1, name: 'Untitled network', vertices: [], edges: [], source: { kind: 'user' } }, { kind: 'blank', id: 'blank' }, 'Untitled network');
             ws.setTool('add');
           }}
+          data-testid="new-blank"
         >
           <Icon name="add" size={14} /> Blank
         </button>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EXAMPLES, getExample, solveChinesePostman, exhaustiveOptimalTotal, validateGraph, heroCityGraph } from './exampleHelpers.js';
+import { EXAMPLES, getExample, solveChinesePostman, solveRouting, exhaustiveOptimalTotal, validateGraph, heroCityGraph } from './exampleHelpers.js';
 
 const solve = (id: string) => {
   const ex = getExample(id)!;
@@ -11,6 +11,8 @@ const solve = (id: string) => {
 describe('bundled examples', () => {
   it('every solvable example passes all checks and is certified optimal', () => {
     for (const ex of EXAMPLES) {
+      // Examples with one-way streets declare directed routing; they are covered by the test below.
+      if (ex.graph.routing?.mode === 'directed') continue;
       const r = solveChinesePostman(ex.graph);
       if (ex.id === 'twin-districts') {
         expect(r.ok).toBe(false);
@@ -25,6 +27,25 @@ describe('bundled examples', () => {
         expect(r.route.totalDistance, ex.id).toBeCloseTo(exh.total, 9);
       }
     }
+  });
+
+  it('Zurich Altstadt (real OSM data) is solved exactly in directed mode, never by the undirected solver', () => {
+    const ex = getExample('zurich-altstadt')!;
+    expect(ex.graph.source?.kind).toBe('bundled-sample');
+    expect(ex.graph.source?.attribution).toContain('OpenStreetMap');
+    expect(ex.graph.routing?.mode).toBe('directed');
+    const strict = solveChinesePostman(ex.graph);
+    expect(strict.ok).toBe(false);
+    if (!strict.ok) expect(strict.validation.issues.map((i) => i.code)).toContain('ONEWAY_REQUIRES_DIRECTED');
+    const r = solveRouting(ex.graph);
+    if (!r.ok) throw new Error(JSON.stringify(r.validation.issues.filter((i) => i.severity === 'error')));
+    expect(r.single.mode).toBe('directed');
+    expect(r.single.checks.filter((c) => !c.passed)).toEqual([]);
+    expect(r.single.algorithm.optimal).toBe(true);
+    const relaxed = solveRouting(ex.graph, { mode: 'undirected', ignoreOneway: true });
+    if (!relaxed.ok) throw new Error('relaxation should solve');
+    expect(relaxed.single.route.totalDistance).toBeLessThan(r.single.route.totalDistance);
+    expect(relaxed.single.route.wrongWayTraversals).toBeGreaterThan(0);
   });
 
   it('Königsberg: four odd landmasses, two bridges repeated', () => {

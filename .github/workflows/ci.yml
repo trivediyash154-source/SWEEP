@@ -37,7 +37,7 @@ jobs:
         run: pnpm lint
       - name: Unit, property and integration tests
         run: pnpm test
-      - name: Python oracle (networkx + brute force)
+      - name: Python oracle (networkx, brute force, min-cost flow, state search)
         run: pnpm test:oracle
       - name: Build
         run: pnpm build

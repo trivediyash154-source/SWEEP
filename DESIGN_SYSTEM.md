@@ -22,9 +22,11 @@ Velvet is deliberately **not** blue-black, pure black or brown. It is a deep aub
 |---|---|---|---|---|
 | Required street | `--required` | `#F1E6D6` | `#2C1A3A` | thick stroke |
 | Optional street | `--optional` | `#7D6F8F` | `#A99DB0` | thin stroke |
-| Optimised route | `--route` | cyan `#75E0FF` | teal `#0A7EA6` | wide glow stroke |
-| Repeated required street | `--repeat` | coral `#FF6D86` | `#D23C5A` | coral core inside the route, plus a "×n" label |
+| Optimised route | spectral loop (`lib/spectral.ts`) | rose → gold → cyan → lavender → coral | the same loop in deeper inks | moving light band and order markers |
+| Fleet vehicle routes | spectral loop tinted per vehicle | – | – | vehicle number on the marker and in the deck |
+| Repeated traversal | `--repeat` | coral `#FF6D86` | `#D23C5A` | **striped**, drawn on its own outer lane, "×n" label |
 | Deadhead (optional, driven) | `--repeat` | coral | – | **dashed** |
+| One-way street | street colour | – | – | arrows on the road surface (3D) and the stroke (2D) |
 | Odd-degree intersection | `--odd` | lavender `#B7A6FF` | `#6148D1` | ring around the vertex |
 | Matching / auxiliary graph | `--match` | gold | antique gold | dashed chord |
 | Start | `--depot` | gold | antique gold | diamond with a "START" label |
@@ -44,20 +46,35 @@ All fonts are bundled through `@fontsource`; there are no external font requests
 
 * **Spacing:** 4-point scale (`--space-1` 4 px through `--space-10` 144 px).
 * **Radii:** 3, 6, 10, 16 px and pill.
-* **Surfaces:** hairline borders and glass panels (`--surface-glass` plus blur) are used only for floating instruments over the canvas (tool dock, legend, playback, explain bar). Panels are separated by dividers, not card grids.
+* **Surfaces:** the workspace is one long page. Its analytical surfaces C–I follow the full-bleed simulation and are separated by fine dividers, not card grids. Hairline glass panels (`--surface-glass` plus blur) are used only for instruments floating over a canvas: the camera tools, inspector, legend, playback deck and tool dock.
+* **Dimensional typography:** surface titles (`dim-title`) are extruded with five stacked one-pixel text shadows in theme inks plus a soft drop shadow, and each surface opens with a monospace eyebrow (`B · Urban simulation`).
 
 ## Motion
 
 * **Durations:** 140, 280 and 640 ms, with an `--ease-out` of `cubic-bezier(.16, 1, .3, 1)`.
 * **Purposeful motion only:** route drawing, the vehicle, odd-vertex pulse, marching connector dashes, section reveals.
-* **The spectral loop** is the slow iridescent signature: rose → gold → cyan → lavender → coral. It appears only in the wordmark, the hero word "route.", the ring of the single primary action, and the hero route tube.
+* **The spectral loop** is the slow iridescent signature: rose → gold → cyan → lavender → coral. It marks *the route and its motion* and nothing else: the wordmark, the hero word "route.", the ring of the primary action and the header mini player, the hero route tube, and the workspace route in 3D, the projection and the ribbon.
 * **Reduced motion:** `prefers-reduced-motion` or the user's "Pause motion" toggle removes all animation, disables the botanical field and shows the finished route.
 
 ## Signature effects
 
 * **BotanicalCursorField** (`components/botanical/`): cherry petals drawn with procedural Bézier shapes and a notched tip (pre-rendered sprites, three tints), plus a tapering iridescent ribbon and sparks. Petals are emitted per distance travelled, from a pool of at most 150 petals, 110 sparks and 4 blooms. The canvas has `pointer-events: none`; the loop sleeps when idle or hidden; the field is disabled for touch-first devices and reduced motion.
 * **Bloom:** clicking empty space inside `[data-bloom-zone]` (the hero and the closing section, but never controls or text) unfolds two rings of petals with a soft radial glow, rotation and sparks, then fades out.
-* **3D city:** procedural, deterministic, and generated from the network data. It uses instanced roads and buildings, a route tube with spectral (hero) or meaning-coded (workspace) vertex colours, a glowing vehicle, drifting 3D petals (hero only), restrained bloom and a vignette, and it degrades automatically on slow GPUs.
+* **Spectral route shader** (`three/materials.ts`). Every vertex of the route tube carries its **true route distance** (`aDist`) and traversal kind (`aKind`: service, repeat or deadhead). The fragment shader computes everything from `aDist` measured against the playback head, so the light follows the computed order exactly and never jumps:
+  * the colour loop and a travelling light band;
+  * a bright leading highlight at the vehicle;
+  * a trail that fades behind it, and a faint "ghost" of the road still ahead;
+  * stripes for repeats and discarded dashes for deadheads.
+
+  An additive halo tube (normal blending in Porcelain) and up to 140 spectral motes add atmosphere under restrained bloom. Repeated passes and opposite directions are drawn on separate lanes, offset to the right of travel. Under reduced motion the band stops and the frame renders on demand; without WebGL the 2D projection takes over the stage with the same palette.
+* **3D district** (`three/district.ts`). Procedural, deterministic and generated from the network data:
+  * roads with sidewalks and dashed centre lines, and one-way arrows;
+  * junction plates you can pick;
+  * buildings aligned to their nearest street, in several archetypes, with a facade window shader that is lit in Velvet and a crisp white model in Porcelain;
+  * blossom trees.
+
+  Buildings are context, not data, and the legend says so. Shadows, bloom and the vignette degrade automatically on slow GPUs.
+* **Blossom zones.** `data-petal-intensity` on an element scales the cursor field over it. The simulation uses 0.7 and the editor 0.2; nothing is emitted while you drag in the editor. The field never takes pointer events.
 
 ## Components
 

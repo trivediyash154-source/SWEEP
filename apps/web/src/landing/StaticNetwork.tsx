@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { Graph, OptimizationRecord } from '@sweep/engine';
+import type { Graph, SingleRouteRecord } from '@sweep/engine';
 import { graphBounds } from '../lib/geometry';
 import { NetworkLayers, type OverlayMode } from '../workspace/NetworkLayers';
 
@@ -16,7 +16,7 @@ export function StaticNetwork({
   dimBase = false,
 }: {
   graph: Graph;
-  result?: OptimizationRecord | null;
+  result?: SingleRouteRecord | null;
   overlay?: OverlayMode;
   explainStep?: number;
   assumedWidth?: number;

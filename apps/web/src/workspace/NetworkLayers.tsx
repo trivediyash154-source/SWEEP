@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import type { Graph, OptimizationRecord, Point, ValidationReport } from '@sweep/engine';
+import type { Graph, OptimizationRecord, Point, SingleRouteRecord, ValidationReport } from '@sweep/engine';
 import { edgeDrawPoints, midpoint, polylinePath, vertexMap } from '../lib/geometry';
 import { formatNumber } from '../lib/format';
 import '../styles/network.css';
@@ -10,7 +10,7 @@ export interface NetworkLayersProps {
   graph: Graph;
   /** current zoom (screen px per world unit) — used to keep marks a constant size */
   k: number;
-  result?: OptimizationRecord | null;
+  result?: SingleRouteRecord | null;
   overlay?: OverlayMode;
   explainStep?: number;
   validation?: ValidationReport | null;
@@ -54,8 +54,10 @@ export const NetworkLayers = memo(function NetworkLayers(props: NetworkLayersPro
 
   const resultUsable = !!result && (overlay === 'route' || overlay === 'explain');
   const step = overlay === 'explain' ? explainStep : 99;
-  const oddSet = useMemo(() => new Set(result?.oddVertexIds ?? []), [result]);
-  const added = result?.augmentation.addedCopies ?? {};
+  // Explain-only overlays exist for undirected records; directed records carry balance data instead.
+  const undirected: OptimizationRecord | null = result && result.mode !== 'directed' ? (result as OptimizationRecord) : null;
+  const oddSet = useMemo(() => new Set(undirected?.oddVertexIds ?? []), [undirected]);
+  const added = result ? (result.mode === 'directed' ? result.augmentation.addedEdgeCopies : result.augmentation.addedCopies) : {};
   const counts = result?.route.traversalCounts ?? {};
 
   const pathOf = (id: string): string => polylinePath(edgePts.get(id) ?? []);
@@ -117,18 +119,18 @@ export const NetworkLayers = memo(function NetworkLayers(props: NetworkLayersPro
       )}
 
       {/* explain: auxiliary complete graph on odd vertices */}
-      {resultUsable && overlay === 'explain' && step === 2 && result!.oddVertexIds.length <= 24 && (
+      {undirected && overlay === 'explain' && step === 2 && undirected.oddVertexIds.length <= 24 && (
         <g className="net-chords" aria-hidden="true">
-          {result!.oddVertexIds.flatMap((a, i) =>
-            result!.oddVertexIds.slice(i + 1).map((b, jj) => {
+          {undirected.oddVertexIds.flatMap((a, i) =>
+            undirected.oddVertexIds.slice(i + 1).map((b, jj) => {
               const pa = vm.get(a);
               const pb = vm.get(b);
               if (!pa || !pb) return null;
-              const d = result!.oddDistanceMatrix?.[i]?.[i + 1 + jj];
+              const d = undirected.oddDistanceMatrix?.[i]?.[i + 1 + jj];
               return (
                 <g key={`${a}-${b}`}>
                   <line x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} className="net-chord" />
-                  {d !== undefined && result!.oddVertexIds.length <= 8 && (
+                  {d !== undefined && undirected.oddVertexIds.length <= 8 && (
                     <text x={(pa.x + pb.x) / 2} y={(pa.y + pb.y) / 2} className="net-label net-label--chord" style={{ fontSize: 11 * r }}>
                       {formatNumber(d)}
                     </text>
@@ -141,16 +143,16 @@ export const NetworkLayers = memo(function NetworkLayers(props: NetworkLayersPro
       )}
 
       {/* explain: chosen minimum matching */}
-      {resultUsable && overlay === 'explain' && step === 3 && (
+      {undirected && overlay === 'explain' && step === 3 && (
         <g className="net-matching" aria-hidden="true">
-          {result!.matching.pairs.map((p) => {
+          {undirected.matching.pairs.map((p) => {
             const pa = vm.get(p.a);
             const pb = vm.get(p.b);
             if (!pa || !pb) return null;
             return (
               <g key={`${p.a}-${p.b}`}>
                 <line x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} className="net-match" />
-                {result!.matching.pairs.length <= 12 && (
+                {undirected.matching.pairs.length <= 12 && (
                   <text x={(pa.x + pb.x) / 2} y={(pa.y + pb.y) / 2} className="net-label net-label--match" style={{ fontSize: 12 * r }}>
                     {formatNumber(p.distance)}
                   </text>

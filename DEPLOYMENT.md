@@ -6,8 +6,9 @@
 |---|---|
 | Production server (`pnpm build && pnpm start`) serving the API and the built web app on one origin | **Verified** in the development container: health check, all API flows, and the full Playwright suite against this server |
 | Static serverless build (`pnpm build:static`) served by a plain static file server | **Verified**: optimisation runs in the browser worker (for example Crescent Quay gives 360 m) |
-| Docker image | Dockerfile provided, **not built here** (no Docker daemon in the container) |
-| GitHub Actions CI and Pages workflows | Committed, **not yet run** |
+| Docker image (`docker build`, `docker compose`) | **Verified** in the development container: image built (343 MB, non-root `node` user), container healthy, `/api/health` and `/workspace` answer, optimise/register/scenario/run smoke test passes, data survives `docker restart` and `compose down`/`up`, and the `tests` profile runs the unit and integration suites inside the image |
+| GitHub Actions CI | **Verified on GitHub**: the `verify` job (typecheck, lint, unit/integration/property tests, Python oracle, build, Playwright end-to-end and axe in both themes) and the `docker` job (build, health check, smoke test, restart persistence, test target) pass |
+| GitHub Pages workflow | Committed; needs Pages enabled once in the repository settings (below) |
 | Public hosting | **Not deployed.** This needs an account on a hosting provider, which this environment does not have. |
 
 ## Run locally (or on any Node 22 host)
@@ -44,17 +45,37 @@ Requirements: Node ≥ 22.5 (for `node:sqlite`) and pnpm 10. Python 3 with netwo
 | `SWEEP_SOLVER_TIMEOUT_MS` | `20000` | Hard timeout per optimisation |
 | `SWEEP_SESSION_TTL_MS` | 7 days | Session lifetime |
 | `SWEEP_RATE_LIMIT` | on | `off` disables rate limiting (tests only) |
+| `SWEEP_MAP_ACQUISITION` | on | `off` disables live map acquisition (`/api/maps/*` answer 503) |
+| `SWEEP_OVERPASS_ENDPOINTS` | see `apps/server/src/config.ts` | Comma-separated Overpass API endpoints, tried in order |
+| `SWEEP_NOMINATIM_ENDPOINT` | `https://nominatim.openstreetmap.org/search` | Place search endpoint (throttled to 1 request/s) |
+| `SWEEP_MAP_CACHE_DIR` | `data/map-cache` | Acquired datasets are cached here for 7 days |
+| `NODE_USE_ENV_PROXY` | unset | Set to `1` behind an HTTP(S) proxy so Node's `fetch` honours `HTTPS_PROXY` |
 
-No secrets, API keys or third-party services are required.
+No secrets, API keys or paid services are required. Live map acquisition uses public OpenStreetMap services under their usage policies (identifying User-Agent, small areas, caching, Nominatim at most 1 request per second); everything else works offline.
 
 ## Docker
 
+SWEEP is one Node process (API + built web app) with an embedded SQLite file, so Compose defines exactly one service plus an optional test profile. There is no separate database, cache or worker container.
+
 ```bash
-docker build -t sweep .
-docker run -p 8787:8787 -v sweep-data:/data sweep
+cp .env.example .env            # optional; every variable has a default
+docker compose up -d --build    # http://localhost:8787 (SWEEP_PORT changes the host port)
+docker compose ps               # STATUS shows (healthy) once /api/health answers
+docker compose logs -f sweep
+docker compose --profile test run --rm tests   # unit and integration suites inside the image
+docker compose down             # data stays in the sweep-data volume; add -v to delete it
 ```
 
-The image runs one Node process, keeps the SQLite file at `/data/sweep.db`, and has a `HEALTHCHECK` on `/api/health`. Put it behind HTTPS (Secure cookies are on in production).
+Without Compose:
+
+```bash
+docker build -t sweep .
+docker run -d -p 8787:8787 -e COOKIE_SECURE=false -v sweep-data:/data sweep
+node scripts/docker-smoke.mjs http://127.0.0.1:8787 create .smoke.json   # optimise, account, scenario, run
+docker restart <container> && node scripts/docker-smoke.mjs http://127.0.0.1:8787 check .smoke.json
+```
+
+The image (multi-stage: cached dependency install, build, slim `node:22-bookworm-slim` runtime) runs as the non-root `node` user, keeps `/data/sweep.db` and `/data/map-cache` on the volume, and has a `HEALTHCHECK` on `/api/health`. Behind a TLS-inspecting proxy, pass its CA as a build secret (`--secret id=ca_bundle,src=ca.pem`); it is used only during `pnpm install` and never stored in the image. Put the container behind HTTPS in production and leave `COOKIE_SECURE` at its default (`true`).
 
 ## Static demo on GitHub Pages
 

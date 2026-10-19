@@ -18,6 +18,19 @@ export const DEFAULT_LIMITS: Limits = {
 const ID_PATTERN = /^[A-Za-z0-9_.:-]{1,64}$/;
 const COORD_LIMIT = 1e9;
 
+/** `directed` is the legacy spelling of `oneway`. */
+export function isOneway(e: { oneway?: boolean; directed?: boolean }): boolean {
+  return e.oneway === true || e.directed === true;
+}
+
+/**
+ * How validation treats one-way streets:
+ * - 'reject'   (undirected solver default): one-way streets are an error, because the undirected solver cannot respect them;
+ * - 'ignore'   (undirected solver, explicit relaxation): a warning; every street is treated as two-way;
+ * - 'directed' (directed solver): informational only.
+ */
+export type OnewayPolicy = 'reject' | 'ignore' | 'directed';
+
 function isFiniteNumber(x: unknown): x is number {
   return typeof x === 'number' && Number.isFinite(x);
 }
@@ -42,7 +55,8 @@ function emptyStats(): GraphStats {
  * Validate a graph for the undirected (rural) Chinese Postman model.
  * Structural problems are reported first; if any exist, topology checks are skipped.
  */
-export function validateGraph(graph: Graph, opts: { depotId?: string | null; limits?: Partial<Limits> } = {}): ValidationReport {
+export function validateGraph(graph: Graph, opts: { depotId?: string | null; limits?: Partial<Limits>; onewayPolicy?: OnewayPolicy } = {}): ValidationReport {
+  const onewayPolicy = opts.onewayPolicy ?? 'reject';
   const limits: Limits = { ...DEFAULT_LIMITS, ...(opts.limits ?? {}) };
   const issues: Issue[] = [];
   const stats = emptyStats();
@@ -105,11 +119,11 @@ export function validateGraph(graph: Graph, opts: { depotId?: string | null; lim
     if (typeof e.required !== 'boolean') {
       issues.push({ code: 'INVALID_FIELD', severity: 'error', message: `Edge "${e.id}" must declare required: true or false.`, edgeIds: [e.id] });
     }
-    if (e.directed === true) {
+    if (e.reverseWeight !== undefined && (!isFiniteNumber(e.reverseWeight) || e.reverseWeight < 0 || e.reverseWeight > MAX_WEIGHT)) {
       issues.push({
-        code: 'DIRECTED_UNSUPPORTED',
+        code: 'INVALID_WEIGHT',
         severity: 'error',
-        message: `Edge "${e.id}" is directed (one-way). SWEEP currently solves the undirected Chinese Postman Problem only; one-way streets need the directed or mixed variant, which is not implemented.`,
+        message: `Edge "${e.id}" has reverse weight ${JSON.stringify(e.reverseWeight)}; weights must be finite numbers between 0 and ${MAX_WEIGHT}.`,
         edgeIds: [e.id],
       });
     }
@@ -157,6 +171,36 @@ export function validateGraph(graph: Graph, opts: { depotId?: string | null; lim
   if (stats.zeroWeightEdgeCount > 0) {
     issues.push({ code: 'ZERO_WEIGHT', severity: 'info', message: `${stats.zeroWeightEdgeCount} zero-weight edge(s) present. Supported: they cost nothing to traverse.`, edgeIds: graph.edges.filter((e) => e.weight === 0).map((e) => e.id) });
   }
+  const onewayIds = graph.edges.filter(isOneway).map((e) => e.id);
+  if (onewayIds.length > 0) {
+    if (onewayPolicy === 'reject') {
+      issues.push({
+        code: 'ONEWAY_REQUIRES_DIRECTED',
+        severity: 'error',
+        message: `${onewayIds.length} street(s) are one-way. The undirected solver cannot respect one-way restrictions, so it does not accept this network. Use Directed mode (minimum-cost-flow solver), or explicitly treat every street as two-way.`,
+        edgeIds: onewayIds,
+      });
+    } else if (onewayPolicy === 'ignore') {
+      issues.push({
+        code: 'ONEWAY_IGNORED',
+        severity: 'warning',
+        message: `${onewayIds.length} one-way street(s) are being treated as two-way (relaxation requested). The resulting route may drive them against the permitted direction; it is not a legal route for the real network.`,
+        edgeIds: onewayIds,
+      });
+    } else {
+      issues.push({ code: 'ONEWAY_PRESENT', severity: 'info', message: `${onewayIds.length} one-way street(s): each may only be driven in its permitted direction.`, edgeIds: onewayIds });
+    }
+  }
+  const asymmetric = graph.edges.filter((e) => e.reverseWeight !== undefined && e.reverseWeight !== e.weight && !isOneway(e)).map((e) => e.id);
+  if (asymmetric.length > 0 && onewayPolicy !== 'directed') {
+    issues.push({
+      code: 'ASYMMETRIC_COST_IGNORED',
+      severity: 'info',
+      message: `${asymmetric.length} street(s) have a different cost in the reverse direction. The undirected solver uses the forward weight for both directions; Directed mode uses both costs.`,
+      edgeIds: asymmetric,
+    });
+  }
+
   const isolated: string[] = [];
   for (let v = 0; v < ig.n; v++) if (degreeAll[v] === 0) isolated.push(ig.vertexIds[v]!);
   stats.isolatedVertexCount = isolated.length;

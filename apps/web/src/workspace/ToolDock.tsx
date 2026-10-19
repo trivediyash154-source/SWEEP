@@ -7,6 +7,7 @@ const TOOLS: Array<{ id: Tool; label: string; key: string; icon: IconName }> = [
   { id: 'add', label: 'Add intersection', key: 'A', icon: 'add' },
   { id: 'connect', label: 'Connect street', key: 'C', icon: 'connect' },
   { id: 'required', label: 'Toggle required', key: 'R', icon: 'required' },
+  { id: 'oneway', label: 'Toggle one-way (click again to reverse)', key: 'O', icon: 'oneway' },
   { id: 'depot', label: 'Set route start', key: 'S', icon: 'depot' },
   { id: 'delete', label: 'Delete', key: 'X', icon: 'delete' },
 ];

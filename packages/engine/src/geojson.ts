@@ -1,4 +1,5 @@
 import type { Edge, Graph, Point, Vertex } from './types.js';
+import { localProjection, polylineLength } from './geo.js';
 
 /**
  * GeoJSON → SWEEP graph conversion.
@@ -13,34 +14,59 @@ import type { Edge, Graph, Point, Vertex } from './types.js';
  *    point of a line, or if it occurs in two or more places across all lines.
  * 3. Each line is split at its intersections; every piece becomes one edge
  *    whose interior points are kept as the drawn shape.
- * 4. Edge weight = geodesic length in metres (haversine, R = 6,371,008.8 m).
+ * 4. Edge weight = geodesic length in metres (haversine, R = 6,371,008.8 m; see geo.ts).
  * 5. Planar drawing coordinates use a local equirectangular projection centred
- *    on the data's mean latitude/longitude (metres, y pointing south).
+ *    on the data's mean latitude/longitude (metres, y pointing south). Every
+ *    vertex also keeps its geographic position in `geo` ([lon, lat]).
  * 6. Feature property `required: false` marks a street optional (default:
- *    required). `name` is kept. `oneway` is reported as unsupported and ignored.
+ *    required). `name` is kept; a string `highway` property is kept as `roadClass`.
+ * 7. One-way streets (OpenStreetMap conventions): property `oneway` equal to
+ *    true, "yes", "1" or "true" marks every piece `oneway: true` in the line's
+ *    drawing direction; "-1" (or -1) means one-way AGAINST the drawing
+ *    direction, so each piece is stored reversed (u and v swapped, shape
+ *    reversed). "no", false or no property means two-way. Other values (for
+ *    example "reversible") are treated as two-way and reported as a warning.
+ * 8. `graph.source` records kind "imported-file" with the conversion notes. A
+ *    feature id or "@id" such as "way/123" (Overpass Turbo export) is kept as
+ *    `sourceRef: "osm:way/123"`.
  */
 export interface GeoJsonImportReport {
   graph: Graph;
   featureCount: number;
   lineCount: number;
   skippedFeatures: { index: number; reason: string }[];
+  /** Problems the user should know about (unrecognised one-way values, …). */
   warnings: string[];
+  /** Informative conversion notes (one-way counts, …); also stored in graph.source.notes. */
+  notes: string[];
 }
 
-const R = 6_371_008.8;
 const MAX_COORDS = 50_000;
 const MAX_FEATURES = 10_000;
 
-function haversine(a: Point, b: Point): number {
-  const toRad = Math.PI / 180;
-  const dLat = (b[1] - a[1]) * toRad;
-  const dLon = (b[0] - a[0]) * toRad;
-  const s = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * toRad) * Math.cos(b[1] * toRad) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
-}
+type Direction = 'two-way' | 'forward' | 'reverse';
 
 function isLonLat(p: unknown): p is Point {
   return Array.isArray(p) && p.length >= 2 && typeof p[0] === 'number' && typeof p[1] === 'number' && Number.isFinite(p[0]) && Number.isFinite(p[1]) && Math.abs(p[0]) <= 180 && Math.abs(p[1]) <= 90;
+}
+
+/** Interpret a GeoJSON `oneway` property; `null` means an unrecognised value (treated as two-way). */
+function onewayDirection(value: unknown): Direction | null {
+  if (value === undefined || value === null || value === false) return 'two-way';
+  if (value === true || value === 1) return 'forward';
+  if (value === -1) return 'reverse';
+  if (typeof value !== 'string') return null;
+  const v = value.trim().toLowerCase();
+  if (v === 'yes' || v === '1' || v === 'true') return 'forward';
+  if (v === '-1') return 'reverse';
+  if (v === 'no' || v === 'false' || v === '0' || v === '') return 'two-way';
+  return null;
+}
+
+function osmRef(feat: { id?: unknown; properties?: Record<string, unknown> | null }): string | undefined {
+  const raw = typeof feat.id === 'string' ? feat.id : typeof feat.properties?.['@id'] === 'string' ? (feat.properties['@id'] as string) : undefined;
+  const m = raw ? /^(way|node|relation)\/(\d{1,15})$/.exec(raw) : null;
+  return m ? `osm:${m[1]}/${m[2]}` : undefined;
 }
 
 export class GeoJsonImportError extends Error {}
@@ -58,12 +84,14 @@ export function geojsonToGraph(input: unknown, name = 'Imported network'): GeoJs
 
   const skipped: { index: number; reason: string }[] = [];
   const warnings: string[] = [];
-  const lines: { coords: Point[]; required: boolean; name?: string }[] = [];
+  const notes: string[] = [];
+  const lines: { coords: Point[]; required: boolean; name?: string; direction: Direction; roadClass?: string; sourceRef?: string }[] = [];
   let coordCount = 0;
-  let onewayCount = 0;
+  const onewayFeatures = { forward: 0, reverse: 0 };
+  const unknownOneway = new Map<string, number>();
 
   features.forEach((f, index) => {
-    const feat = f as { type?: unknown; geometry?: { type?: unknown; coordinates?: unknown } | null; properties?: Record<string, unknown> | null };
+    const feat = f as { type?: unknown; id?: unknown; geometry?: { type?: unknown; coordinates?: unknown } | null; properties?: Record<string, unknown> | null };
     if (feat?.type !== 'Feature' || !feat.geometry) {
       skipped.push({ index, reason: 'Not a Feature with geometry.' });
       return;
@@ -71,13 +99,21 @@ export function geojsonToGraph(input: unknown, name = 'Imported network'): GeoJs
     const props = feat.properties ?? {};
     const required = props.required === false || props.required === 'false' ? false : true;
     const nm = typeof props.name === 'string' ? props.name.slice(0, 120) : undefined;
-    if (props.oneway === true || props.oneway === 'yes' || props.oneway === '1') onewayCount++;
+    const roadClass = typeof props.highway === 'string' && props.highway.trim() ? props.highway.trim().slice(0, 40) : undefined;
+    const sourceRef = osmRef(feat);
+    let direction = onewayDirection(props.oneway);
+    if (direction === null) {
+      const label = String(props.oneway).slice(0, 40);
+      unknownOneway.set(label, (unknownOneway.get(label) ?? 0) + 1);
+      direction = 'two-way';
+    }
     const g = feat.geometry;
     const parts: unknown[] = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' && Array.isArray(g.coordinates) ? (g.coordinates as unknown[]) : [];
     if (parts.length === 0) {
       skipped.push({ index, reason: `Unsupported geometry type ${JSON.stringify(g.type)} (only LineString and MultiLineString describe streets).` });
       return;
     }
+    let usable = false;
     for (const part of parts) {
       if (!Array.isArray(part) || part.length < 2 || !part.every(isLonLat)) {
         skipped.push({ index, reason: 'A line has fewer than 2 points or invalid [longitude, latitude] coordinates.' });
@@ -97,11 +133,12 @@ export function geojsonToGraph(input: unknown, name = 'Imported network'): GeoJs
         skipped.push({ index, reason: 'A line collapses to a single point.' });
         continue;
       }
-      lines.push({ coords: clean, required, ...(nm ? { name: nm } : {}) });
+      usable = true;
+      lines.push({ coords: clean, required, direction, ...(nm ? { name: nm } : {}), ...(roadClass ? { roadClass } : {}), ...(sourceRef ? { sourceRef } : {}) });
     }
+    if (usable && direction !== 'two-way') onewayFeatures[direction]++;
   });
   if (lines.length === 0) throw new GeoJsonImportError('No usable LineString street geometry was found.');
-  if (onewayCount > 0) warnings.push(`${onewayCount} feature(s) are marked one-way; SWEEP treats every street as two-way in this version.`);
 
   const key = (p: Point): string => `${p[0]},${p[1]}`;
   const occurrences = new Map<string, number>();
@@ -116,11 +153,7 @@ export function geojsonToGraph(input: unknown, name = 'Imported network'): GeoJs
     sumLat += p[1];
     cnt++;
   }
-  const lon0 = sumLon / cnt;
-  const lat0 = sumLat / cnt;
-  const kx = (Math.PI / 180) * R * Math.cos((lat0 * Math.PI) / 180);
-  const ky = (Math.PI / 180) * R;
-  const project = (p: Point): Point => [Math.round((p[0] - lon0) * kx * 100) / 100, Math.round(-(p[1] - lat0) * ky * 100) / 100];
+  const project = localProjection(sumLon / cnt, sumLat / cnt);
 
   const vertexIds = new Map<string, string>();
   const vertices: Vertex[] = [];
@@ -131,39 +164,72 @@ export function geojsonToGraph(input: unknown, name = 'Imported network'): GeoJs
       id = `n${vertices.length}`;
       vertexIds.set(k, id);
       const [x, y] = project(p);
-      vertices.push({ id, x, y });
+      vertices.push({ id, x, y, geo: [p[0], p[1]] });
     }
     return id;
   };
 
   const edges: Edge[] = [];
+  let onewayEdges = 0;
   for (const l of lines) {
     let startIdx = 0;
     for (let i = 1; i < l.coords.length; i++) {
       if (!isNode(l, i)) continue;
       const piece = l.coords.slice(startIdx, i + 1);
-      let len = 0;
-      for (let j = 1; j < piece.length; j++) len += haversine(piece[j - 1]!, piece[j]!);
-      const u = vertexFor(piece[0]!);
-      const v = vertexFor(piece[piece.length - 1]!);
-      const shape = piece.slice(1, -1).map(project);
+      const len = polylineLength(piece);
+      // Vertices are created in drawing order so that ids do not depend on the one-way direction.
+      const a = vertexFor(piece[0]!);
+      const b = vertexFor(piece[piece.length - 1]!);
+      const reverse = l.direction === 'reverse';
+      const interior = piece.slice(1, -1);
+      if (reverse) interior.reverse();
+      const shape = interior.map(project);
+      const oneway = l.direction !== 'two-way';
+      if (oneway) onewayEdges++;
       edges.push({
         id: `s${edges.length}`,
-        u,
-        v,
+        u: reverse ? b : a,
+        v: reverse ? a : b,
         weight: Math.round(len * 10) / 10,
         required: l.required,
         ...(l.name ? { name: l.name } : {}),
         ...(shape.length ? { shape } : {}),
+        ...(oneway ? { oneway: true } : {}),
+        ...(l.roadClass ? { roadClass: l.roadClass } : {}),
+        ...(l.sourceRef ? { sourceRef: l.sourceRef } : {}),
       });
       startIdx = i;
     }
   }
+
+  const onewayFeatureCount = onewayFeatures.forward + onewayFeatures.reverse;
+  if (onewayFeatureCount > 0) {
+    notes.push(
+      `${onewayFeatureCount} one-way street${onewayFeatureCount === 1 ? '' : 's'} (${onewayEdges} segment${onewayEdges === 1 ? '' : 's'}) kept with their direction` +
+        (onewayFeatures.reverse > 0 ? `; ${onewayFeatures.reverse} tagged oneway=-1 were stored reversed` : '') +
+        '. Use directed routing to respect them.',
+    );
+  } else notes.push('No one-way streets: every street is two-way.');
+  if (unknownOneway.size > 0) {
+    const list = [...unknownOneway.entries()].map(([v, n]) => `"${v}" (${n})`).join(', ');
+    warnings.push(`Unrecognised oneway value(s) ${list} were treated as two-way.`);
+  }
+  if (skipped.length > 0) notes.push(`${skipped.length} feature part(s) skipped (not street lines or invalid coordinates).`);
+
   return {
-    graph: { format: 'sweep.graph', version: 1, name, units: 'm', vertices, edges },
+    graph: {
+      format: 'sweep.graph',
+      version: 1,
+      name,
+      units: 'm',
+      vertices,
+      edges,
+      source: { kind: 'imported-file', provider: 'GeoJSON file', notes: [...notes, ...warnings].slice(0, 50) },
+    },
     featureCount: features.length,
     lineCount: lines.length,
     skippedFeatures: skipped,
     warnings,
+    notes,
   };
 }

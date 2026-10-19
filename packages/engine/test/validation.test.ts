@@ -46,11 +46,17 @@ describe('validation', () => {
     g.vertices[1]!.x = Number.NaN;
     expect(codes(g)).toContain('INVALID_COORDINATE');
   });
-  it('rejects directed edges with an explanation', () => {
-    const g = base();
-    g.edges[0]!.directed = true;
-    const v = validateGraph(g);
-    expect(v.issues.find((i) => i.code === 'DIRECTED_UNSUPPORTED')?.message).toMatch(/undirected/);
+  it('refuses one-way streets in the undirected solver (legacy `directed` spelling included) and points to Directed mode', () => {
+    for (const field of ['directed', 'oneway'] as const) {
+      const g = base();
+      g.edges[0]![field] = true;
+      const v = validateGraph(g);
+      expect(v.ok).toBe(false);
+      expect(v.issues.find((i) => i.code === 'ONEWAY_REQUIRES_DIRECTED')?.message).toMatch(/undirected solver cannot respect one-way.*Directed mode/);
+      // An explicit two-way relaxation downgrades it to a warning; the directed solver only notes it.
+      expect(validateGraph(g, { onewayPolicy: 'ignore' }).issues.find((i) => i.code === 'ONEWAY_IGNORED')?.severity).toBe('warning');
+      expect(validateGraph(g, { onewayPolicy: 'directed' }).issues.find((i) => i.code === 'ONEWAY_PRESENT')?.severity).toBe('info');
+    }
   });
   it('reports loops, parallel edges, zero weights and isolated vertices without failing', () => {
     const g = base();

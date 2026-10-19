@@ -1,4 +1,7 @@
 import type { Edge, Graph, Point, Vertex } from '../types.js';
+import { osmToGraph } from '../osm.js';
+import { findUnserviceableStreets } from '../directed.js';
+import { ZURICH_ALTSTADT_QUERY, zurichAltstadtOverpass } from './data/zurichAltstadt.js';
 
 /**
  * Bundled, deterministic example networks. All coordinates are in metres in a
@@ -6,6 +9,11 @@ import type { Edge, Graph, Point, Vertex } from '../types.js';
  * weight is given explicitly, an edge's weight is its drawn length rounded to
  * the nearest metre. All data here is SYNTHETIC; the Königsberg layout is a
  * schematic of the historical problem, not survey data.
+ *
+ * The one exception is category 'real-data': "Zurich Altstadt" is genuine
+ * OpenStreetMap data (© OpenStreetMap contributors, ODbL 1.0) downloaded from
+ * the Overpass API, converted with osmToGraph and drawn in metres from its
+ * geographic coordinates. Provenance: ./data/README.md.
  */
 
 export interface ExampleMeta {
@@ -16,7 +24,8 @@ export interface ExampleMeta {
   teaches: string;
   /** What the solver is expected to report (verified by the test suite). */
   expectation: string;
-  category: 'learn' | 'core' | 'edge-case' | 'scale';
+  /** 'real-data' marks real map data (with provenance in graph.source); every other category is synthetic. */
+  category: 'learn' | 'core' | 'edge-case' | 'scale' | 'real-data';
 }
 
 export interface Example extends ExampleMeta {
@@ -416,7 +425,52 @@ const meridian: Example = {
   graph: syntheticCity({ cols: 22, rows: 16, spacing: 110, seed: 20260418, removeFraction: 0.13, diagonals: 14, name: 'Meridian District' }),
 };
 
-export const EXAMPLES: Example[] = [konigsberg, heritageLoop, riverside, oldTown(), greedyTrap, fourCorners, twinDistricts, plaza, marketAvenues(), meridian];
+const ZURICH_ROAD_CLASSES = ['residential', 'tertiary', 'secondary', 'primary', 'unclassified', 'living_street', 'service', 'pedestrian'];
+
+/** Marktgasse / Schneggengasse junction: two-way lanes only, about 30 m from the centre of the network. */
+const ZURICH_DEPOT = 'n111421306';
+
+function zurichAltstadt(): Example {
+  const { graph, stats } = osmToGraph(zurichAltstadtOverpass, {
+    name: 'Zurich Altstadt (real OSM data)',
+    roadClasses: ZURICH_ROAD_CLASSES,
+    source: {
+      kind: 'bundled-sample',
+      provider: 'OpenStreetMap via Overpass API (overpass.osm.ch)',
+      endpoint: 'https://overpass.osm.ch/api/interpreter',
+      retrievedAt: '2026-10-18T23:23:00Z',
+      bbox: [47.37, 8.54, 47.3735, 8.5455],
+      attribution: '© OpenStreetMap contributors',
+      license: 'ODbL 1.0',
+      roadClasses: ZURICH_ROAD_CLASSES,
+      notes: [`Bundled sample, downloaded once with the Overpass query ${ZURICH_ALTSTADT_QUERY}`],
+    },
+  });
+  graph.depotId = ZURICH_DEPOT;
+  // The extract cuts some one-way streets at its boundary, so they can be entered but not legally left
+  // (or the reverse) inside the area. They stay in the network, marked optional, so the directed problem
+  // is well posed; nothing is invented or removed.
+  const cut = findUnserviceableStreets(graph, ZURICH_DEPOT);
+  const optional = new Set([...cut.unreachable, ...cut.noReturn]);
+  if (optional.size > 0) {
+    graph.edges = graph.edges.map((e) => (optional.has(e.id) ? { ...e, required: false } : e));
+    graph.source!.notes = [
+      ...(graph.source!.notes ?? []),
+      `${optional.size} street segments that cannot be serviced by a legal closed route inside the extract (one-way streets cut at its boundary) are marked optional.`,
+    ];
+  }
+  return {
+    id: 'zurich-altstadt',
+    title: 'Zurich Altstadt (real OSM data)',
+    subtitle: 'Niederdorf lanes · © OpenStreetMap contributors',
+    teaches: `Real street geometry from OpenStreetMap: ${stats.vertices} intersections and ${stats.edges} street segments (${(stats.totalLength / 1000).toFixed(1)} km) of the old town's lanes, including ${stats.onewayEdges} one-way segments. Lengths are geodesic metres measured from the mapped coordinates.`,
+    expectation: `A real network with one-way streets, solved exactly in directed mode. ${optional.size} boundary-cut one-way segments are optional; provenance and ODbL attribution travel with the graph.`,
+    category: 'real-data',
+    graph,
+  };
+}
+
+export const EXAMPLES: Example[] = [konigsberg, heritageLoop, riverside, oldTown(), greedyTrap, fourCorners, twinDistricts, plaza, marketAvenues(), meridian, zurichAltstadt()];
 
 export function getExample(id: string): Example | undefined {
   return EXAMPLES.find((e) => e.id === id);

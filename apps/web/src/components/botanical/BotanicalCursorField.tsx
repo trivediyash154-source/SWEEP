@@ -63,8 +63,19 @@ export function BotanicalCursorField({ intensity = 1 }: { intensity?: number }) 
       raf = requestAnimationFrame(frame);
     };
 
+    // Zones scale the effect: e.g. the graph editor sets data-petal-intensity="0.2", and nothing is
+    // emitted while a button is held there, so petals never compete with precise dragging.
+    let zoneEl: Element | null = null;
+    let zone = 1;
     const onMove = (e: PointerEvent): void => {
       if (e.pointerType === 'touch') return;
+      const target = e.target as Element | null;
+      if (target !== zoneEl) {
+        zoneEl = target;
+        const z = target?.closest?.('[data-petal-intensity]');
+        zone = z ? Math.max(0, Math.min(1, Number(z.getAttribute('data-petal-intensity')) || 0)) : 1;
+      }
+      system.setIntensity(e.buttons !== 0 && zone < 0.5 ? 0 : intensity * zone);
       system.pointer(e.clientX, e.clientY, e.timeStamp || performance.now());
       wake();
     };

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import type { Graph, OptimizationRecord } from '@sweep/engine';
+import type { DirectedOptimizationRecord, FleetRecord, Graph, OptimizationRecord, RoutingSettings, SingleRouteRecord } from '@sweep/engine';
 import { api } from '../lib/api';
 import { readJson } from '../lib/storage';
-import { REPORT_KEY } from '../workspace/ResultsPanel';
+import { REPORT_KEY } from '../lib/exports';
+import { normalizeRecord } from '../lib/analysis';
 import { StaticNetwork } from '../landing/StaticNetwork';
 import { Wordmark } from '../components/Wordmark';
 import { formatDistance, formatMs, formatNumber, formatPercent } from '../lib/format';
@@ -12,7 +13,9 @@ import '../styles/report.css';
 interface ReportData {
   name: string;
   graph: Graph;
-  result: OptimizationRecord;
+  result: SingleRouteRecord;
+  fleet?: FleetRecord | null;
+  settings?: Required<RoutingSettings> | null;
   source: string | null;
   savedAt: number;
 }
@@ -25,12 +28,14 @@ export default function Report() {
 
   useEffect(() => {
     if (runId) {
-      api<{ scenarioName: string; graph: Graph; record: OptimizationRecord; createdAt: number }>(`/runs/${runId}`)
-        .then((r) => setData({ name: r.scenarioName, graph: r.graph, result: r.record, source: 'server', savedAt: r.createdAt }))
+      api<{ scenarioName: string; graph: Graph; record: SingleRouteRecord; routing?: { fleet: FleetRecord | null; settings: Required<RoutingSettings> }; createdAt: number }>(`/runs/${runId}`)
+        .then((r) =>
+          setData({ name: r.scenarioName, graph: r.graph, result: normalizeRecord(r.record), fleet: r.routing?.fleet ?? null, settings: r.routing?.settings ?? null, source: 'server', savedAt: r.createdAt }),
+        )
         .catch((e: Error) => setError(e.message));
     } else {
       const d = readJson<ReportData | null>(REPORT_KEY, null);
-      if (d && d.result && d.graph) setData(d);
+      if (d && d.result && d.graph) setData({ ...d, result: normalizeRecord(d.result) });
       else setError('No optimisation result to report yet. Optimise a network in the workspace first.');
     }
   }, [runId]);
@@ -49,8 +54,12 @@ export default function Report() {
   if (!data) return <main id="main" className="report report--empty" role="status">Loading report…</main>;
 
   const r = data.result;
+  const u = r.mode === 'directed' ? null : (r as OptimizationRecord);
+  const d = r.mode === 'directed' ? (r as DirectedOptimizationRecord) : null;
+  const fleet = data.fleet ?? null;
   const names = new Map(data.graph.edges.map((e) => [e.id, e.name ?? '']));
   const passed = r.checks.filter((c) => c.passed).length;
+  const src = data.graph.source;
 
   return (
     <main id="main" className="report" data-testid="report">
@@ -70,12 +79,18 @@ export default function Report() {
           <p className="muted small">
             Generated {new Date(data.savedAt).toLocaleString()} · engine {r.engine.version} · {data.source === 'server' ? 'server computation' : 'in-browser computation'} · input hash <span className="mono">{r.input.graphHash.slice(0, 16)}…</span>
           </p>
+          {src?.attribution && (
+            <p className="muted small">
+              Map data {src.attribution} ({src.license}) · {src.provider}
+              {src.retrievedAt ? ` · retrieved ${new Date(src.retrievedAt).toLocaleString()}` : ''}
+            </p>
+          )}
         </div>
       </header>
 
       <section className="report__summary">
         <div>
-          <span className="report__k">Optimal closed route</span>
+          <span className="report__k">{d ? 'Optimal legal closed route' : 'Optimal closed route'}</span>
           <span className="report__v num">{formatDistance(r.route.totalDistance)}</span>
         </div>
         <div>
@@ -109,7 +124,9 @@ export default function Report() {
               <tr><th scope="row">Intersections</th><td className="num">{formatNumber(r.input.vertexCount)}</td></tr>
               <tr><th scope="row">Streets</th><td className="num">{formatNumber(r.input.edgeCount)}</td></tr>
               <tr><th scope="row">Required / optional</th><td className="num">{r.input.requiredEdgeCount} / {r.input.optionalEdgeCount}</td></tr>
-              <tr><th scope="row">Odd-degree intersections</th><td className="num">{r.oddVertexIds.length}</td></tr>
+              {u && <tr><th scope="row">Odd-degree intersections</th><td className="num">{u.oddVertexIds.length}</td></tr>}
+              {d && <tr><th scope="row">One-way streets</th><td className="num">{d.input.onewayEdgeCount}</td></tr>}
+              {d && <tr><th scope="row">Imbalanced intersections</th><td className="num">{d.imbalancedVertexIds.length}</td></tr>}
               <tr><th scope="row">Start</th><td className="num mono">{r.input.depotId}</td></tr>
             </tbody>
           </table>
@@ -134,13 +151,20 @@ export default function Report() {
 
       <section>
         <h2>Algorithm</h2>
-        <p className="small">
-          {r.algorithm.problem === 'undirected-chinese-postman' ? 'Undirected Chinese Postman Problem' : 'Undirected postman problem with optional streets (required streets connected)'}. Shortest paths: Dijkstra. Matching: {r.algorithm.matching === 'none' ? 'not needed (already Eulerian)' : "Edmonds' blossom algorithm"}
-          {r.algorithm.matchingCrossCheck === 'subset-dp' ? ', cross-checked by exhaustive subset DP' : ''}. Euler circuit: Hierholzer. {r.algorithm.optimalityBasis}
-        </p>
-        {r.matching.pairs.length > 0 && (
+        {u ? (
+          <p className="small">
+            {u.algorithm.problem === 'undirected-chinese-postman' ? 'Undirected Chinese Postman Problem' : 'Undirected postman problem with optional streets (required streets connected)'}
+            {u.algorithm.directionPolicy === 'oneway-ignored' ? ' (one-way streets treated as two-way: a relaxation)' : ''}. Shortest paths: Dijkstra. Matching: {u.algorithm.matching === 'none' ? 'not needed (already Eulerian)' : "Edmonds' blossom algorithm"}
+            {u.algorithm.matchingCrossCheck === 'subset-dp' ? ', cross-checked by exhaustive subset DP' : ''}. Euler circuit: Hierholzer. {u.algorithm.optimalityBasis}
+          </p>
+        ) : (
+          <p className="small">
+            {d!.algorithm.problem === 'mixed-chinese-postman-exact-enumeration' ? 'Mixed Chinese Postman Problem (two-way streets in either direction), solved exactly by enumerating service directions' : 'Directed Chinese Postman Problem (one-way streets forwards only; two-way streets in both directions)'}. Balancing: minimum-cost flow by successive shortest paths. Euler circuit: Hierholzer (directed). {d!.algorithm.optimalityBasis}
+          </p>
+        )}
+        {u && u.matching.pairs.length > 0 && (
           <table className="table">
-            <caption className="small muted">Matched odd intersections ({r.matching.pairs.length} pairs, total {formatDistance(r.matching.cost)}{r.matching.optimalPairingCount && r.matching.optimalPairingCount > 1 ? `; ${r.matching.optimalPairingCount} equally optimal pairings exist` : ''})</caption>
+            <caption className="small muted">Matched odd intersections ({u.matching.pairs.length} pairs, total {formatDistance(u.matching.cost)}{u.matching.optimalPairingCount && u.matching.optimalPairingCount > 1 ? `; ${u.matching.optimalPairingCount} equally optimal pairings exist` : ''})</caption>
             <thead>
               <tr>
                 <th>Pair</th>
@@ -149,7 +173,7 @@ export default function Report() {
               </tr>
             </thead>
             <tbody>
-              {r.matching.pairs.slice(0, 40).map((p) => (
+              {u.matching.pairs.slice(0, 40).map((p) => (
                 <tr key={`${p.a}-${p.b}`}>
                   <td className="mono">
                     {p.a} ↔ {p.b}
@@ -161,7 +185,64 @@ export default function Report() {
             </tbody>
           </table>
         )}
+        {d && d.flow.paths.length > 0 && (
+          <table className="table">
+            <caption className="small muted">Balancing flow ({d.flow.totalUnits} units, cost {formatDistance(d.flow.cost)}; certificate {d.flow.dualCertificateVerified ? 'verified' : 'failed'})</caption>
+            <thead>
+              <tr>
+                <th>From → to</th>
+                <th className="num">Units</th>
+                <th className="num">Length</th>
+                <th>Streets</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.flow.paths.slice(0, 40).map((p, i) => (
+                <tr key={i}>
+                  <td className="mono">{p.from} → {p.to}</td>
+                  <td className="num">{p.units}</td>
+                  <td className="num">{formatDistance(p.distance)}</td>
+                  <td className="small">{p.pathEdgeIds.map((id) => names.get(id) || id).join(' → ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
+
+      {fleet && (
+        <section>
+          <h2>Fleet ({fleet.activeVehicles} of {fleet.vehicles} vehicles)</h2>
+          <p className="small">{fleet.algorithm.guarantee}</p>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Vehicle</th>
+                <th className="num">Length</th>
+                <th className="num">Approach</th>
+                <th className="num">Return</th>
+                <th className="num">Streets serviced</th>
+                <th>Valid</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fleet.routes.map((v) => (
+                <tr key={v.vehicle}>
+                  <td>V{v.vehicle}</td>
+                  <td className="num">{formatDistance(v.distance)}</td>
+                  <td className="num">{formatDistance(v.approachDistance)}</td>
+                  <td className="num">{formatDistance(v.returnDistance)}</td>
+                  <td className="num">{v.servicedEdgeIds.length}</td>
+                  <td>{v.checks.every((c) => c.passed) ? '✓' : '✗'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="small muted">
+            Longest route {formatDistance(fleet.makespan)} (lower bound {formatDistance(fleet.lowerBound.value)}); total fleet distance {formatDistance(fleet.totalDistance)} vs single route {formatDistance(fleet.singleVehicleDistance)}.
+          </p>
+        </section>
+      )}
 
       <section>
         <h2>Verification</h2>
@@ -208,8 +289,12 @@ export default function Report() {
       <section>
         <h2>Assumptions and limitations</h2>
         <ul className="small">
-          <li>Streets are undirected and may be driven in either direction; turn costs and one-way restrictions are not modelled.</li>
-          <li>A single closed route from the start back to it; no fleet, capacity or time-window constraints.</li>
+          {d ? (
+            <li>One-way streets are driven only in their permitted direction; two-way streets are serviced {d.algorithm.twoWay === 'both' ? 'once in each direction' : 'once in either direction'}. Turn costs are not modelled.</li>
+          ) : (
+            <li>Streets may be driven in either direction{u?.algorithm.directionPolicy === 'oneway-ignored' ? ' (one-way restrictions were ignored by request; this route may not be legal)' : ''}; turn costs are not modelled.</li>
+          )}
+          <li>{fleet ? `${fleet.activeVehicles} closed routes from one shared depot; no capacity or time-window constraints.` : 'A single closed route from the start back to it; no capacity or time-window constraints.'}</li>
           <li>Street lengths are the values in the input; the result is optimal for those values.</li>
           <li>Computation time: {formatMs(r.timingsMs.total)} on the computing device.</li>
         </ul>

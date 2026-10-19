@@ -28,6 +28,21 @@ const PATHS: Record<string, string> = {
   route: 'M5 19a2 2 0 1 0 0-.01M19 5a2 2 0 1 0 0-.01M5 17V9a4 4 0 0 1 4-4h2M19 7v8a4 4 0 0 1-4 4h-2',
   menu: 'M4 7h16M4 12h16M4 17h16',
   user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 20a8 8 0 0 1 16 0',
+  oneway: 'M4 12h14M13 7l5 5-5 5',
+  map: 'M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15',
+  camera: 'M4 8h3l2-3h6l2 3h3v11H4zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+  top: 'M12 4v16M4 12h16M7 7l5-3 5 3M7 17l5 3 5-3',
+  focus: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5M12 12h.01',
+  follow: 'M12 3l7 18-7-4-7 4z',
+  truck: 'M3 7h11v9H3zM14 10h4l3 3v3h-7zM7 19a2 2 0 1 0 0-.01M17 19a2 2 0 1 0 0-.01',
+  sigma: 'M18 5H6l6 7-6 7h12',
+  flask: 'M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3',
+  shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
+  history: 'M4 12a8 8 0 1 0 2.3-5.7M4 4v5h5M12 8v4l3 2',
+  edit: 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4',
+  download: 'M12 3v12M7 10l5 5 5-5M4 19h16',
+  speed: 'M12 14l4-4M4 18a8 8 0 1 1 16 0',
+  eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
 };
 
 export type IconName = keyof typeof PATHS;

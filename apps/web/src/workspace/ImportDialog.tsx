@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { geojsonToGraph, parseGraphJson, validateGraph, type Graph, type ValidationReport } from '@sweep/engine';
+import { geojsonToGraph, parseGraphJson, type Graph, type ValidationReport } from '@sweep/engine';
 import { Dialog } from '../components/Dialog';
-import { useWorkspace } from '../state/workspace';
+import { useWorkspace, validateFor } from '../state/workspace';
 import { toast } from '../state/toasts';
 
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -45,13 +45,17 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
         const notes = [
           `${report.lineCount} line(s) from ${report.featureCount} feature(s) → ${report.graph.vertices.length} intersections and ${report.graph.edges.length} street segments.`,
           ...report.warnings,
+          ...(report.notes ?? []),
           ...(report.skippedFeatures.length ? [`${report.skippedFeatures.length} feature(s) skipped: ${report.skippedFeatures.slice(0, 3).map((s) => s.reason).join(' ')}`] : []),
         ];
-        setPreview({ graph: report.graph, kind: 'geojson', validation: validateGraph(report.graph), notes });
+        // One-way streets need the directed solver; GeoJSON carries no routing settings of its own.
+        if (report.graph.edges.some((e) => e.oneway)) report.graph.routing = { ...(report.graph.routing ?? {}), mode: 'directed', twoWay: 'both' };
+        setPreview({ graph: report.graph, kind: 'geojson', validation: validateFor(report.graph), notes });
       } else {
         const graph = parseGraphJson(text);
         if (!graph.name) graph.name = file.name.replace(/\.json$/i, '');
-        setPreview({ graph, kind: 'sweep', validation: validateGraph(graph), notes: [] });
+        if (!graph.source) graph.source = { kind: 'imported-file' };
+        setPreview({ graph, kind: 'sweep', validation: validateFor(graph), notes: [] });
       }
     } catch (e) {
       setError((e as Error).message);

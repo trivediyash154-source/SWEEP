@@ -11,20 +11,21 @@ test.describe('accounts and persistence', () => {
     await page.getByTestId('register-password').fill('a long test passphrase');
     await page.getByTestId('register-submit').click();
     await expect(page).toHaveURL(/\/workspace/);
+    await page.getByTestId('nav-editor').click();
     await page.getByTestId('example-old-town-grid').click();
+    await expect(page.getByTestId('solver-status')).toBeVisible();
     await page.getByTestId('scenario-name').fill('Ward 7');
-    await page.getByTestId('save').click();
+    await page.getByTestId('nav-history').click();
+    await page.getByTestId('save-account').click();
     await expect(page.getByText('Saved to your account')).toBeVisible();
     await expect(page).toHaveURL(/\/workspace\/[0-9a-f-]{36}$/);
     const scenarioUrl = page.url();
-    // optimise a saved scenario → stored run
+    // optimise a saved scenario → stored run in the account
     await page.getByTestId('optimize').click();
-    await expect(page.getByTestId('run-history')).toBeVisible();
-    await expect(page.getByTestId('run-history').locator('li')).toHaveCount(1);
+    await expect(page.getByTestId('account-runs').locator('li')).toHaveCount(1);
     // reload and reopen
     await page.goto(scenarioUrl);
     await expect(page.getByTestId('scenario-name')).toHaveValue('Ward 7');
-    await page.getByTestId('tab-results').click();
     // sign out protects account pages
     await page.goto('/account');
     await page.getByTestId('signout').click();

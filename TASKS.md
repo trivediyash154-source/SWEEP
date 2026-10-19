@@ -36,20 +36,45 @@ Status key: ✅ done and verified · ⚠️ done with a documented limitation ·
 - ✅ Scenarios (CRUD and duplicate), stored runs, run history, exports (JSON and CSV)
 - ✅ GeoJSON import (client and API)
 - ⚠️ Password reset is not available (no email service)
-- ⚠️ Live OpenStreetMap retrieval is not implemented (Overpass blocked here); use GeoJSON import
+- ✅ Live OpenStreetMap acquisition (see Milestone 8)
 
 ## Milestone 6: Quality and deployment ✅ / ⚠️
-- ✅ Playwright end-to-end tests (32), including axe in both themes and mobile; all pass
+- ✅ Playwright end-to-end tests, including axe in both themes and mobile; all pass (37 after Milestone 9)
 - ✅ Bugs found by end-to-end tests fixed (overlay click-through, stale account draft, list semantics)
 - ✅ Performance measurements (TEST_PLAN.md §5)
 - ✅ Static serverless build verified
 - ✅ Dockerfile, CI workflow, Pages workflow committed
-- ⚠️ Docker build not run (no daemon in the environment); GitHub Actions have not run yet
+- ✅ Docker verified: image build, non-root user, health check, smoke test, persistence across restart and `compose down`/`up`, test target (see DEPLOYMENT.md)
+- ✅ GitHub Actions verified on GitHub: `verify` and `docker` jobs green
 - ❌ Public deployment (needs a hosting account owned by the project owner)
 
+## Milestone 7: Directed, mixed and multi-vehicle routing ✅
+- ✅ One-way model (`oneway`, `reverseWeight`), validation policy (`reject` / `ignore` / `directed`), and provenance and routing settings stored with the graph
+- ✅ Directed postman by minimum-cost flow, with an LP certificate, flow decomposition and a directed Hierholzer circuit, in a separate module
+- ✅ Mixed (`either`) postman solved exactly by orientation enumeration (≤ 12 two-way required streets); larger instances are refused
+- ✅ Feasibility diagnosis (no-return / unreachable streets) with a one-click fix
+- ✅ Independent state-space cross-check (in-engine) and a Python oracle (networkx min-cost flow + state search, 1,401 graphs)
+- ✅ Fleet planning: min–max route splitting (FHK and exact split DP), lower bound, honest guarantee (2 − 1/k undirected; exact for total distance; heuristic for directed), route-length limits, per-vehicle verification
+- ✅ `POST /api/route`, stored runs with settings, fleet CSV and JSON v2 exports
+
+## Milestone 8: Real map data ✅ / ⚠️
+- ✅ OSM conversion (`osm.ts`): intersection detection, one-way semantics, duplicates, largest component, provenance and attribution
+- ✅ Live acquisition: Overpass providers in order with classified errors, a 7-day cache, bbox and response caps, concurrency limits; Nominatim search throttled to 1 request/s
+- ✅ Real bundled sample: Zurich Altstadt (ODbL), retrieved from `overpass.osm.ch`, unedited (provenance in `examples/data/README.md`)
+- ✅ GeoJSON import keeps one-way properties
+- ⚠️ Live acquisition depends on outbound access to a public Overpass instance; the tests mock providers by design
+
+## Milestone 9: Workspace experience overhaul ✅
+- ✅ Long-form workspace with surfaces A–I (command header, 3D simulation, projection, mathematics, laboratory, editor, verification, history, export)
+- ✅ 3D district from the network: streets, junctions, one-way arrows, building archetypes aligned to streets, trees; camera reset, top-down, frame route, focus node and follow
+- ✅ Spectral route shader driven by true route distance (moving band, leading highlight, halo, trail, bloom); repeated passes and directions on separate lanes; reduced-motion and WebGL fallbacks
+- ✅ Mathematical investigation generated from the actual record and highlighted in the city and the projection
+- ✅ Laboratory: exact vs baselines, required vs total, directed vs relaxation, fleet sweep
+- ✅ Local experiment history, "Clear local data" with confirmation, GeoJSON and fleet exports
+- ✅ Blossom field with per-zone intensity (reduced over the editor, silent while dragging)
+
 ## Future ideas (not started)
-- Directed and mixed postman problems (minimum-cost flow / ILP)
-- Multi-vehicle k-postman and capacitated arc routing (heuristics, clearly labelled)
 - Exact Rural Postman Problem for small instances (branch and bound)
+- Exact min–max fleet routing for small instances; capacitated arc routing
 - Turn penalties; time windows
-- OSM import via a cached, policy-compliant fetcher where network access allows
+- Building footprints from OSM for the 3D city

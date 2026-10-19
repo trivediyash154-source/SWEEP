@@ -31,9 +31,46 @@ describe('GeoJSON import', () => {
     expect(() => geojsonToGraph(fc([{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [] } }]))).toThrow(/No usable/);
     expect(() => geojsonToGraph(fc([line([[200, 0], [0, 0]])]))).toThrow(/No usable/);
   });
-  it('warns about one-way streets', () => {
-    const r = geojsonToGraph(fc([line([[0, 0], [0.001, 0]], { oneway: 'yes' })]));
-    expect(r.warnings[0]).toMatch(/two-way/);
+  it('keeps one-way streets in the drawing direction (oneway=yes/true/1)', () => {
+    for (const oneway of ['yes', true, '1', 'true']) {
+      const r = geojsonToGraph(fc([line([[0, 0], [0.0005, 0.0001], [0.001, 0]], { oneway }), line([[0.001, 0], [0.002, 0]])]));
+      const [e0, e1] = r.graph.edges;
+      expect(e0!.oneway, String(oneway)).toBe(true);
+      const geoOf = (id: string) => r.graph.vertices.find((v) => v.id === id)!.geo;
+      expect(geoOf(e0!.u)).toEqual([0, 0]);
+      expect(geoOf(e0!.v)).toEqual([0.001, 0]);
+      expect(e1!.oneway).toBeUndefined();
+      expect(r.notes[0]).toMatch(/1 one-way street/);
+      expect(r.warnings).toEqual([]);
+    }
+  });
+  it('stores oneway=-1 streets reversed (u/v swapped, shape reversed)', () => {
+    for (const oneway of ['-1', -1]) {
+      const r = geojsonToGraph(fc([line([[0, 0], [0.0004, 0.0001], [0.0007, 0.0002], [0.001, 0]], { oneway })]));
+      const e = r.graph.edges[0]!;
+      expect(e.oneway).toBe(true);
+      const geoOf = (id: string) => r.graph.vertices.find((v) => v.id === id)!.geo;
+      expect(geoOf(e.u)).toEqual([0.001, 0]);
+      expect(geoOf(e.v)).toEqual([0, 0]);
+      expect(e.shape).toHaveLength(2);
+      // the first shape point after u is the one nearest the line's end
+      expect(e.shape![0]![0]).toBeGreaterThan(e.shape![1]![0]);
+      expect(r.notes[0]).toMatch(/oneway=-1/);
+    }
+  });
+  it('treats oneway=no, false and absent as two-way, and keeps geo and provenance', () => {
+    const r = geojsonToGraph(fc([line([[0, 0], [0.001, 0]], { oneway: 'no' }), line([[0.001, 0], [0.002, 0]], { oneway: false }), line([[0.002, 0], [0.003, 0]], { highway: 'residential' })]));
+    expect(r.graph.edges.every((e) => e.oneway === undefined)).toBe(true);
+    expect(r.notes[0]).toMatch(/No one-way streets/);
+    expect(r.graph.vertices.every((v) => Array.isArray(v.geo))).toBe(true);
+    expect(r.graph.source?.kind).toBe('imported-file');
+    expect(r.graph.source?.notes).toContain(r.notes[0]);
+    expect(r.graph.edges[2]!.roadClass).toBe('residential');
+  });
+  it('warns about unrecognised one-way values and treats them as two-way', () => {
+    const r = geojsonToGraph(fc([line([[0, 0], [0.001, 0]], { oneway: 'reversible' })]));
+    expect(r.graph.edges[0]!.oneway).toBeUndefined();
+    expect(r.warnings[0]).toMatch(/reversible.*two-way/);
   });
 });
 

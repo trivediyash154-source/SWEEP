@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent, type KeyboardEvent as RKeyboardEvent } from 'react';
 import { useWorkspace } from '../state/workspace';
-import { graphBounds, buildRouteGeometry, polylinePath, sampleRoute } from '../lib/geometry';
+import { graphBounds, polylinePath } from '../lib/geometry';
+import { buildTrack, drawnAtDistance, sampleTrack } from '../lib/routeTrack';
 import { NetworkLayers } from './NetworkLayers';
 import { routeClock } from './routeClock';
-import { useReducedMotion } from '../state/prefs';
 
 interface View {
   k: number;
@@ -21,8 +21,7 @@ const MAX_K = 12;
  */
 export function NetworkCanvas() {
   const ws = useWorkspace();
-  const { graph, tool, view: wsView, result, resultGraph, stale, explainStep } = ws;
-  const reduced = useReducedMotion();
+  const { graph, tool, result, resultGraph, stale } = ws;
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -31,6 +30,7 @@ export function NetworkCanvas() {
   viewRef.current = view;
   const drag = useRef<{ kind: 'pan' | 'move'; id?: string; startX: number; startY: number; tx: number; ty: number; moved: boolean } | null>(null);
   const [cursorWorld, setCursorWorld] = useState<{ x: number; y: number } | null>(null);
+  const onewayCycle = useRef(new Map<string, number>());
 
   // ---- sizing & fit -----------------------------------------------------
   useEffect(() => {
@@ -48,7 +48,7 @@ export function NetworkCanvas() {
     const b = graphBounds(graph);
     // Leave room for the overlays: legend (top), tool dock (left), bottom bar.
     const narrow = size.w < 700;
-    const inset = { left: narrow ? 24 : 92, right: 40, top: narrow ? 56 : 84, bottom: wsView === 'explain' ? (narrow ? 210 : 190) : narrow ? 90 : 120 };
+    const inset = { left: narrow ? 64 : 84, right: 40, top: narrow ? 40 : 48, bottom: narrow ? 70 : 64 };
     const bw = b.maxX - b.minX;
     const bh = b.maxY - b.minY;
     const availW = Math.max(120, size.w - inset.left - inset.right);
@@ -57,7 +57,7 @@ export function NetworkCanvas() {
     setView({ k, tx: inset.left + availW / 2 - ((b.minX + b.maxX) / 2) * k, ty: inset.top + availH / 2 - ((b.minY + b.maxY) / 2) * k });
     // Refit only on resize, view change or an explicit request (fitNonce), never on every edit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [size.w, size.h, ws.fitNonce, wsView]);
+  }, [size.w, size.h, ws.fitNonce]);
   useEffect(() => {
     fit();
   }, [fit]);
@@ -86,42 +86,34 @@ export function NetworkCanvas() {
     return () => svg.removeEventListener('wheel', onWheel);
   }, []);
 
-  // ---- route animation ------------------------------------------------------
+  // ---- route overlay (the same authoritative route and playback clock as the 3D city) ----
   const showResult = !!result && !!resultGraph && !stale;
   const animGraph = showResult ? resultGraph! : graph;
-  const geo = useMemo(() => (showResult ? buildRouteGeometry(resultGraph!, result!.route.steps) : null), [showResult, result, resultGraph]);
+  const track = useMemo(() => (showResult ? buildTrack(resultGraph!, result!.route.steps) : null), [showResult, result, resultGraph]);
   const trailRef = useRef<SVGPathElement>(null);
   const vehicleRef = useRef<SVGGElement>(null);
-  const routeVisible = showResult && (wsView === 'compose' || (wsView === 'explain' && explainStep >= 5));
+  const routeVisible = showResult;
 
   useEffect(() => {
-    if (!geo) return;
-    routeClock.setTotal(geo.totalDrawn);
-    if (wsView === 'explain' && explainStep === 5) {
-      routeClock.seek(0);
-      if (!reduced) routeClock.play();
-      else routeClock.seek(geo.totalDrawn);
-    }
-  }, [geo, wsView, explainStep, reduced]);
-
-  useEffect(() => {
-    if (!geo || !routeVisible) return;
+    if (!track || !routeVisible) return;
     return routeClock.subscribe((s) => {
       const trail = trailRef.current;
       const veh = vehicleRef.current;
+      const active = s > 0 || routeClock.playing;
+      const drawn = active ? drawnAtDistance(track, Math.min(s, track.total)) : track.totalDrawn;
       if (trail) {
-        trail.style.strokeDasharray = `${geo.totalDrawn} ${geo.totalDrawn + 1}`;
-        trail.style.strokeDashoffset = `${geo.totalDrawn - s}`;
+        trail.style.strokeDasharray = `${track.totalDrawn} ${track.totalDrawn + 1}`;
+        trail.style.strokeDashoffset = `${track.totalDrawn - drawn}`;
       }
       if (veh) {
-        const sample = sampleRoute(geo, s);
+        const sample = sampleTrack(track, Math.min(s, track.total));
         veh.setAttribute('transform', `translate(${sample.point[0]},${sample.point[1]}) rotate(${(sample.angle * 180) / Math.PI})`);
-        veh.style.opacity = s > 0 && s < geo.totalDrawn ? '1' : '0';
+        veh.style.opacity = active && s < track.total ? '1' : '0';
       }
     });
-  }, [geo, routeVisible]);
+  }, [track, routeVisible]);
 
-  const trailD = useMemo(() => (geo ? polylinePath(geo.points) : ''), [geo]);
+  const trailD = useMemo(() => (track ? polylinePath(track.points) : ''), [track]);
 
   // ---- pointer interaction ----------------------------------------------------
   const hitTarget = (e: RPointerEvent): { vid?: string; eid?: string } => {
@@ -137,10 +129,6 @@ export function NetworkCanvas() {
       drag.current = { kind: 'pan', startX: e.clientX, startY: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, moved: false };
       (e.currentTarget as Element).setPointerCapture(e.pointerId);
     };
-    if (wsView !== 'compose') {
-      panStart();
-      return;
-    }
     switch (tool) {
       case 'select':
         if (vid) {
@@ -173,6 +161,25 @@ export function NetworkCanvas() {
           if (edge) st.updateEdge(eid, { required: !edge.required });
         } else panStart();
         break;
+      case 'oneway':
+        // Cycle: two-way → one-way u→v → one-way v→u → two-way.
+        if (eid) {
+          const edge = st.graph.edges.find((x) => x.id === eid);
+          if (!edge) break;
+          const seen = onewayCycle.current.get(eid) ?? 0;
+          if (!edge.oneway) {
+            st.updateEdge(eid, { oneway: true });
+            onewayCycle.current.set(eid, 1);
+          } else if (seen === 1) {
+            st.reverseEdge(eid);
+            onewayCycle.current.set(eid, 2);
+          } else {
+            st.updateEdge(eid, { oneway: false });
+            onewayCycle.current.delete(eid);
+          }
+          st.select({ type: 'edge', id: eid });
+        } else panStart();
+        break;
       case 'delete':
         if (vid) st.removeVertex(vid);
         else if (eid) st.removeEdge(eid);
@@ -187,7 +194,7 @@ export function NetworkCanvas() {
 
   const onPointerMove = (e: RPointerEvent<SVGSVGElement>): void => {
     const d = drag.current;
-    if (wsView === 'compose' && tool === 'connect') setCursorWorld(toWorld(e.clientX, e.clientY));
+    if (tool === 'connect') setCursorWorld(toWorld(e.clientX, e.clientY));
     if (!d) {
       const { vid, eid } = hitTarget(e);
       const cur = useWorkspace.getState().hover;
@@ -239,12 +246,13 @@ export function NetworkCanvas() {
     });
 
   const pendingVertex = ws.pendingConnect ? graph.vertices.find((v) => v.id === ws.pendingConnect) : null;
-  const overlay = wsView === 'explain' ? 'explain' : showResult ? 'route' : 'none';
+  const overlay = showResult ? 'route' : 'none';
 
   return (
     <div
       ref={wrapRef}
-      className={`net-canvas tool-${tool} view-${wsView}`}
+      className={`net-canvas tool-${tool}`}
+      data-petal-intensity="0.25"
       tabIndex={0}
       role="application"
       aria-label={`Street network canvas: ${graph.vertices.length} intersections and ${graph.edges.length} streets. Use the tool dock or keyboard shortcuts to edit; arrow keys pan, plus and minus zoom.`}
@@ -264,16 +272,14 @@ export function NetworkCanvas() {
             k={view.k}
             result={showResult ? result : null}
             overlay={overlay}
-            explainStep={explainStep}
             validation={ws.failure ?? ws.validation}
             selection={ws.selection}
             hover={ws.hover}
             pendingConnect={ws.pendingConnect}
             highlightVertexIds={ws.highlight}
-            interactive={wsView === 'compose'}
-            dimBase={overlay === 'explain' && explainStep >= 4}
+            interactive
           />
-          {routeVisible && geo && (
+          {routeVisible && track && (
             <g className="net-anim" aria-hidden="true">
               <path ref={trailRef} d={trailD} className="net-trail" style={{ strokeWidth: 3.2 / view.k }} />
               <g ref={vehicleRef} className="net-vehicle" style={{ opacity: 0 }}>
@@ -282,7 +288,7 @@ export function NetworkCanvas() {
               </g>
             </g>
           )}
-          {pendingVertex && cursorWorld && wsView === 'compose' && tool === 'connect' && (
+          {pendingVertex && cursorWorld && tool === 'connect' && (
             <line x1={pendingVertex.x} y1={pendingVertex.y} x2={cursorWorld.x} y2={cursorWorld.y} className="net-ghost" />
           )}
         </g>

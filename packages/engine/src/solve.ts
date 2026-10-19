@@ -14,7 +14,7 @@ import { ENGINE_VERSION } from './version.js';
 import { fromScaled } from './units.js';
 import { indexGraph } from './graph.js';
 import { dijkstra, reconstructPath, type ShortestPathTree } from './dijkstra.js';
-import { validateGraph, DEFAULT_LIMITS } from './validate.js';
+import { validateGraph, DEFAULT_LIMITS, isOneway } from './validate.js';
 import { minCostPerfectMatchingComplete } from './matching/blossom.js';
 import { dpMinCostPerfectMatching } from './matching/dp.js';
 import { greedyPairing } from './matching/greedy.js';
@@ -25,13 +25,26 @@ import { canonicalJson, sha256Hex } from './sha256.js';
 const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 const r3 = (x: number): number => Math.round(x * 1000) / 1000;
 
-/** Stable hash of the optimisation input (graph semantics + options). */
-export function hashInput(graph: Graph, depotId: string | null): string {
+/**
+ * Stable hash of the optimisation input (graph semantics + options). Fields
+ * that only some graphs have (one-way flags, reverse costs, solver settings)
+ * are included only when present, so older hashes stay unchanged.
+ */
+export function hashInput(graph: Graph, depotId: string | null, settings?: Record<string, string | number | boolean | null>): string {
   const canonical = {
     vertices: graph.vertices.map((v) => ({ id: v.id, x: v.x, y: v.y })),
-    edges: graph.edges.map((e) => ({ id: e.id, u: e.u, v: e.v, w: e.weight, r: e.required })),
+    edges: graph.edges.map((e) => ({
+      id: e.id,
+      u: e.u,
+      v: e.v,
+      w: e.weight,
+      r: e.required,
+      ...(isOneway(e) ? { o: true } : {}),
+      ...(e.reverseWeight !== undefined ? { rw: e.reverseWeight } : {}),
+    })),
     depotId,
     engine: ENGINE_VERSION,
+    ...(settings ? { settings } : {}),
   };
   return sha256Hex(canonicalJson(canonical));
 }
@@ -52,7 +65,7 @@ export function hashInput(graph: Graph, depotId: string | null): string {
 export function solveChinesePostman(graph: Graph, options: SolveOptions = {}): OptimizationResult {
   const t0 = now();
   const limits = { ...DEFAULT_LIMITS, ...(options.limits ?? {}) };
-  const validation = validateGraph(graph, { depotId: options.depotId ?? graph.depotId ?? null, limits });
+  const validation = validateGraph(graph, { depotId: options.depotId ?? graph.depotId ?? null, limits, onewayPolicy: options.ignoreOneway ? 'ignore' : 'reject' });
   const tValidate = now();
   if (!validation.ok) return { ok: false, engine: { name: 'sweep-engine', version: ENGINE_VERSION }, validation };
 
@@ -204,6 +217,11 @@ export function solveChinesePostman(graph: Graph, options: SolveOptions = {}): O
     prev = to;
   }
 
+  // Only reachable with ignoreOneway: count traversals against a one-way street's direction.
+  const oneway = new Set(graph.edges.filter(isOneway).map((e) => e.id));
+  const edgeU = new Map(graph.edges.map((e) => [e.id, e.u]));
+  const wrongWayTraversals = steps.filter((st) => oneway.has(st.edgeId) && st.from !== edgeU.get(st.edgeId)).length;
+
   const traversalCounts: Record<string, number> = {};
   for (const id of ig.edgeIds) traversalCounts[id] = 0;
   for (const st of steps) traversalCounts[st.edgeId] = (traversalCounts[st.edgeId] ?? 0) + 1;
@@ -248,6 +266,17 @@ export function solveChinesePostman(graph: Graph, options: SolveOptions = {}): O
       detail: `Blossom cost ${fromScaled(matchingCost)} · DP cost ${fromScaled(crossCheckCost)}.`,
     });
   }
+  if (oneway.size > 0) {
+    checks.push({
+      id: 'direction',
+      label: 'One-way restrictions respected',
+      passed: wrongWayTraversals === 0,
+      detail:
+        wrongWayTraversals === 0
+          ? `One-way streets were ignored for optimisation, but this route happens to drive all ${oneway.size} of them in the permitted direction.`
+          : `${wrongWayTraversals} traversal(s) drive a one-way street against its direction. This relaxed route is not legal for the real network; use Directed mode.`,
+    });
+  }
   const tVerify = now();
 
   // --- Baselines -------------------------------------------------------------
@@ -276,24 +305,29 @@ export function solveChinesePostman(graph: Graph, options: SolveOptions = {}): O
     },
   ];
 
-  const passedAll = checks.every((c) => c.passed);
+  // Optimality is claimed for the problem actually solved; the direction check (relaxation only) is reported separately.
+  const passedAll = checks.every((c) => c.passed || c.id === 'direction');
+  const relaxed = oneway.size > 0;
   const record: OptimizationRecord = {
     ok: true,
+    mode: 'undirected',
     engine: { name: 'sweep-engine', version: ENGINE_VERSION },
     algorithm: {
       problem: allRequired ? 'undirected-chinese-postman' : 'undirected-rural-postman-connected-required',
+      directionPolicy: relaxed ? 'oneway-ignored' : 'two-way',
       shortestPaths: 'dijkstra-binary-heap',
       matching: k > 0 ? 'edmonds-blossom' : 'none',
       matchingCrossCheck: crossCheckCost !== null ? 'subset-dp' : 'skipped',
       euler: 'hierholzer',
       optimal: passedAll,
       optimalityBasis: passedAll
-        ? 'Optimal: route = required streets + minimum-cost T-join (Edmonds–Johnson). The matching is certified optimal by LP duality' +
+        ? (relaxed ? 'Optimal for the two-way relaxation only (one-way streets treated as two-way by request; not a legal route for the real network): ' : 'Optimal: ') +
+          'route = required streets + minimum-cost T-join (Edmonds–Johnson). The matching is certified optimal by LP duality' +
           (crossCheckCost !== null ? ' and independently confirmed by exhaustive subset DP.' : '.')
         : 'Not certified: at least one verification check failed (see checks).',
     },
     input: {
-      graphHash: hashInput(graph, ig.vertexIds[depot]!),
+      graphHash: hashInput(graph, ig.vertexIds[depot]!, relaxed ? { ignoreOneway: true } : undefined),
       ...(graph.name ? { name: graph.name } : {}),
       depotId: ig.vertexIds[depot]!,
       vertexCount: ig.n,
@@ -324,6 +358,7 @@ export function solveChinesePostman(graph: Graph, options: SolveOptions = {}): O
       repeatedRequiredTraversals,
       deadheadTraversals,
       traversalCounts,
+      wrongWayTraversals,
     },
     baselines,
     checks,

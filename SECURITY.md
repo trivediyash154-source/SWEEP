@@ -14,6 +14,7 @@ The design defends against:
 * Oversized requests and unbounded computation.
 * XSS, through the CSP and React's escaping.
 * Spreadsheet formula injection in CSV exports.
+* Abuse of the map-acquisition proxy: using the server against arbitrary hosts (SSRF), injecting into queries, or overloading public OpenStreetMap services.
 
 Out of scope: DDoS beyond the simple per-IP rate limiting, multi-instance deployments (rate limits are held in memory), compromise of the host, and email-based flows (none are implemented).
 
@@ -31,12 +32,17 @@ Out of scope: DDoS beyond the simple per-IP rate limiting, multi-instance deploy
 | Authorisation | Every scenario and run query includes `owner_id = ?`. Other users' resources return `404`. Covered by an integration test over every endpoint. | `app.ts`, `test/api.test.ts` |
 | Input validation | Zod schemas validate every body: types, lengths, array sizes (≤ 20,000 vertices, ≤ 40,000 edges) and string limits; unknown keys are stripped. The engine then validates semantics. | `schemas.ts`, `engine/validate.ts` |
 | Request size | 4 MB body limit, enforced on both the declared and the actual length | `app.ts` |
-| Computation limits | At most 600 odd vertices (O(k³) matching). Every optimisation runs in a separate `worker_thread`, which is terminated after 20 s and returns `COMPUTATION_TIMEOUT`. | `solver.ts` |
+| Computation limits | At most 600 odd vertices (O(k³) matching). Mixed (`either`) enumeration is limited to 12 two-way required streets (4,096 flows) and fleets to 12 vehicles. Every optimisation runs in a separate `worker_thread`, which is terminated after 20 s and returns `COMPUTATION_TIMEOUT`. | `solver.ts`, `engine/directed.ts`, `engine/fleet.ts` |
+| Map acquisition: endpoints | Upstream hosts come **only** from server configuration (`SWEEP_OVERPASS_ENDPOINTS`, `SWEEP_NOMINATIM_ENDPOINT`). The client sends a bounding box and road classes, never a URL, so it cannot point the server at another host. | `server/config.ts`, `server/maps.ts` |
+| Map acquisition: queries | The Overpass query is built by the server from a fixed template. Road classes must come from a whitelist, so no client text reaches the query. The bbox must be valid WGS84 and at most 4 km². | `engine/osm.ts` |
+| Map acquisition: load | Limits: 6 acquisitions and 30 searches per minute per IP; at most 2 concurrent upstream requests and 8 queued; identical requests are shared; responses are cached for 7 days (searches for 24 h). Nominatim gets at most 1 request/s, with an identifying User-Agent. The regional Swiss instance is used only inside its coverage. | `server/maps.ts` |
+| Map acquisition: responses | Timeouts are 45 s per provider. Responses are capped at 25 MB from Overpass and 1 MB from Nominatim, enforced while streaming. Bodies are parsed only with `JSON.parse` and converted with network limits. | `server/maps.ts`, `engine/osm.ts` |
+| Map acquisition: errors | Each provider attempt is reported with a classified cause: DNS, TLS, proxy, timeout, rate limit, busy, size or format. Error text is **redacted**: proxy URLs and any `user:password@` credentials are removed, and the text is truncated. Status responses never expose absolute paths. | `server/maps.ts` (`redact`) |
 | File parsing | Only `JSON.parse`; never `eval`. GeoJSON has feature, coordinate and range limits. Imports are previewed and validated before loading. | `engine/geojson.ts`, `engine/io.ts` |
 | CSV exports | Cells starting with `= + - @ \t \r` are prefixed with `'`, and quoting follows RFC 4180 | `engine/io.ts` |
 | Headers | CSP (`default-src 'self'`; no inline scripts; `frame-ancestors 'none'`), `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, `X-Content-Type-Options: nosniff`, and Hono's other secure headers | `app.ts` |
 | Errors | Unhandled errors return a generic message with a request id. Stack traces are never sent. | `app.ts` |
-| Secrets | **None are required.** No `.env` is needed, and no keys are in the repository or the frontend. | – |
+| Secrets | **None are required.** No `.env` is needed, and no keys are in the repository, the Docker image or the frontend. `.env.example` lists only non-secret settings. The Docker image runs as the non-root `node` user. | `.env.example`, `Dockerfile` |
 | Browser storage | Local mode keeps drafts and local scenarios in `localStorage`, behind try/catch. Signing out removes any account scenario from the local draft. | `web/state/*` |
 
 ## Known limitations
@@ -46,11 +52,12 @@ Out of scope: DDoS beyond the simple per-IP rate limiting, multi-instance deploy
 * Rate-limit counters are in memory, so they are per process and reset on restart.
 * SQLite is single-writer. That is appropriate for a single instance only.
 * CSP allows `'unsafe-inline'` for **styles**, because inline style attributes are used for dynamic sizes. Scripts are not allowed inline.
-* The static (serverless) build has no accounts. Everything stays in that browser.
+* The static (serverless) build has no accounts. Everything stays in that browser. Map acquisition there calls the public Overpass endpoints directly from the browser, under the same bbox and road-class limits.
+* Map caches are files on the server's disk. They contain only public OpenStreetMap data.
 
 ## Verification
 
-`apps/server/test/api.test.ts` (16 tests) covers:
+`apps/server/test/api.test.ts` (16 tests) and `maps.test.ts` (18 tests) cover:
 
 * Hashing: no plaintext password is ever stored.
 * Cookie flags.
@@ -62,6 +69,13 @@ Out of scope: DDoS beyond the simple per-IP rate limiting, multi-instance deploy
 * Rate limiting.
 * Ownership on all eight scenario and run endpoints.
 * Account deletion cascading to the user's data.
+* Map acquisition, against mocked providers:
+  * bbox and road-class validation before any request;
+  * CSRF on acquisitions;
+  * concurrency limits and request sharing;
+  * Nominatim throttling;
+  * error classification;
+  * proxy credentials are never echoed.
 
 ## Reporting
 

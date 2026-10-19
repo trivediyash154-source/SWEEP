@@ -98,26 +98,39 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     const before = await routeState(page);
     await page.getByTestId('mode-scenarios').click();
     await page.getByTestId('tool-close-road').click();
-    const target = await page.evaluate(() => {
-      const w = window as unknown as { __sweepCity: { route: () => { active: string; runs: { result: { algorithm: string; segments: number[] } }[] }; state: () => { city: { segPtOff: Int32Array; segXY: Float64Array } }; project: (x: number, y: number, h: number) => [number, number] } };
-      const r = w.__sweepCity.route();
-      const segs = r.runs.find((x) => x.result.algorithm === r.active)!.result.segments;
-      const c = w.__sweepCity.state().city;
-      const s = segs[Math.floor(segs.length / 2)]!;
-      const a = c.segPtOff[s]!;
-      const z = c.segPtOff[s + 1]!;
-      const m = a + Math.floor((z - a) / 2);
-      const x = (c.segXY[2 * m]! + c.segXY[2 * (z - 1)]!) / 2;
-      const y = (c.segXY[2 * m + 1]! + c.segXY[2 * (z - 1) + 1]!) / 2;
-      return { s, p: w.__sweepCity.project(x, y, 0) };
-    });
     const box = (await page.getByTestId('city-stage').boundingBox())!;
-    await page.mouse.click(box.x + ((target.p[0] + 1) / 2) * box.width, box.y + ((1 - target.p[1]) / 2) * box.height);
+    // A street of the route that is visible on the map (not under the 420 px side panel or the tool rail).
+    const target = await page.evaluate(
+      ({ w0, h0 }) => {
+        const w = window as unknown as { __sweepCity: { route: () => { active: string; runs: { result: { algorithm: string; segments: number[] } }[] }; state: () => { city: { segPtOff: Int32Array; segXY: Float64Array; segLen: Float64Array } }; project: (x: number, y: number, h: number) => [number, number] | null } };
+        const r = w.__sweepCity.route();
+        const segs = r.runs.find((x) => x.result.algorithm === r.active)!.result.segments;
+        const c = w.__sweepCity.state().city;
+        const order = segs.map((s, i) => ({ s, i })).sort((a, b) => Math.abs(a.i - segs.length / 2) - Math.abs(b.i - segs.length / 2));
+        for (const { s } of order) {
+          if (c.segLen[s]! < 40) continue;
+          const a = c.segPtOff[s]!;
+          const z = c.segPtOff[s + 1]!;
+          // A point on the street itself: a middle vertex, or the midpoint of a straight segment.
+          const m = a + Math.floor((z - a) / 2);
+          const [x, y] = z - a >= 3 ? [c.segXY[2 * m]!, c.segXY[2 * m + 1]!] : [(c.segXY[2 * a]! + c.segXY[2 * a + 2]!) / 2, (c.segXY[2 * a + 1]! + c.segXY[2 * a + 3]!) / 2];
+          const p = w.__sweepCity.project(x, y, 0);
+          if (!p) continue;
+          const px = ((p[0] + 1) / 2) * w0;
+          const py = ((1 - p[1]) / 2) * h0;
+          if (px > 450 && px < w0 - 100 && py > 120 && py < h0 - 120) return { s, p };
+        }
+        return null;
+      },
+      { w0: box.width, h0: box.height },
+    );
+    expect(target).not.toBeNull();
+    await page.mouse.click(box.x + ((target!.p[0] + 1) / 2) * box.width, box.y + ((1 - target!.p[1]) / 2) * box.height);
     await expect(page.getByTestId('scenario-changes')).toContainText('closed');
     await page.getByTestId('compare-baseline').click();
     await expect(page.getByTestId('scenario-comparison')).toBeVisible();
     const s = await routeState(page);
-    const engine = new RoutingEngine(city, 'car', { closedSegments: [target.s] });
+    const engine = new RoutingEngine(city, 'car', { closedSegments: [target!.s] });
     const exp = engine.query('dijkstra', { origin: s.origin, destination: s.destination, objective: 'time' }).result;
     expect(Math.abs(s.runs[0]!.cost - exp.cost) / exp.cost).toBeLessThan(1e-9);
     expect(s.runs[0]!.cost).toBeGreaterThanOrEqual(before.runs[0]!.cost); // a closure never makes the trip faster

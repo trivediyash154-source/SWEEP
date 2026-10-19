@@ -156,33 +156,51 @@ Fleets (`solveFleet`, base solve + split + verification):
 
 Raw results are in `packages/engine/bench/results.json`.
 
-### City workspace engine (real Pune bundle, 55 of 85 tile files: 4,491 intersections, 5,378 segments, 311.03 km)
+### City workspace engine (real Pune bundle, 59 of 85 tile files: 4,753 intersections, 5,691 segments, 327.39 km)
 
-Measured with `npx tsx packages/engine/bench/p2p.ts` and `npx tsx packages/engine/bench/coverage.ts` on a 4-core Xeon at 2.80 GHz, Node 22.22, after the third session's work (sparse assignment start for the lower bound).
+Measured in the third session (2026-10-19) with `npx tsx packages/engine/bench/p2p.ts` and `npx tsx packages/engine/bench/coverage.ts`, on a 4-core Xeon at 2.10 GHz with Node 22.22.
 
 Point-to-point, median over 200 random queries (arcs settled in brackets):
 
 | Profile, objective | Dijkstra | A* | Bidirectional | ALT | CH | Preprocessing (ALT / CH) |
 |---|---:|---:|---:|---:|---:|---|
-| car, time | 0.512 ms (3,780) | 0.564 ms (2,057) | 0.306 ms (1,440) | 0.228 ms (798) | 0.028 ms (101) | 57.2 ms / 987 ms |
-| car, distance | 0.599 ms (3,997) | 0.286 ms (1,118) | 0.374 ms (2,478) | 0.311 ms (901) | 0.026 ms (114) | 31.3 ms / 662 ms |
-| truck, time | 0.487 ms (3,446) | 0.637 ms (2,087) | 0.216 ms (1,315) | 0.189 ms (734) | 0.026 ms (96) | 19.2 ms / 823 ms |
-| foot, time | 0.840 ms (4,751) | 0.424 ms (1,051) | 0.466 ms (3,008) | 0.075 ms (284) | 0.033 ms (147) | 25.2 ms / 912 ms |
+| car, time | 0.529 ms (3,880) | 0.511 ms (2,001) | 0.264 ms (1,461) | 0.266 ms (787) | 0.026 ms (107) | 48.3 ms / 736 ms |
+| car, distance | 0.528 ms (4,357) | 0.217 ms (927) | 0.396 ms (2,543) | 0.191 ms (806) | 0.033 ms (121) | 30.1 ms / 739 ms |
+| truck, time | 0.569 ms (3,923) | 0.632 ms (2,392) | 0.233 ms (1,600) | 0.273 ms (1,013) | 0.019 ms (106) | 17.0 ms / 630 ms |
+| foot, time | 0.736 ms (5,393) | 0.256 ms (1,055) | 0.435 ms (2,851) | 0.084 ms (311) | 0.037 ms (158) | 24.7 ms / 761 ms |
 
-For the time objective A* settles fewer arcs than Dijkstra but is not always faster here (car and truck). Its straight-line bound is divided by the fastest speed in the graph, so it is loose on slower streets, and each settled arc costs a heuristic evaluation; this explanation has not been profiled. The benchmark also prints the bicycle profile and the distance objective for truck and foot.
+For the time objective, A* settles fewer arcs than Dijkstra but is not always faster here (truck). Its straight-line bound is divided by the fastest speed in the graph, so it is loose on slower streets, and each settled arc costs a heuristic evaluation; this explanation has not been profiled. The benchmark also prints the bicycle profile and the distance objective for truck and foot.
 
 Coverage (zone, solve, bound and verification):
 
 | Zone | Model | Method | Route | Lower bound | Gap | Time |
 |---|---|---|---:|---:|---:|---:|
-| circle r = 400 m (13.3 km required) | directed | exact min-cost flow, connectors added | 32.37 km | 26.65 km | 21.45 % | 0.9 s |
-| circle r = 400 m | undirected | exact Edmonds–Johnson, connectors added | 24.54 km | 21.38 km | 14.76 % | 1.0 s |
-| circle r = 800 m (54.5 km required) | directed | exact min-cost flow, connectors added | 112.75 km | 108.16 km | 4.24 % | 0.2 s |
-| circle r = 800 m | undirected | candidate-matching heuristic | 87.02 km | 77.38 km | 12.46 % | 0.5 s |
-| whole network (311.03 km) | directed | exact min-cost flow (optimal; 35 one-way segments unserviceable) | 589.66 km | 589.66 km | 0 % | 0.4 s |
-| whole network | undirected | candidate-matching heuristic | 476.16 km | 447.26 km | 6.46 % | 5.4 s (1.75 s of it the lower bound) |
+| circle r = 400 m (16.5 km required) | directed | exact min-cost flow, 3 connectors | 36.69 km | 32.03 km | 14.56 % | 0.7 s |
+| circle r = 400 m | undirected | exact Edmonds–Johnson, 3 connectors | 28.03 km | 24.95 km | 12.36 % | 1.2 s |
+| circle r = 800 m (58.7 km required) | directed | exact min-cost flow, 16 connectors | 118.93 km | 114.47 km | 3.89 % | 0.2 s |
+| circle r = 800 m | undirected | candidate-matching heuristic | 92.07 km | 83.79 km | 9.87 % | 0.5 s |
+| whole network (327.39 km) | directed | exact min-cost flow (optimal; 24 one-way segments unserviceable) | 622.46 km | 622.46 km | 0 % | 0.23 s |
+| whole network | undirected | candidate-matching heuristic | 499.16 km | 467.20 km | 6.84 % | 5.8 s (2.1 s of it the lower bound) |
 
-History of the whole-network undirected time: on the 47-tile bundle the second session's typed-array heaps took it from 20.2 s (17.5 s of it the bound) to 9.4 s with an identical route, bound and gap; on the 54-tile bundle the third session's sparse Jonker–Volgenant assignment start took the bound from 6.0 s to 1.55 s, with a slightly stronger, still feasible value (HANDOFF §4.3). The lower bound does not include the cost of joining separate street groups (6 and 10 connector paths in the circle zones), so there the gap is an upper limit on the distance from the optimum, not an estimate of it. Fleet plans for these zones take 0.2–3.2 s (distance table, split and local search); the benchmark prints each one.
+The lower bound does not include the cost of joining separate street groups (the connector paths in the circle zones), so there the gap is an upper limit on the distance from the optimum, not an estimate of it. Fleet plans for these zones take 0.3–3.4 s (distance table, split and local search); the benchmark prints each one.
+
+History of the whole-network undirected bound:
+
+* The sparse Jonker–Volgenant assignment (third session) took it from 6.0 s to 1.55 s on the 54-tile network (3,606 odd intersections), with a slightly stronger value.
+* The second session's heap and flow speed-up had taken the 47-tile network from 20.2 s to 9.4 s, with an identical route, bound and gap.
+
+Turn-aware order (truck turn penalties: left 4 s, right 10 s, U-turn 20 s), measured with `orderCoverageForTurns` on circles centred on VIT, with the depot at the nearest intersection. Distances are unchanged by construction.
+
+| Zone | Model | Turn penalties, engine order | After ordering | Lower bound for these traversals | U-turns before → after | Right turns before → after | Time |
+|---|---|---:|---:|---:|---:|---:|---:|
+| r = 300 m | directed | 80.6 min | 41.7 min | 37.8 min | 138 → 66 | 148 → 36 | 44 ms |
+| r = 300 m | undirected | 44.8 min | 37.7 min | 37.0 min | 62 → 50 | 99 → 78 | 30 ms |
+| r = 600 m | directed | 229.4 min | 142.8 min | 131.8 min | 403 → 250 | 401 → 102 | 24 ms |
+| r = 600 m | undirected | 157.6 min | 141.2 min | 136.2 min | 239 → 219 | 337 → 267 | 29 ms |
+| r = 1200 m | directed | 629.0 min | 438.7 min | 400.0 min | 1,107 → 820 | 1,055 → 218 | 122 ms |
+| r = 1200 m | undirected | 489.4 min | 436.0 min | 425.1 min | 757 → 684 | 1,020 → 768 | 74 ms |
+
+Most remaining U-turns are at dead ends, where they are unavoidable. After ordering, 600 m directed has 49 U-turns away from dead ends, down from 202. The bundle has no mapped turn restrictions yet, so banned-turn avoidance is tested only on synthetic instances (`turns.test.ts`).
 
 ### Frontend (headless Chromium, software WebGL via SwiftShader, local server)
 
@@ -200,7 +218,7 @@ History of the whole-network undirected time: on the 47-tile bundle the second s
 
 **Caveats.** Frame rates are not reported: in this container every frame is rasterised on the CPU (about 0.75 s per frame at 1440×900 with shadows and bloom), which says nothing about GPU hardware.
 
-SWEEP detects software rasterisers (SwiftShader, llvmpipe, Microsoft Basic Render), and the measurements above were taken with that detection active. On those rasterisers it starts the 3D scene in low-power mode: no shadows, bloom or motes, and frames are drawn only while playing or interacting. The `sweep.quality` preference (`full` / `low`) overrides the detection; the README screenshots use `full`. On GPUs, `PerformanceMonitor` still lowers resolution and drops post-processing when the frame rate declines.
+SWEEP detects software rasterisers (SwiftShader, llvmpipe, Microsoft Basic Render) from each scene's own WebGL context, and the measurements above were taken with that detection active. In low-power mode there are no shadows, bloom or motes, and frames are drawn only while playing or interacting. Every scene starts in low-power mode and leaves it once its context shows a hardware GPU. No throwaway probe context is created, because one caused the intermittent page-load freeze (HANDOFF §4.1). The `sweep.quality` preference (`full` / `low`) overrides the detection; the README screenshots use `full`. On GPUs, `PerformanceMonitor` still lowers resolution and drops post-processing when the frame rate declines.
 
 Load times were measured on localhost, without network latency.
 

@@ -365,11 +365,19 @@ export function CoveragePanel() {
 
       <fieldset className="cv-group">
         <legend>Turns</legend>
-        <label className={`rl-algo${cv.turnAware ? ' is-on' : ''}`}>
-          <input type="checkbox" checked={cv.turnAware} onChange={() => cv.setTurnAware(!cv.turnAware)} data-testid="cov-turn-aware" />
-          Order turns: fewer U-turns and right turns
-        </label>
-        <p className="faint small">Same streets, same directions, same distance: only the order at intersections changes. Truck turn penalties (left-hand traffic): left 4 s, right 10 s, U-turn 20 s.</p>
+        <div className="segmented segmented--sm" role="group" aria-label="Turn order">
+          <button type="button" aria-pressed={cv.turnAware} onClick={() => cv.setTurnAware(true)} data-testid="cov-turns-ordered">
+            Fewer U-turns
+          </button>
+          <button type="button" aria-pressed={!cv.turnAware} onClick={() => cv.setTurnAware(false)} data-testid="cov-turns-engine">
+            Solver order
+          </button>
+        </div>
+        <p className="faint small">
+          {cv.turnAware
+            ? 'Same streets, same directions, same distance: the order at intersections is chosen to cut U-turns and right turns. Truck turn penalties (left-hand traffic): left 4 s, right 10 s, U-turn 20 s.'
+            : 'The order the coverage solver returns. Turns are counted with the same penalties but not optimised.'}
+        </p>
       </fieldset>
 
       <fieldset className="cv-group">

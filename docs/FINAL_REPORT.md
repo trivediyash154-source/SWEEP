@@ -2,7 +2,7 @@
 
 * **Status date:** 2026-10-19.
 * **Branch:** `claude/peaceful-cray-qmjciz` (draft PR trivediyash154-source/SWEEP#2). It is stacked on `claude/laughing-ramanujan-wg70al` (draft PR trivediyash154-source/SWEEP#1) and contains all of it: two Claude sessions worked on the redesign in parallel, and at the owner's request the first session's branch was merged into the second (`e233ff5`). Two later sessions continued on this branch: the third added several depots, turn-aware order, a faster lower bound and the page-load freeze fix; the fourth fixed the CI failure its last push caused, rebuilt the bundle and refreshed this report. Nothing has been merged into `main`.
-* **Evidence:** every number below was measured in this repository on the current code and the 55-tile bundle it ships. The details are in `TEST_PLAN.md`, `IMPLEMENTATION_STATUS.md` and `MATHEMATICAL_SPEC.md`.
+* **Evidence:** every number below was measured in this repository on the current code and the 59-tile bundle it ships. The details are in `TEST_PLAN.md`, `IMPLEMENTATION_STATUS.md` and `MATHEMATICAL_SPEC.md`.
 
 ## 1. Files changed
 
@@ -45,8 +45,10 @@ The redesign spans 49 commits since `918dac0` (plus two merge commits): 128 file
   * Licence: © OpenStreetMap contributors, ODbL. Attribution is shown in the UI, in both reports and in the GPX export.
   * OSM database state of the downloaded tiles: 2026-06-01 to 2026-10-19.
 * **Completeness: partial.**
-  * 55 of the 85 tile files (42 tiles × streets and buildings, plus one turn-restriction query) are in the bundle, including the VIT tile.
-  * The other 30, including the turn-restriction query, are missing. The public mirror is slow (mostly HTTP 504/500), and in two of the four sessions the environment's proxy refused every Overpass host (HTTP 403).
+  * 59 of the 85 tile files (42 tiles × streets and buildings, plus one turn-restriction query) are in the bundle, including the VIT tile.
+  * The other 26, including the turn-restriction query, are missing.
+    * The public mirror is slow: mostly HTTP 504 or 500, and about 4 tiles an hour at best in the third session.
+    * In two of the four sessions the environment's proxy refused every Overpass host (HTTP 403).
   * The UI shows a "partial" chip, and the provenance dialog lists the missing tiles.
   * This is a real extract of part of Pune, not a full map of Pune, and nothing in it is synthetic.
 
@@ -54,10 +56,10 @@ The redesign spans 49 commits since `918dac0` (plus two merge commits): 128 file
 
 | Item | Count |
 |---|---|
-| Intersections | 4,491 |
-| Street segments | 5,378 (311.03 km), 528 one-way, from 2,702 distinct ways. The import limit is 800,000 and throws an error rather than truncating. |
+| Intersections | 4,753 |
+| Street segments | 5,691 (327.39 km), 583 one-way, from 2,906 distinct ways. The import limit is 800,000 and throws an error rather than truncating. |
 | Turn restrictions | 0 mapped (the restriction query has not been downloaded yet). Via-way restrictions are unsupported and would be counted, not applied. |
-| Building footprints | 11,854: 1 with a `height` tag, 14 from `building:levels` × 3 m, and 11,839 with **estimated** heights. Estimates are flagged; an optional hatch overlay shows them. |
+| Building footprints | 12,404: 1 with a `height` tag, 14 from `building:levels` × 3 m, and 12,389 with **estimated** heights. Estimates are flagged; an optional hatch overlay shows them. |
 | Footprint validation | 0 rejected; 81 dropped (centroid outside the region); 24 disconnected street fragments (4.25 km) dropped |
 
 ## 4. Theme verification
@@ -114,25 +116,25 @@ Same-camera captures on the 55-tile bundle: `docs/screenshots/city-velvet.png` a
 
 These are the fourth session's runs on the 55-tile bundle, as the separate steps of `pnpm verify`. CI (`verify` and `docker`) was green on `c4ae948`. Test expectations are computed from the bundle, never hard-coded. The intermittent page-load freeze (about 1 page load in 200 in test runs) was traced to a throwaway WebGL probe context and fixed: in a tight reload loop, 0 stalls in 120 page loads after the fix, against 11 in 60 before.
 
-## 8. Performance (4-core Xeon at 2.80 GHz, Node 22.22, 55-tile bundle; details in `TEST_PLAN.md` §5)
+## 8. Performance (4-core Xeon at 2.10 GHz, Node 22.22, 59-tile bundle; details in `TEST_PLAN.md` §5)
 
 * **Routing, car, time.** Median per query over 200 seeded random pairs:
 
   | Algorithm | Median | Preprocessing |
   |---|---:|---:|
-  | Dijkstra | 0.51 ms | none |
-  | A* | 0.56 ms | none |
-  | Bidirectional | 0.31 ms | none |
-  | ALT | 0.23 ms | 57 ms |
-  | CH | 0.028 ms | 0.99 s |
+  | Dijkstra | 0.53 ms | none |
+  | A* | 0.51 ms | none |
+  | Bidirectional | 0.26 ms | none |
+  | ALT | 0.27 ms | 48 ms |
+  | CH | 0.026 ms | 0.74 s |
 
 * **Coverage of the whole extract.**
-  * Directed: exact and proven optimal, 589.66 km in 0.4 s (35 one-way segments cannot be part of a closed route and are excluded).
-  * Undirected: heuristic, 476.16 km against a bound of 447.26 km (gap 6.46 %), in 5.4 s, 1.75 s of it the lower bound. The typed-array heaps (20.2 s → 9.4 s on the 47-tile bundle) and the sparse assignment start for the bound (6.0 s → 1.55 s on the 54-tile bundle) brought it here without changing the route; the bound value became slightly stronger.
+  * Directed: exact and proven optimal, 622.46 km in 0.24 s. 24 one-way segments cannot be part of a closed route and are excluded.
+  * Undirected: heuristic, 499.16 km against a bound of 467.20 km (gap 6.84 %), in 5.6–5.8 s, of which 1.9–2.1 s is the lower bound. The typed-array heaps (20.2 s → 9.4 s on the 47-tile bundle) and the sparse assignment start for the bound (6.0 s → 1.55 s on the 54-tile bundle) brought it here without changing the route; the bound value became slightly stronger.
 * **Coverage of an 800 m circle zone.**
-  * Directed: exact, 4.24 % gap because 10 connectors were needed, in 0.2 s.
-  * 4-vehicle fleet: 3.2 s.
-* **Turn-aware order** of a 600 m zone's route: about 20 ms.
+  * Directed: exact, 3.89 % gap because 16 connectors were needed, in 0.2 s.
+  * 4-vehicle fleet: 3.1–3.4 s.
+* **Turn-aware order** of a 600 m zone's route: about 25 ms; 24–122 ms for zones of 300–1,200 m.
 * **Frontend.** Frame rates are not reported: this environment rasterises WebGL on the CPU, and scenes start in low-power mode until a hardware GPU is confirmed.
 
 ## 9. Docker and CI
@@ -155,8 +157,11 @@ docker compose up --build
 
 ## 11. Blockers and limitations
 
-* **Data.** 30 of 85 tile files, including the restriction query, are still missing. The current environment's proxy refuses every Overpass host (HTTP 403); the owner must allow one (for example `maps.mail.ru`) in the environment's network settings. The acquisition then resumes from its manifest.
-* **Building heights.** OSM has height data for 15 of 11,854 footprints, so almost all heights are flagged estimates.
+* **Data.** 26 of 85 tile files, including the restriction query, are still missing.
+  * Some environments' proxies refuse every Overpass host (HTTP 403). There the owner must allow one (for example `maps.mail.ru`) in the environment's network settings.
+  * Where the mirror is reachable, it is overloaded.
+  * The acquisition resumes from its manifest.
+* **Building heights.** OSM has height data for 15 of 12,404 footprints, so almost all heights are flagged estimates.
 * **Turn restrictions.** None are mapped yet (the restriction query is missing), so banned-turn handling in the turn-aware order is tested on synthetic instances only.
 * **Not built.** A per-scenario travel-profile variant, earliest-start windows, and the main-roads deadline with several depots. The coverage solvers do not choose extra deadhead streets to avoid turns; only the order is turn-aware.
 * **Reference repository.** The "reverse engineering" repository mentioned at the start was never received (no URL arrived), so it has **not** been reviewed.

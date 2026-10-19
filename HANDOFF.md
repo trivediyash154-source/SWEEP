@@ -5,7 +5,7 @@ This file is written for a Claude Code session that takes over the city-scale re
 * Read `IMPLEMENTATION_STATUS.md` next. It is the factual record of what has been verified.
 * The original product brief is in `PROJECT_BRIEF.md` and `PRD.md`; the earlier engine maths is in `MATHEMATICAL_SPEC.md`.
 
-Snapshot: 2026-10-19 (second session). Work continues on branch `claude/peaceful-cray-qmjciz` (draft PR trivediyash154-source/SWEEP#2), stacked on `claude/laughing-ramanujan-wg70al` (draft PR trivediyash154-source/SWEEP#1). **Two sessions worked in parallel** that afternoon; the second session's branch merged PR #1's branch in at 17:15 UTC, keeping the fuller implementation of each overlapping feature. `docs/FINAL_REPORT.md` was written by the other session before that merge, so check its figures against this file. The commit that updates this file holds all work up to that point.
+Snapshot: 2026-10-19, evening (see §3 for which session did what). Earlier snapshot text, from the second session, follows. Work continues on branch `claude/peaceful-cray-qmjciz` (draft PR trivediyash154-source/SWEEP#2), stacked on `claude/laughing-ramanujan-wg70al` (draft PR trivediyash154-source/SWEEP#1). **Two sessions worked in parallel** that afternoon; the second session's branch merged PR #1's branch in at 17:15 UTC, keeping the fuller implementation of each overlapping feature. `docs/FINAL_REPORT.md` was written by the other session before that merge, so check its figures against this file. The commit that updates this file holds all work up to that point.
 
 ---
 
@@ -212,7 +212,11 @@ Helpers: `e2e/png.ts` decodes screenshots for pixel measurements; `e2e/engine.ts
 
 ## 3. Current state (verified numbers; do not restate them without re-measuring)
 
-Four sessions have worked on this branch. The third added several depots, turn-aware order, the faster lower bound, the freeze fix and the static-build worker fix; its container ended before it could push its last tile downloads and docs. The fourth session fixed the CI failure that its last push caused (a test time budget), rebuilt the bundle from the cache that had been pushed, re-ran everything and refreshed these docs.
+Four sessions have worked on this branch.
+
+* **Third session.** It added several depots, turn-aware order, the faster lower bound, the freeze fix and the static-build worker fix.
+* **Fourth session.** It ran in parallel with the third and believed the third session's container had ended. It added the main-roads deadline, fixed a test time budget and refreshed the docs on 55 tiles.
+* **Third session again.** Its container was still alive. It pushed its 4 extra tile files (59 of 85), rebuilt the bundle, re-measured and updated these docs on 59 tiles, and replaced the turn checkbox with a two-button control.
 
 ### Checks that pass (2026-10-19, fourth session, 55-tile bundle)
 
@@ -226,22 +230,22 @@ Four sessions have worked on this branch. The third added several depots, turn-a
 
 ### Bundled dataset
 
-`apps/web/public/cities/pune-bibwewadi.json` is real but **partial**: built from 55 of 85 tile files (`pnpm city:build pune-bibwewadi`, 1.49 MB).
+`apps/web/public/cities/pune-bibwewadi.json` is real but **partial**: built from 59 of 85 tile files (`pnpm city:build pune-bibwewadi`, 1.57 MB).
 
 | Item | Value |
 |---|---|
 | Area | 16.04 km² |
-| Nodes | 4,491 |
-| Segments | 5,378 (311.03 km) |
-| One-way segments | 528 |
-| Buildings | 11,854 (1 with a `height` tag, 14 from `building:levels`, 11,839 estimated) |
+| Nodes | 4,753 |
+| Segments | 5,691 (327.39 km) |
+| One-way segments | 583 |
+| Buildings | 12,404 (1 with a `height` tag, 14 from `building:levels`, 12,389 estimated) |
 | Turn restrictions | 0 (the region-wide restriction query has not been fetched) |
 
 The UI shows a "partial" chip and lists the missing tiles in provenance.
 
 ### Raw tile cache
 
-Committed under `data/cache/osm/pune-bibwewadi/`: **55 tile files OK** out of 85 (42 tiles × {streets, buildings} + 1 restrictions query). Run `pnpm city:acquire pune-bibwewadi --status` for the exact failed and missing list. The third session had reached 59, but its container ended before those 4 files were committed, so they must be fetched again.
+Committed under `data/cache/osm/pune-bibwewadi/`: **59 tile files OK** out of 85 (42 tiles × {streets, buildings} + 1 restrictions query). One file is marked failed (`t2_4:buildings`), and the rest have not been attempted yet, including the restrictions query. Run `pnpm city:acquire pune-bibwewadi --status` for the exact list.
 
 To continue, rerun the acquisition; it resumes from the manifest:
 
@@ -255,17 +259,23 @@ pnpm city:build pune-bibwewadi                                                  
 * Whether the mirror is reachable depends on the environment's network policy. In the second and fourth sessions the proxy refused every Overpass mirror (HTTP 403 on CONNECT): stop at once, do not retry, and ask the owner to allow `maps.mail.ru` in the environment's network settings. In the third session `maps.mail.ru` was reachable but slow (mostly HTTP 504, about 4 tiles an hour).
 * Do **not** hammer the servers, and commit the cache once per run, not per tile. Commit it before the session can end, so downloads are not lost again.
 
-### Benchmarks (55-tile bundle, fourth session; full tables in TEST_PLAN §5)
+### Benchmarks (59-tile bundle, third session; full tables in TEST_PLAN §5)
 
-* P2P, car by time, median of 200 queries: Dijkstra 0.51 ms, A* 0.56 ms, bidirectional 0.31 ms, ALT 0.23 ms, CH 0.028 ms. CH preprocessing 662–987 ms across profiles.
-* Coverage, whole network: directed exact 589.66 km in 0.4 s. Undirected heuristic 476.16 km against a lower bound of 447.26 km (gap 6.46 %) in **5.4 s, 1.75 s of it the lower bound**. History: 20.2 s → 9.4 s (typed-array heaps, second session, 47 tiles); bound 6.0 s → 1.55 s (sparse assignment start, third session, 54 tiles).
+* P2P, car by time, median of 200 queries: Dijkstra 0.53 ms, A* 0.51 ms, bidirectional 0.26 ms, ALT 0.27 ms, CH 0.026 ms. CH preprocessing takes 585–764 ms across profiles.
+* Coverage, whole network (5,691 segments, 327.4 km):
+  * directed exact: 622.46 km in 0.24 s;
+  * undirected heuristic: 499.16 km against a lower bound of 467.20 km (gap 6.84 %) in **5.6–5.8 s**, of which 1.9–2.1 s is the lower bound.
+* History:
+  * 20.2 s → 9.4 s from the typed-array heaps (second session, 47 tiles);
+  * bound 6.0 s → 1.55 s from the sparse assignment start (third session, 54 tiles).
+* Turn-aware order, 600 m zone around VIT, one-ways respected: 229 → 143 min of turn penalties, against a bound of 132 min, in about 25 ms.
 
 ### Phase status
 
 | Phase | Status |
 |---|---|
 | 1 Audit | done |
-| 2 Real Pune data | partial: 55 of 85 tile files; needs an environment that can reach an Overpass mirror |
+| 2 Real Pune data | partial: 59 of 85 tile files; needs an environment that can reach an Overpass mirror, and patience (it is overloaded) |
 | 3 Renderer and themes | done for the workspace; same-camera screenshots of both themes in `docs/screenshots/city-*.png`; page-load freeze fixed (§4.1) |
 | 4–6 Routing, profiles, reachability | done and tested; printable Route lab report with route sheet done and tested |
 | 7 Coverage | done: rectangle, circle and polygon zones; turn-aware order; faster whole-network bound; engine and UI tested against each other |
@@ -332,7 +342,7 @@ Profiled on the whole 47-tile network (3,032 odd intersections): the optional op
   * It runs on single routes and on fleet routes, including several depots. Routes that unload mid-way keep their order.
   * Real Pune, 600 m zone around VIT, one-ways respected: 229 → 143 min of turn penalties, against a bound of 132 min, in about 20 ms.
   * The bundle has no mapped turn restrictions yet: the region-wide restriction query has not been fetched. Banned-turn handling is tested on synthetic instances only.
-  * UI: "Order turns" option (on by default), a Turns row in the results and the report.
+  * UI: a "Turns" control ("Fewer U-turns", the default, or "Solver order"), a Turns row in the results and the report.
   * Tests: engine (7, including exhaustive search), e2e against the engine.
 * **Priority deadline (time windows, latest finish): DONE** (fourth session).
   * Engine: `planFleet` option `priority: { edgeIds, deadlineSeconds }`. The deadline is a route constraint in evaluation, both splits and local search. Three starting points: coverage order, priority first, and two-phase (priority streets split among the vehicles, the rest appended). A turn order never makes a met deadline late.

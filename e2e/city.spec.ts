@@ -876,7 +876,7 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     await page.getByTestId('pick-depot').click();
     await click(node.x, node.y);
     await expect(page.getByTestId('cov-depot')).not.toHaveText(/Not set|Click/);
-    await expect(page.getByTestId('cov-turn-aware')).toBeChecked();
+    await expect(page.getByTestId('cov-turns-ordered')).toHaveAttribute('aria-pressed', 'true');
     await page.getByTestId('cov-run').click();
     await expect(page.getByTestId('cov-turns')).toBeVisible({ timeout: 120_000 });
 
@@ -901,7 +901,7 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     await expect(page.getByTestId('cov-turns')).toContainText('Not included in the route times');
 
     // Off: the engine's own order, with its turn counts.
-    await page.getByTestId('cov-turn-aware').uncheck();
+    await page.getByTestId('cov-turns-engine').click();
     await expect(page.getByTestId('cov-stale')).toBeVisible();
     await page.getByTestId('cov-run').click();
     await expect(page.getByTestId('cov-stale')).toHaveCount(0, { timeout: 120_000 });

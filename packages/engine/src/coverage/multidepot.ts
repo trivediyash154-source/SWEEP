@@ -73,6 +73,8 @@ export function planMultiDepotFleet(graph: Graph, opts: MultiDepotOptions): Mult
   if (new Set(opts.depots.map((d) => d.depotId)).size !== opts.depots.length) return { ok: false, message: 'Each depot can be listed once.' };
   if (opts.depots.some((d) => !Number.isInteger(d.vehicles) || d.vehicles < 1)) return { ok: false, message: 'Every depot needs at least one vehicle.' };
   if (!(opts.serviceSpeedKmh > 0) || !(opts.deadheadSpeedKmh > 0)) return { ok: false, message: 'Service and deadhead speeds must be positive.' };
+  // Bounds valid for any split of the priority streets between depots are not derived yet.
+  if (opts.priority) return { ok: false, message: 'A priority deadline is supported for plans from one depot only.' };
   const directed = opts.direction === 'directed';
   const ag = buildArcGraph(graph, directed);
   const depotV = opts.depots.map((d) => ag.vertexIndex.get(d.depotId));
@@ -200,6 +202,7 @@ export function planMultiDepotFleet(graph: Graph, opts: MultiDepotOptions): Mult
       lowerBound: lb,
       reorderedRoutes: ts.reduce((x, t) => x + t.reorderedRoutes, 0),
       keptRoutes: ts.reduce((x, t) => x + t.keptRoutes, 0),
+      keptForDeadline: ts.reduce((x, t) => x + t.keptForDeadline, 0),
       optimal: !!lb && after.seconds <= lb.seconds + 1e-9 && after.banned <= lb.banned,
     };
   }

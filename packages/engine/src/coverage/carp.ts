@@ -25,6 +25,10 @@ import { addTallies, orderForTurns, TurnModel, type TurnOptions, type TurnTally 
  *    shiftSeconds.
  *  - Objective: 'min-total' (total fleet distance) or 'min-makespan' (time of
  *    the longest route; ties broken by total distance).
+ *  - Priority deadline (optional): a set of streets that must be serviced by
+ *    a given time after the shift starts (for example main roads before the
+ *    morning traffic). A route meets it when the service of its last priority
+ *    street ends by the deadline. Earliest-start windows are not modelled.
  *
  * Method (route-first, cluster-second; Beasley 1983, Ulusoy 1985, with
  * intermediate facilities as in Ghiani et al.):
@@ -67,6 +71,13 @@ export interface FleetPlanOptions {
   maxEndpoints?: number;
   /** Reorder each route's turns (same streets and length; see turns.ts). Routes that unload mid-way keep their order. */
   turns?: TurnOptions | null;
+  /** Streets (edge ids) that must be serviced within `deadlineSeconds` of the shift start. */
+  priority?: PriorityDeadline | null;
+}
+
+export interface PriorityDeadline {
+  edgeIds: readonly string[];
+  deadlineSeconds: number;
 }
 
 export interface FleetRoute {
@@ -86,6 +97,8 @@ export interface FleetRoute {
   feasible: { capacity: boolean; shift: boolean };
   /** Turns of this route, when turn rules were given. */
   turns?: TurnTally;
+  /** Seconds after the shift start at which the service of this route's last priority street ends (null: none, or no deadline given). */
+  priorityFinishSeconds: number | null;
 }
 
 /** Turns over all routes (turn rules given). Penalty seconds are reported apart from the route times. */
@@ -97,7 +110,33 @@ export interface FleetTurns {
   reorderedRoutes: number;
   /** Routes that unload at the disposal site keep their order (the loads between unloadings depend on it). */
   keptRoutes: number;
+  /** Routes whose turn order would have serviced a priority street after the deadline; they keep the planned order. */
+  keptForDeadline: number;
   optimal: boolean;
+}
+
+/** The priority deadline: what the plan achieves and what any plan with the available vehicles must respect. */
+export interface FleetPriority {
+  deadlineSeconds: number;
+  /** Service obligations on priority streets (one per direction in directed mode). */
+  obligations: number;
+  serviceMeters: number;
+  /** When the last priority street is serviced, over all routes (0 when there is none). */
+  finishSeconds: number;
+  met: boolean;
+  /** Vehicles whose last priority street is serviced after the deadline. */
+  lateVehicles: number[];
+  /** Task order the split started from: the coverage route's, or priority streets first. */
+  tour: 'coverage-order' | 'priority-first';
+  lowerBounds: {
+    /** No plan with at most `vehiclesAvailable` vehicles services every priority street earlier. */
+    finishSeconds: number;
+    /** Vehicles needed to meet the deadline (null: no vehicle can reach a priority street in time). */
+    vehicles: number | null;
+    basis: string;
+  };
+  /** The bounds prove that no plan with the available vehicles meets the deadline. */
+  provenInfeasible: boolean;
 }
 
 export interface FleetLowerBounds {
@@ -125,6 +164,7 @@ export interface FleetPlan {
   validation: { ok: boolean; checks: CheckResult[]; perVehicle: CheckResult[][] };
   coverage: CoverageResult;
   turns: FleetTurns | null;
+  priority: FleetPriority | null;
   timingsMs: { coverage: number; table: number; split: number; localSearch: number; expand: number; verify: number; total: number };
 }
 
@@ -142,6 +182,8 @@ interface Task {
   /** Scaled length per orientation. */
   cost: [number, number];
   demand: number;
+  /** On a priority street (must be serviced by the deadline). */
+  pri: boolean;
 }
 
 interface Ctx {
@@ -163,6 +205,10 @@ interface Ctx {
   vd: number;
   dumpSec: number;
   objective: FleetPlanOptions['objective'];
+  /** Priority deadline in seconds after the shift start (Infinity: none). */
+  deadline: number;
+  hasPri: boolean;
+  priEdges: ReadonlySet<string> | null;
 }
 
 interface Item {
@@ -180,14 +226,63 @@ interface RouteEval {
   breaks: number[];
   feasCap: boolean;
   feasShift: boolean;
+  /** When the service of the last priority task ends (−1: no priority task). */
+  priFinish: number;
+  feasDeadline: boolean;
 }
 
 const d = (c: Ctx, a: number, b: number): number => c.D[a * c.P + b]!;
 const secs = (c: Ctx, serviceScaled: number, deadheadScaled: number, unloads: number): number => fromScaled(serviceScaled) / c.vs + fromScaled(deadheadScaled) / c.vd + unloads * c.dumpSec;
 
+/** When the service of the route's last priority task ends, unloading after each position in `breaks` (−1: none). */
+function priorityFinish(c: Ctx, seq: readonly Item[], breaks: readonly number[]): number {
+  if (!c.hasPri) return -1;
+  const unloadAfter = new Set(breaks);
+  let at = c.depot;
+  let service = 0;
+  let dh = 0;
+  let unloads = 0;
+  let finish = -1;
+  seq.forEach((it, i) => {
+    dh += d(c, at, c.s[it.o]![it.t]!);
+    service += c.tasks[it.t]!.cost[it.o]!;
+    at = c.e[it.o]![it.t]!;
+    if (c.tasks[it.t]!.pri) finish = secs(c, service, dh, unloads);
+    if (unloadAfter.has(i)) {
+      dh += d(c, at, c.dump);
+      unloads++;
+      at = c.dump;
+    }
+  });
+  return finish;
+}
+
+/**
+ * Seconds after the shift start at which the service of the last step on a priority street ends, from the
+ * street-level steps: service steps at the service speed, every other step at the deadhead speed, and the
+ * unloading time after each unloading step (null: no priority step). Speeds in m/s.
+ */
+function finishOfSteps(steps: readonly RouteStep[], dumpAfterStep: readonly number[], priority: ReadonlySet<string>, vs: number, vd: number, dumpSec: number): number | null {
+  const dumps = new Set(dumpAfterStep);
+  let t = 0;
+  let finish: number | null = null;
+  steps.forEach((st, i) => {
+    t += st.weight / (st.kind === 'service' ? vs : vd);
+    if (st.kind === 'service' && priority.has(st.edgeId)) finish = t;
+    if (dumps.has(i)) t += dumpSec;
+  });
+  return finish;
+}
+
+/** Adds the priority deadline to a route evaluation. */
+function withDeadline(c: Ctx, seq: readonly Item[], ev: Omit<RouteEval, 'priFinish' | 'feasDeadline'>): RouteEval {
+  const priFinish = priorityFinish(c, seq, ev.breaks);
+  return { ...ev, priFinish, feasDeadline: priFinish <= c.deadline + 1e-9 };
+}
+
 /** Evaluate one vehicle route (task sequence), placing unloading stops optimally when there is a disposal site. */
 function evalRoute(c: Ctx, seq: readonly Item[]): RouteEval {
-  if (seq.length === 0) return { dist: 0, service: 0, deadhead: 0, time: 0, loads: [], breaks: [], feasCap: true, feasShift: true };
+  if (seq.length === 0) return { dist: 0, service: 0, deadhead: 0, time: 0, loads: [], breaks: [], feasCap: true, feasShift: true, priFinish: -1, feasDeadline: true };
   let service = 0;
   let load = 0;
   for (const it of seq) {
@@ -201,7 +296,7 @@ function evalRoute(c: Ctx, seq: readonly Item[]): RouteEval {
     let dh = d(c, c.depot, S(0)) + d(c, E(n - 1), c.depot);
     for (let i = 0; i + 1 < n; i++) dh += d(c, E(i), S(i + 1));
     const time = secs(c, service, dh, 0);
-    return { dist: service + dh, service, deadhead: dh, time, loads: [load], breaks: [], feasCap: load <= c.Q + 1e-9, feasShift: time <= c.shift + 1e-9 };
+    return withDeadline(c, seq, { dist: service + dh, service, deadhead: dh, time, loads: [load], breaks: [], feasCap: load <= c.Q + 1e-9, feasShift: time <= c.shift + 1e-9 });
   }
   // DP over unloading positions: best[j] = cheapest way to have serviced 0..j−1 and unloaded at the dump.
   const unitCost = (dh: number, unloads: number): number => (c.objective === 'min-makespan' ? fromScaled(dh) / c.vd + unloads * c.dumpSec : dh + unloads * 1e-3);
@@ -248,7 +343,7 @@ function evalRoute(c: Ctx, seq: readonly Item[]): RouteEval {
   }
   const unloads = bestUnloads[n]!;
   const time = secs(c, service, dh, unloads);
-  return { dist: service + dh, service, deadhead: dh, time, loads, breaks, feasCap: feasCap && loads.every((l) => l <= c.Q + 1e-9), feasShift: time <= c.shift + 1e-9 };
+  return withDeadline(c, seq, { dist: service + dh, service, deadhead: dh, time, loads, breaks, feasCap: feasCap && loads.every((l) => l <= c.Q + 1e-9), feasShift: time <= c.shift + 1e-9 });
 }
 
 /** Upper bound on evalRoute's cost with a disposal site: unload greedily when the next task would not fit. O(length). */
@@ -288,7 +383,7 @@ function evalRouteGreedy(c: Ctx, seq: readonly Item[]): RouteEval {
     loads.push(load);
   } else dh += d(c, at, c.depot);
   const time = secs(c, service, dh, unloads);
-  return { dist: service + dh, service, deadhead: dh, time, loads, breaks, feasCap, feasShift: time <= c.shift + 1e-9 };
+  return withDeadline(c, seq, { dist: service + dh, service, deadhead: dh, time, loads, breaks, feasCap, feasShift: time <= c.shift + 1e-9 });
 }
 
 /** Optimal split of the giant tour into at most `kMax` routes (no disposal site). */
@@ -315,6 +410,8 @@ function splitNoDump(c: Ctx, tour: Item[], kMax: number): { routes: Item[][] } |
         load += t.demand;
         if (j > i) inner += d(c, E(j - 1), S(j));
         if (load > c.Q + 1e-9) break;
+        // Every extension keeps task j, so a late priority task ends the extension.
+        if (t.pri && secs(c, svc, d(c, c.depot, S(i)) + inner, 0) > c.deadline + 1e-9) break;
         const dh = d(c, c.depot, S(i)) + inner + d(c, E(j), c.depot);
         const time = secs(c, svc, dh, 0);
         if (time > c.shift + 1e-9) {
@@ -387,6 +484,21 @@ function splitWithDump(c: Ctx, tour: Item[], kMax: number): { routes: Item[][] }
     for (let i = a; i + 1 < b; i++) s += d(c, E(i), S(i + 1));
     return s + d(c, E(b - 1), c.dump);
   });
+  // Service and inner deadhead from a trip's start to the end of its last priority task (−1: none).
+  const priSvc = new Float64Array(T).fill(-1);
+  const priInner = new Float64Array(T);
+  trips.forEach(([a, b], ti) => {
+    let sv = 0;
+    let dh = 0;
+    for (let i = a; i < b; i++) {
+      if (i > a) dh += d(c, E(i - 1), S(i));
+      sv += c.tasks[tour[i]!.t]!.cost[tour[i]!.o]!;
+      if (c.tasks[tour[i]!.t]!.pri) {
+        priSvc[ti] = sv;
+        priInner[ti] = dh;
+      }
+    }
+  });
   // Stage 2: group consecutive trips into vehicle routes.
   const keyA = Array.from({ length: kMax + 1 }, () => new Float64Array(T + 1).fill(Infinity));
   const keyB = Array.from({ length: kMax + 1 }, () => new Float64Array(T + 1).fill(Infinity));
@@ -399,8 +511,11 @@ function splitWithDump(c: Ctx, tour: Item[], kMax: number): { routes: Item[][] }
       let s = 0;
       let dh = d(c, c.depot, S(trips[i]![0]));
       for (let j = i; j < T; j++) {
+        const approach = j > i ? d(c, c.dump, S(trips[j]![0])) : 0;
+        // Every extension keeps trip j, so a late priority task ends the extension.
+        if (priSvc[j]! >= 0 && secs(c, s + priSvc[j]!, dh + approach + priInner[j]!, j - i) > c.deadline + 1e-9) break;
         s += svc[j]!;
-        dh += innerDh[j]! + (j > i ? d(c, c.dump, S(trips[j]![0])) : 0);
+        dh += innerDh[j]! + approach;
         const totalDh = dh + d(c, c.dump, c.depot);
         const time = secs(c, s, totalDh, j - i + 1);
         if (time > c.shift + 1e-9) break;
@@ -483,7 +598,7 @@ function localSearch(c: Ctx, routes: Item[][], budget: number): { routes: Item[]
   let evaluations = 0;
   let applied = 0;
   const orients = (t: number): number[] => (c.tasks[t]!.arc[1] < 0 ? [0] : [0, 1]);
-  const feasible = (e: RouteEval): boolean => e.feasCap && e.feasShift;
+  const feasible = (e: RouteEval): boolean => e.feasCap && e.feasShift && e.feasDeadline;
   let improved = true;
   while (improved && evaluations < budget) {
     improved = false;
@@ -562,6 +677,7 @@ export function planFleet(graph: Graph, opts: FleetPlanOptions): FleetPlan | Fle
   if (!(opts.serviceSpeedKmh > 0) || !(opts.deadheadSpeedKmh > 0)) return { ok: false, message: 'Service and deadhead speeds must be positive.' };
   if (opts.capacity != null && !(opts.capacity > 0)) return { ok: false, message: 'Capacity must be positive (or unset for unlimited).' };
   if (opts.shiftSeconds != null && !(opts.shiftSeconds > 0)) return { ok: false, message: 'The shift limit must be positive (or unset for unlimited).' };
+  if (opts.priority && !(opts.priority.deadlineSeconds > 0)) return { ok: false, message: 'The priority deadline must be a positive time after the shift start.' };
   const directed = opts.direction === 'directed';
   const coverage = opts.coverage ?? solveZoneCoverage(graph, { direction: opts.direction, depotId: opts.depotId });
   if (!coverage.ok) return { ok: false, message: `Coverage could not be computed: ${coverage.message}` };
@@ -578,6 +694,7 @@ export function planFleet(graph: Graph, opts: FleetPlanOptions): FleetPlan | Fle
     return f; // a loop
   };
   const demandPerKm = opts.demandPerKm ?? 0;
+  const priSet = opts.priority ? new Set(opts.priority.edgeIds) : null;
   const tasks: Task[] = [];
   const tour: Item[] = [];
   for (const st of coverage.route.steps) {
@@ -586,7 +703,7 @@ export function planFleet(graph: Graph, opts: FleetPlanOptions): FleetPlan | Fle
     const a = arcOf(edge, st.from, st.to);
     const other = directed ? -1 : a === ag.fwdArc[edge] ? ag.backArc[edge]! : ag.fwdArc[edge]!;
     const len = work.edges[edge]!.weight;
-    tasks.push({ edge, arc: [a, other], cost: [ag.arcCost[a]!, other >= 0 ? ag.arcCost[other]! : Infinity], demand: (len / 1000) * demandPerKm });
+    tasks.push({ edge, arc: [a, other], cost: [ag.arcCost[a]!, other >= 0 ? ag.arcCost[other]! : Infinity], demand: (len / 1000) * demandPerKm, pri: !!priSet?.has(st.edgeId) });
     tour.push({ t: tasks.length - 1, o: 0 });
   }
   // Endpoint table.
@@ -647,16 +764,40 @@ export function planFleet(graph: Graph, opts: FleetPlanOptions): FleetPlan | Fle
     vd: opts.deadheadSpeedKmh / 3.6,
     dumpSec: opts.dumpSeconds ?? 0,
     objective: opts.objective,
+    deadline: Infinity,
+    hasPri: false,
+    priEdges: null,
   };
+  if (opts.priority && tasks.some((t) => t.pri)) {
+    c.deadline = opts.priority.deadlineSeconds;
+    c.hasPri = true;
+    c.priEdges = priSet;
+  }
   const totalDemand = tasks.reduce((x, t) => x + t.demand, 0);
   const issues: string[] = [];
 
   // Split (allowing more vehicles than available only to diagnose infeasibility).
-  const unconstrained = opts.objective === 'min-total' && !Number.isFinite(c.Q) && !Number.isFinite(c.shift);
-  const split = (kk: number): { routes: Item[][] } | null =>
-    // Without capacity or shift limits, one route is optimal for the min-total objective: splitting adds
+  const unconstrained = opts.objective === 'min-total' && !Number.isFinite(c.Q) && !Number.isFinite(c.shift) && !c.hasPri;
+  // With a priority deadline the split also starts from the order with every priority task first (stable), and
+  // keeps whichever start gives the better plan that meets the deadline.
+  const priorityFirst = c.hasPri ? [...tour.filter((it) => tasks[it.t]!.pri), ...tour.filter((it) => !tasks[it.t]!.pri)] : null;
+  let tourKind: FleetPriority['tour'] = 'coverage-order';
+  const splitOf = (order: Item[], kk: number): { routes: Item[][] } | null =>
+    // Without capacity, shift or deadline limits, one route is optimal for the min-total objective: splitting adds
     // depot visits, which by the triangle inequality never shorten the walk.
-    unconstrained ? { routes: [tour.slice()] } : c.hasDump && totalDemand > 0 ? splitWithDump(c, tour, kk) : splitNoDump(c, tour, kk);
+    unconstrained ? { routes: [order.slice()] } : c.hasDump && totalDemand > 0 ? splitWithDump(c, order, kk) : splitNoDump(c, order, kk);
+  const split = (kk: number): { routes: Item[][] } | null => {
+    const a = splitOf(tour, kk);
+    if (!priorityFirst) return a;
+    const b = splitOf(priorityFirst, kk);
+    const keyOf = (x: { routes: Item[][] }): PlanKey => planKey(c, x.routes.map((r) => evalRoute(c, r)));
+    if (b && (!a || better(keyOf(b), keyOf(a)))) {
+      tourKind = 'priority-first';
+      return b;
+    }
+    tourKind = 'coverage-order';
+    return a;
+  };
   let sp = split(k);
   let vehiclesOk = true;
   if (!sp) {
@@ -665,12 +806,12 @@ export function planFleet(graph: Graph, opts: FleetPlanOptions): FleetPlan | Fle
       sp = split(Math.min(50, kk));
       if (sp) break;
     }
-    if (sp) issues.push(`No plan with ${k} vehicle(s) satisfies the ${opts.capacity != null && !c.hasDump ? 'capacity and ' : ''}shift limits for this task order; the plan below uses ${sp.routes.length} vehicles.`);
+    if (sp) issues.push(`No plan with ${k} vehicle(s) satisfies the ${opts.capacity != null && !c.hasDump ? 'capacity and ' : ''}shift limits${c.hasPri ? ' and the priority deadline' : ''} for this task order; the plan below uses ${sp.routes.length} vehicles.`);
   }
   if (!sp) {
     // Individual tasks that violate the limits on their own.
     sp = { routes: tour.map((it) => [it]) };
-    issues.push('Even one route per task violates the limits: some single streets exceed the capacity or cannot be serviced within the shift.');
+    issues.push(`Even one route per task violates the limits: some single streets exceed the capacity or cannot be serviced within the shift${c.hasPri ? ' or by the priority deadline' : ''}.`);
     vehiclesOk = false;
   }
   let routes = sp.routes;
@@ -694,9 +835,19 @@ export function planFleet(graph: Graph, opts: FleetPlanOptions): FleetPlan | Fle
     const model = new TurnModel(work, opts.turns);
     const orders = fleet.map((r) => (r.dumpAfterStep.length ? null : orderForTurns(work, r.steps, opts.depotId, opts.turns!)));
     const beforeT = fleet.map((r, i) => orders[i]?.before ?? model.tally(r.steps));
+    let keptForDeadline = 0;
     fleet = fleet.map((r, i) => {
       const o = orders[i];
       if (!o?.reordered) return { ...r, turns: beforeT[i]! };
+      if (c.hasPri) {
+        // A new order must not service a priority street after the deadline when the planned order did not.
+        const fin = finishOfSteps(o.steps, r.dumpAfterStep, c.priEdges!, c.vs, c.vd, c.dumpSec) ?? -1;
+        if (fin > c.deadline + 1e-6 && (r.priorityFinishSeconds ?? -1) <= c.deadline + 1e-6) {
+          keptForDeadline++;
+          return { ...r, turns: beforeT[i]! };
+        }
+        return { ...r, steps: o.steps, tasks: o.steps.filter((x) => x.kind === 'service').map((x) => ({ edgeId: x.edgeId, from: x.from, to: x.to })), turns: o.after, priorityFinishSeconds: fin >= 0 ? fin : null };
+      }
       return { ...r, steps: o.steps, tasks: o.steps.filter((x) => x.kind === 'service').map((x) => ({ edgeId: x.edgeId, from: x.from, to: x.to })), turns: o.after };
     });
     const kept = orders.filter((o) => o === null).length;
@@ -706,13 +857,14 @@ export function planFleet(graph: Graph, opts: FleetPlanOptions): FleetPlan | Fle
       before: addTallies(beforeT),
       after,
       lowerBound: lb,
-      reorderedRoutes: orders.filter((o) => o?.reordered).length,
+      reorderedRoutes: orders.filter((o) => o?.reordered).length - keptForDeadline,
       keptRoutes: kept,
+      keptForDeadline,
       optimal: !!lb && after.seconds <= lb.seconds + 1e-9 && after.banned <= lb.banned,
     };
   }
   const t5 = now();
-  const v = verifyFleetPlan(work, fleet, { depotId: opts.depotId, dumpId: opts.dumpId ?? null, directed, capacity: c.Q, shiftSeconds: c.shift, serviceSpeedKmh: opts.serviceSpeedKmh, deadheadSpeedKmh: opts.deadheadSpeedKmh, dumpSeconds: c.dumpSec, demandPerKm });
+  const v = verifyFleetPlan(work, fleet, { depotId: opts.depotId, dumpId: opts.dumpId ?? null, directed, capacity: c.Q, shiftSeconds: c.shift, serviceSpeedKmh: opts.serviceSpeedKmh, deadheadSpeedKmh: opts.deadheadSpeedKmh, dumpSeconds: c.dumpSec, demandPerKm, priority: opts.priority ?? null });
   const t6 = now();
 
   // Lower bounds (valid; see FleetLowerBounds docs in the module note).
@@ -761,6 +913,9 @@ export function planFleet(graph: Graph, opts: FleetPlanOptions): FleetPlan | Fle
   if (!capOk) issues.push('At least one route exceeds the vehicle capacity.');
   if (!shiftOk) issues.push('At least one route exceeds the shift limit.');
   if (fleet.length > k) vehiclesOk = false;
+  const priority = opts.priority ? priorityReport(c, dp, s, k, fleet, opts.priority.deadlineSeconds, tourKind) : null;
+  if (priority && !priority.met) issues.push(`Vehicle${priority.lateVehicles.length > 1 ? 's' : ''} ${priority.lateVehicles.join(', ')} service${priority.lateVehicles.length > 1 ? '' : 's'} priority streets after the deadline.`);
+  if (priority?.provenInfeasible) issues.push(`No plan with ${k} vehicle(s) can service every priority street by the deadline (see the priority bounds).`);
   return {
     ok: true,
     method: 'route-first-cluster-second',
@@ -776,7 +931,7 @@ export function planFleet(graph: Graph, opts: FleetPlanOptions): FleetPlan | Fle
       // The makespan bound holds for plans with at most `vehicles` routes; an over-fleet (infeasible) plan gets no gap.
       makespan: lowerBounds.makespanSeconds.value > 0 && fleet.length <= k ? (totals.makespanSeconds - lowerBounds.makespanSeconds.value) / lowerBounds.makespanSeconds.value : null,
     },
-    feasibility: { ok: capOk && shiftOk && vehiclesOk, issues },
+    feasibility: { ok: capOk && shiftOk && vehiclesOk && (priority?.met ?? true), issues },
     localSearch: {
       evaluations: ls.evaluations,
       applied: ls.applied,
@@ -786,7 +941,59 @@ export function planFleet(graph: Graph, opts: FleetPlanOptions): FleetPlan | Fle
     validation: v,
     coverage,
     turns,
+    priority,
     timingsMs: { coverage: t1 - t0, table: t2 - t1, split: t3 - t2, localSearch: t4 - t3, expand: t5 - t4, verify: t6 - t5, total: t6 - t0 },
+  };
+}
+
+/**
+ * The priority deadline achieved by the plan, and bounds valid for any plan with at most k vehicles. Travel is
+ * timed at the faster of the two speeds, so the bounds hold whichever speed applies.
+ *  - Finish: every priority obligation must be reached from the depot and serviced; and some vehicle services at
+ *    least 1/k of the priority service time after first reaching a priority street.
+ *  - Vehicles: before the deadline a vehicle can service priority streets for at most (deadline − the shortest
+ *    access time to any priority street).
+ */
+function priorityReport(c: Ctx, depot: number, s: Int32Array[], k: number, fleet: readonly FleetRoute[], deadline: number, tour: FleetPriority['tour']): FleetPriority {
+  const vmax = Math.max(c.vs, c.vd);
+  let obligations = 0;
+  let serviceSec = 0;
+  let serviceMeters = 0;
+  let access = Infinity;
+  let latestSingle = 0;
+  c.tasks.forEach((t, i) => {
+    if (!t.pri) return;
+    obligations++;
+    let svc = Infinity;
+    let single = Infinity;
+    for (let o = 0; o < 2; o++) {
+      if (t.arc[o]! < 0) continue;
+      const reach = fromScaled(d(c, depot, s[o]![i]!)) / vmax;
+      access = Math.min(access, reach);
+      svc = Math.min(svc, fromScaled(t.cost[o]!) / c.vs);
+      single = Math.min(single, reach + fromScaled(t.cost[o]!) / c.vs);
+    }
+    serviceSec += svc;
+    serviceMeters += svc * c.vs;
+    latestSingle = Math.max(latestSingle, single);
+  });
+  const finishLb = obligations ? Math.max(latestSingle, access + serviceSec / k) : 0;
+  const vehiclesLb = obligations === 0 ? 0 : deadline > access ? Math.ceil(serviceSec / (deadline - access) - 1e-9) : null;
+  const lateVehicles = fleet.filter((r) => (r.priorityFinishSeconds ?? -1) > deadline + 1e-6).map((r) => r.vehicle);
+  return {
+    deadlineSeconds: deadline,
+    obligations,
+    serviceMeters,
+    finishSeconds: fleet.reduce((x, r) => Math.max(x, r.priorityFinishSeconds ?? 0), 0),
+    met: lateVehicles.length === 0,
+    lateVehicles,
+    tour,
+    lowerBounds: {
+      finishSeconds: finishLb,
+      vehicles: vehiclesLb,
+      basis: `For any plan with at most ${k} vehicle(s): the last priority street cannot be serviced before the slowest single priority street served straight from the depot, nor before the nearest one's access time plus 1/${k} of the priority service time; and before the deadline a vehicle can service priority streets for at most the deadline minus that access time.`,
+    },
+    provenInfeasible: obligations > 0 && (finishLb > deadline + 1e-9 || vehiclesLb === null || vehiclesLb > k),
   };
 }
 
@@ -846,6 +1053,7 @@ function expandRoute(c: Ctx, graph: Graph, seq: readonly Item[], vehicle: number
     tripLoads: ev.loads,
     intermediateDumps: ev.breaks.length,
     feasible: { capacity: ev.loads.every((l) => l <= c.Q + 1e-9), shift: seconds <= c.shift + 1e-9 },
+    priorityFinishSeconds: c.hasPri ? finishOfSteps(steps, dumpAfterStep, c.priEdges!, c.vs, c.vd, c.dumpSec) : null,
   };
 }
 
@@ -858,7 +1066,7 @@ function expandRoute(c: Ctx, graph: Graph, seq: readonly Item[], vehicle: number
 export function verifyFleetPlan(
   graph: Graph,
   routes: readonly FleetRoute[],
-  opts: { depotId: string; dumpId: string | null; directed: boolean; capacity: number; shiftSeconds: number; serviceSpeedKmh: number; deadheadSpeedKmh: number; dumpSeconds: number; demandPerKm: number },
+  opts: { depotId: string; dumpId: string | null; directed: boolean; capacity: number; shiftSeconds: number; serviceSpeedKmh: number; deadheadSpeedKmh: number; dumpSeconds: number; demandPerKm: number; priority?: PriorityDeadline | null },
 ): { ok: boolean; checks: CheckResult[]; perVehicle: CheckResult[][] } {
   const edges = new Map(graph.edges.map((e) => [e.id, e]));
   const obligation = (id: string, fwd: boolean): string => {
@@ -940,5 +1148,18 @@ export function verifyFleetPlan(
     { id: 'coverage', label: 'Every obligation is serviced exactly once', passed: missing.length === 0 && twice.length === 0 && extra.length === 0, detail: missing.length + twice.length + extra.length === 0 ? `${needed.size} of ${needed.size} obligations serviced exactly once.` : `Missing ${missing.length}, serviced twice ${twice.length}, unexpected ${extra.length}.` },
     { id: 'limits', label: 'Capacity and shift limits hold on every route', passed: perVehicle.every((p) => p[3]!.passed && p[4]!.passed), detail: 'Recomputed from the steps.' },
   ];
+  if (opts.priority) {
+    const pri = new Set(opts.priority.edgeIds);
+    const finishes = routes.map((r) => finishOfSteps(r.steps, r.dumpAfterStep, pri, vs, vd, opts.dumpSeconds));
+    const late = routes.filter((_, i) => (finishes[i] ?? -1) > opts.priority!.deadlineSeconds + 1e-6).map((r) => r.vehicle);
+    const last = finishes.reduce<number>((x, f) => Math.max(x, f ?? 0), 0);
+    const reported = routes.every((r, i) => (r.priorityFinishSeconds === null) === (finishes[i] === null) && Math.abs((r.priorityFinishSeconds ?? 0) - (finishes[i] ?? 0)) <= 1e-6 * Math.max(1, finishes[i] ?? 0));
+    checks.push({
+      id: 'priority-deadline',
+      label: 'Priority streets are serviced by the deadline',
+      passed: late.length === 0 && reported,
+      detail: !reported ? 'A reported priority finish time does not match the steps.' : late.length ? `Late on vehicle(s) ${late.join(', ')}; last priority street done after ${(last / 60).toFixed(1)} min (deadline ${(opts.priority.deadlineSeconds / 60).toFixed(1)} min).` : `Last priority street done after ${(last / 60).toFixed(1)} min (deadline ${(opts.priority.deadlineSeconds / 60).toFixed(1)} min), recomputed from the steps.`,
+    });
+  }
   return { ok: checks.every((x) => x.passed) && perVehicle.every((p) => p.every((x) => x.passed)), checks, perVehicle };
 }

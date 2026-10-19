@@ -51,9 +51,9 @@ The original abstract-network laboratory (editor, proofs, Zurich sample) is at `
 |---|---|
 | ![City workspace, Velvet theme, focused on VIT Bibwewadi](docs/screenshots/city-velvet.png) | ![City workspace, Porcelain theme, same camera](docs/screenshots/city-porcelain.png) |
 
-| Route lab: five algorithms on one real query | Coverage & fleet: three vehicles on a free-outline zone, mid-shift |
+| Route lab: five algorithms on one real query | Coverage & fleet: three vehicles on a circle zone, mid-shift |
 |---|---|
-| ![Route lab with the computed route](docs/screenshots/city-route-lab.png) | ![Coverage plan with three vehicle routes and the shift timeline](docs/screenshots/city-coverage-fleet.png) |
+| ![Route lab with the computed route](docs/screenshots/city-route-velvet.png) | ![Coverage plan with three vehicle routes and the shift timeline](docs/screenshots/city-coverage-porcelain.png) |
 
 Network lab (`/lab`):
 

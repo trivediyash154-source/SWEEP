@@ -67,7 +67,7 @@ The 3D scene's own materials and lights change with the theme. Verified by e2e:
 * switching theme raises the ground luminance at least threefold;
 * measured roof-to-ground contrast is 6.86:1 in Velvet and 1.52:1 in Porcelain (threshold 1.3:1), on the 55-tile bundle.
 
-Same-camera captures: `docs/screenshots/city-velvet.png` and `city-porcelain.png`, plus the route captures (`city-route-velvet.png`, `city-route-lab.png`) and the coverage captures (`city-coverage-porcelain.png`, `city-coverage-fleet.png`). Velvet buildings, which were the original complaint, are clearly visible on the landing page, in the lab and in the city.
+Same-camera captures on the 55-tile bundle: `docs/screenshots/city-velvet.png` and `city-porcelain.png`, plus a route (`city-route-velvet.png`) and a three-vehicle coverage plan mid-shift (`city-coverage-porcelain.png`), all produced by `node scripts/city-screenshots.mjs`. Velvet buildings, which were the original complaint, are clearly visible on the landing page, in the lab and in the city.
 
 ## 5. Algorithms
 

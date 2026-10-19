@@ -316,7 +316,7 @@ Profiled on the whole 47-tile network (3,032 odd intersections): the optional op
 
 ### 4.4 Screenshots and the final report
 
-* Same-camera screenshots of `/workspace` in both themes, the Route lab and a coverage plan are in `docs/screenshots/city-*.png` (second session) and in README. Recapture them after the data changes.
+* Same-camera screenshots of `/workspace` in both themes, the Route lab and a coverage plan are in `docs/screenshots/city-*.png` and in README, recaptured on the 55-tile bundle in the fourth session. Recapture them with `node scripts/city-screenshots.mjs` (server on :8790) after the data changes.
 * The final report for the owner is `docs/FINAL_REPORT.md`. The fourth session updated it to the 55-tile bundle and the third session's features (re-measured contrast and benchmarks, current test results). Update it whenever the data or the test figures change.
 
 ### 4.5 Next features

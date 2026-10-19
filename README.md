@@ -13,13 +13,13 @@ No account is needed for any of it.
 
 ## City workspace: real Pune (`/workspace`)
 
-The city workspace runs on real OpenStreetMap data for Pune, Bibwewadi and the VIT area (about 4 × 4 km). The bundled extract is **partial**: it was built from 51 of the 85 tile downloads, and the app lists the missing tiles in its provenance dialog.
+The city workspace runs on real OpenStreetMap data for Pune, Bibwewadi and the VIT area (about 4 × 4 km). The bundled extract is **partial**: it was built from 55 of the 85 tile downloads, and the app lists the missing tiles in its provenance dialog.
 
 | Item | Count |
 |---|---|
-| Intersections | 4,160 |
-| Street segments | 5,000 (291.0 km; 493 one-way) |
-| Building footprints | 11,092 |
+| Intersections | 4,491 |
+| Street segments | 5,378 (311.0 km; 528 one-way) |
+| Building footprints | 11,854 |
 
 Building heights come from the OSM `height` tag or `building:levels` for a handful of buildings; all others are estimates. Estimates are flagged as such, and the camera toolbar can tint them.
 
@@ -36,6 +36,8 @@ Building heights come from the OSM `height` tag or `building:levels` for a handf
     * respecting one-way streets: exact directed min-cost flow;
     * ignoring them: exact undirected matching, or for large zones a heuristic reported with a valid lower bound and gap.
   * Multi-vehicle plans with shift and capacity limits, with their lower bounds. When the limits need more vehicles than you have, the plan says how many routes it needs instead of claiming a result.
+  * Several depots in one plan, each with its own vehicles: streets go to the depot with the cheapest round trip, and the lower bounds hold for any split between depots.
+  * Turn-aware order (on by default): the same street traversals and the same distance, reordered to avoid U-turns and right turns (traffic keeps left). The plan reports the turn counts, the turn-penalty time and a lower bound on it.
   * A deterministic shift timeline.
   * Cost and CO₂ estimates from your own assumptions, applied to the distance and hours the vehicles actually drive.
   * A printable report, GPX tracks (one per vehicle, for navigation devices) and a step list (CSV) with street names, OSM ids and times of day.
@@ -118,7 +120,7 @@ pnpm start          # → http://localhost:8787 (API + web app)
 
 * **Development:** `pnpm dev` runs the web app on :5173 and the API on :8787.
 * **Docker:** `docker compose up --build`. See [DEPLOYMENT.md](DEPLOYMENT.md) for the image, the health check, persistence and the `tests` profile.
-* **Static build:** `pnpm build:static` produces a serverless build that runs the identical engine in a Web Worker.
+* **Static build:** `pnpm build:static` produces a serverless build in `apps/web/dist-static/` that runs the identical engine in Web Workers. It uses hash routes (the city workspace is at `/#/workspace`). Accounts and the server's map-acquisition cache are not available in it; map acquisition then goes straight from the browser to Overpass.
 
 The workspace opens straight into a solved district. Bundled examples work offline. Live map acquisition needs outbound access to a public Overpass instance; when none is reachable, SWEEP says which providers failed and why, and points to GeoJSON import or the bundled Zurich sample.
 
@@ -128,16 +130,16 @@ The workspace opens straight into a solved district. Bundled examples work offli
 pnpm verify    # typecheck → lint → unit/property/integration → Python oracle → build → Playwright e2e + axe
 ```
 
-Latest recorded run: **all green**, locally and on GitHub Actions (the `verify` job, plus a `docker` job that builds the image, checks health, smoke-tests and restarts).
+Latest recorded run (2026-10-19, 55-tile Pune bundle): **all green**, locally and on GitHub Actions (the `verify` job, plus a `docker` job that builds the image, checks health, smoke-tests and restarts).
 
 | Suite | Count |
 |---|---|
-| Engine | 96 tests |
+| Engine | 170 tests |
 | Server | 38 tests |
-| Web | 7 tests |
+| Web | 29 tests |
 | Oracle, undirected | 661 graphs, checked against networkx and brute force |
 | Oracle, directed and mixed | 1,401 graphs, checked against networkx min-cost flow and a state-space search |
-| Browser | 37 end-to-end and accessibility tests, desktop and mobile, both themes |
+| Browser | 54 end-to-end and accessibility tests, desktop and mobile, both themes, including 14 on the real Pune data checked against independent engine runs |
 
 Details are in [TEST_PLAN.md](TEST_PLAN.md).
 
@@ -163,9 +165,9 @@ Street data acquired or bundled from OpenStreetMap is © OpenStreetMap contribut
 
 * **Mixed networks.** The *either direction* rule is exact only up to 12 required two-way streets; larger instances are refused with an explanation rather than approximated.
 * **Disconnected required streets.** These make the rural postman problem NP-hard. The lab refuses them, explains why and suggests connectors. The city workspace joins them with shortest connector paths and reports the result with a lower bound and gap, never as optimal.
-* **Fleets.** In the lab, fleet plans split one certified route and come with the stated bound; there are no capacities or time windows. In the city workspace, fleet plans handle capacity, a shift limit and a disposal site; they are heuristics reported with valid lower bounds and gaps, not proven optima. Coverage plans do not model turn costs or time windows.
+* **Fleets.** In the lab, fleet plans split one certified route and come with the stated bound; there are no capacities or time windows. In the city workspace, fleet plans handle capacity, a shift limit and a disposal site; they are heuristics reported with valid lower bounds and gaps, not proven optima. Coverage plans order their streets to reduce turn penalties, but they do not choose extra streets to avoid turns, and they do not model time windows.
 * **Size.** Exact undirected matching is limited to 600 odd intersections in interactive use, and a map acquisition to 4 km².
 * **3D context.** In the lab (`/lab`), buildings are procedural context generated from the streets. In the city workspace (`/workspace`) they are real OSM footprints, but most heights are flagged estimates.
-* **Pune extract.** The bundled Pune data is partial: 51 of 85 tile downloads, because the public Overpass mirrors often time out and some environments block them. The region-wide turn-restriction query is among the missing downloads, so no turn restrictions are applied yet; when present, only via-node restrictions are supported.
+* **Pune extract.** The bundled Pune data is partial: 55 of 85 tile downloads, because the public Overpass mirrors often time out and some environments block them. The region-wide turn-restriction query is among the missing downloads, so no turn restrictions are applied yet; when present, only via-node restrictions are supported.
 * **Accounts.** There is no password reset, because no email service is configured.
-* **Hosting.** There is no public deployment yet; see [DEPLOYMENT.md](DEPLOYMENT.md).
+* **Hosting.** The public deployment at https://sweep-ashy.vercel.app is an earlier static build without the city workspace. It has not been redeployed with this work yet; see [DEPLOYMENT.md](DEPLOYMENT.md).

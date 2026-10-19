@@ -6,19 +6,17 @@
 
 ## Latest recorded run (2026-10-19)
 
-Second session of the city redesign. The run used Linux 6.18, a 4-core Intel Xeon at 2.10 GHz, Node 22.22.0, Python 3.13 with networkx 3.5, and Chromium 141 headless (Playwright 1.56.1, software WebGL via SwiftShader). In the final `pnpm verify` every stage passed except one browser test (the intermittent page-load freeze, see the end-to-end row), so that run **exited with status 1**; the test passed on rerun, and an earlier full browser run passed 51 of 51. The same checks run on GitHub Actions in the `verify` job; the `docker` job builds and smoke-tests the image (see [DEPLOYMENT.md](DEPLOYMENT.md)).
+Fourth session of the city redesign, on the 55-tile Pune bundle, after the third session's work (several depots, turn-aware order, the faster lower bound and the page-load freeze fix). The run used Linux 6.18, a 4-core Intel Xeon at 2.80 GHz, Node 22.22.0, Python 3.13 with networkx 3.5, and Chromium headless (Playwright 1.56.1, software WebGL via SwiftShader). Every stage of `pnpm verify` passed, run as its separate steps (typecheck, lint and unit tests; the oracle; build and the browser suite). The same checks run on GitHub Actions in the `verify` job; the `docker` job builds and smoke-tests the image (see [DEPLOYMENT.md](DEPLOYMENT.md)).
 
-| Suite | Command | Result |
-|---|---|---|
 | Typecheck (engine, server, web) | `pnpm typecheck` | passed |
 | Lint (ESLint, TypeScript rules, React hooks) | `pnpm lint` | passed, 0 warnings |
-| Engine unit + property tests | `pnpm --filter @sweep/engine test` | **156 / 156 passed** (13 files, including routing and coverage on the real Pune bundle) |
+| Engine unit + property tests | `pnpm --filter @sweep/engine test` | **170 / 170 passed** (16 files, including routing, coverage, several depots and turn order on the real Pune bundle) |
 | Server integration tests | `pnpm --filter @sweep/server test` | **38 / 38 passed** |
 | Web unit tests | `pnpm --filter @sweep/web test` | **29 / 29 passed** (10 files) |
 | Python oracle, undirected | `pnpm test:oracle` | **661 graphs; 537 compared with networkx, 439 with brute force; all agree**. The other 124 were rejected by SWEEP, and the oracle confirmed each has genuinely disconnected required streets. The real Zurich sample is included as its explicit undirected relaxation (one-way restrictions ignored). |
 | Python oracle, directed and mixed | `pnpm test:oracle` | **1,401 graphs; 490 compared with networkx min-cost flow, 681 with a state-space search; all agree**. The other 610 were rejected by SWEEP, and the oracle confirmed each has no legal covering closed walk or has disconnected required streets. |
 | Production build | `pnpm build` (and `pnpm build:static`) | passed |
-| End-to-end + accessibility | `pnpm test:e2e` | **51 / 51 passed** in a full run (desktop 1440×900 and mobile 390×844, both themes). In the final `pnpm verify` run, 50 / 51: one city test hit the known intermittent page-load freeze (see `HANDOFF.md` §4.1) and passed on rerun |
+| End-to-end + accessibility | `pnpm test:e2e` | **54 / 54 passed** in 11.7 min, one worker (desktop 1440×900 and mobile 390×844, both themes). The intermittent page-load freeze (about 1 page load in 200 in earlier runs) was fixed in the third session (`HANDOFF.md` §4.1) |
 
 Bugs that the end-to-end suite found during the workspace redesign, and that were then fixed:
 
@@ -158,18 +156,18 @@ Fleets (`solveFleet`, base solve + split + verification):
 
 Raw results are in `packages/engine/bench/results.json`.
 
-### City workspace engine (real Pune bundle, 51 of 85 tile files: 4,160 intersections, 5,000 segments, 290.97 km)
+### City workspace engine (real Pune bundle, 55 of 85 tile files: 4,491 intersections, 5,378 segments, 311.03 km)
 
-Measured after the two sessions' work was merged (2026-10-19) with `npx tsx packages/engine/bench/p2p.ts` and `npx tsx packages/engine/bench/coverage.ts` on a 4-core Xeon at 2.80 GHz, Node 22.22.
+Measured with `npx tsx packages/engine/bench/p2p.ts` and `npx tsx packages/engine/bench/coverage.ts` on a 4-core Xeon at 2.80 GHz, Node 22.22, after the third session's work (sparse assignment start for the lower bound).
 
 Point-to-point, median over 200 random queries (arcs settled in brackets):
 
 | Profile, objective | Dijkstra | A* | Bidirectional | ALT | CH | Preprocessing (ALT / CH) |
 |---|---:|---:|---:|---:|---:|---|
-| car, time | 0.459 ms (3,524) | 0.557 ms (1,963) | 0.288 ms (1,562) | 0.184 ms (483) | 0.041 ms (102) | 51.3 ms / 713 ms |
-| car, distance | 0.411 ms (3,581) | 0.207 ms (891) | 0.287 ms (2,084) | 0.201 ms (724) | 0.026 ms (101) | 29.2 ms / 648 ms |
-| truck, time | 0.501 ms (3,462) | 0.597 ms (2,249) | 0.261 ms (1,691) | 0.249 ms (622) | 0.029 ms (96) | 18.0 ms / 622 ms |
-| foot, time | 0.472 ms (3,604) | 0.331 ms (1,009) | 0.376 ms (2,438) | 0.090 ms (348) | 0.029 ms (132) | 26.8 ms / 818 ms |
+| car, time | 0.512 ms (3,780) | 0.564 ms (2,057) | 0.306 ms (1,440) | 0.228 ms (798) | 0.028 ms (101) | 57.2 ms / 987 ms |
+| car, distance | 0.599 ms (3,997) | 0.286 ms (1,118) | 0.374 ms (2,478) | 0.311 ms (901) | 0.026 ms (114) | 31.3 ms / 662 ms |
+| truck, time | 0.487 ms (3,446) | 0.637 ms (2,087) | 0.216 ms (1,315) | 0.189 ms (734) | 0.026 ms (96) | 19.2 ms / 823 ms |
+| foot, time | 0.840 ms (4,751) | 0.424 ms (1,051) | 0.466 ms (3,008) | 0.075 ms (284) | 0.033 ms (147) | 25.2 ms / 912 ms |
 
 For the time objective A* settles fewer arcs than Dijkstra but is not always faster here (car and truck). Its straight-line bound is divided by the fastest speed in the graph, so it is loose on slower streets, and each settled arc costs a heuristic evaluation; this explanation has not been profiled. The benchmark also prints the bicycle profile and the distance objective for truck and foot.
 
@@ -177,14 +175,14 @@ Coverage (zone, solve, bound and verification):
 
 | Zone | Model | Method | Route | Lower bound | Gap | Time |
 |---|---|---|---:|---:|---:|---:|
-| circle r = 400 m (13.3 km required) | directed | exact min-cost flow, connectors added | 32.37 km | 26.65 km | 21.45 % | 0.7 s |
-| circle r = 400 m | undirected | exact Edmonds–Johnson, connectors added | 24.54 km | 21.38 km | 14.76 % | 0.9 s |
+| circle r = 400 m (13.3 km required) | directed | exact min-cost flow, connectors added | 32.37 km | 26.65 km | 21.45 % | 0.9 s |
+| circle r = 400 m | undirected | exact Edmonds–Johnson, connectors added | 24.54 km | 21.38 km | 14.76 % | 1.0 s |
 | circle r = 800 m (54.5 km required) | directed | exact min-cost flow, connectors added | 112.75 km | 108.16 km | 4.24 % | 0.2 s |
-| circle r = 800 m | undirected | candidate-matching heuristic | 87.02 km | 77.38 km | 12.46 % | 0.6 s |
-| whole network (290.97 km) | directed | exact min-cost flow (optimal; 28 one-way segments unserviceable) | 547.68 km | 547.68 km | 0 % | 0.3 s |
-| whole network | undirected | candidate-matching heuristic | 445.67 km | 419.08 km | 6.35 % | 9.0 s (6.1 s of it the lower bound) |
+| circle r = 800 m | undirected | candidate-matching heuristic | 87.02 km | 77.38 km | 12.46 % | 0.5 s |
+| whole network (311.03 km) | directed | exact min-cost flow (optimal; 35 one-way segments unserviceable) | 589.66 km | 589.66 km | 0 % | 0.4 s |
+| whole network | undirected | candidate-matching heuristic | 476.16 km | 447.26 km | 6.46 % | 5.4 s (1.75 s of it the lower bound) |
 
-The undirected times are after the heap and flow speed-up of the second session. On the 47-tile bundle that speed-up took the whole network from 20.2 s (17.5 s of it the bound) to 9.4 s, with an identical route, bound and gap. The lower bound does not include the cost of joining separate street groups (6 and 10 connector paths in the circle zones), so there the gap is an upper limit on the distance from the optimum, not an estimate of it. Fleet plans for these zones take 0.2–3.2 s (distance table, split and local search); the benchmark prints each one.
+History of the whole-network undirected time: on the 47-tile bundle the second session's typed-array heaps took it from 20.2 s (17.5 s of it the bound) to 9.4 s with an identical route, bound and gap; on the 54-tile bundle the third session's sparse Jonker–Volgenant assignment start took the bound from 6.0 s to 1.55 s, with a slightly stronger, still feasible value (HANDOFF §4.3). The lower bound does not include the cost of joining separate street groups (6 and 10 connector paths in the circle zones), so there the gap is an upper limit on the distance from the optimum, not an estimate of it. Fleet plans for these zones take 0.2–3.2 s (distance table, split and local search); the benchmark prints each one.
 
 ### Frontend (headless Chromium, software WebGL via SwiftShader, local server)
 

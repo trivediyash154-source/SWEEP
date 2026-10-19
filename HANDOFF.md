@@ -212,32 +212,36 @@ Helpers: `e2e/png.ts` decodes screenshots for pixel measurements; `e2e/engine.ts
 
 ## 3. Current state (verified numbers; do not restate them without re-measuring)
 
-### Checks that pass (2026-10-19, second session)
+Four sessions have worked on this branch. The third added several depots, turn-aware order, the faster lower bound, the freeze fix and the static-build worker fix; its container ended before it could push its last tile downloads and docs. The fourth session fixed the CI failure that its last push caused (a test time budget), rebuilt the bundle from the cache that had been pushed, re-ran everything and refreshed these docs.
+
+### Checks that pass (2026-10-19, fourth session, 55-tile bundle)
 
 * `pnpm typecheck` ✓ and `pnpm lint` ✓ (0 warnings).
-* Unit tests: engine 156/156, server 38/38, web 29/29 (after the exports were added; see TEST_PLAN for the run figures).
-* E2E: **52 of 52 passed** in a full local run after the merge (one worker), on the 51-tile bundle, and in CI on `e233ff5`.
-* Latest full `pnpm verify` (after the merge, docs-only changes since): **exit 0 in 745 s**; typecheck, lint, unit tests, both oracles, build and 52/52 browser tests.
-* Last `pnpm verify` (final code of the second session): typecheck, lint, unit tests, both oracles and the build passed; the browser suite had **50 of 51**. The one failure was the known intermittent page-load freeze (§4.1) in "every algorithm returns the engine optimum"; that test and the whole city spec then passed when rerun. So `pnpm verify` did **not** exit 0 on that run.
+* Unit tests: engine 170/170 (16 files), server 38/38, web 29/29.
+* Both Python oracles: all comparisons agree.
+* `pnpm build` and `pnpm build:static` ✓.
+* E2E: **54 of 54 passed** in a full local run (11.7 min, one worker), 14 of them on the real Pune data.
+* CI (`verify` and `docker`) green on `c4ae948`.
+* The static build, served by a plain file server with no API, was checked in headless Chromium: landing page, lab, `/#/workspace` city load, the Route lab (all five algorithms agree) and a coverage plan, with no console errors or failed requests.
 
 ### Bundled dataset
 
-`apps/web/public/cities/pune-bibwewadi.json` is real but **partial**: built from 51 of 85 tile files (`pnpm city:build pune-bibwewadi`, 1.33 MB).
+`apps/web/public/cities/pune-bibwewadi.json` is real but **partial**: built from 55 of 85 tile files (`pnpm city:build pune-bibwewadi`, 1.49 MB).
 
 | Item | Value |
 |---|---|
 | Area | 16.04 km² |
-| Nodes | 4,160 |
-| Segments | 5,000 (291.0 km) |
-| One-way segments | 493 |
-| Buildings | 11,092 |
+| Nodes | 4,491 |
+| Segments | 5,378 (311.03 km) |
+| One-way segments | 528 |
+| Buildings | 11,854 (1 with a `height` tag, 14 from `building:levels`, 11,839 estimated) |
 | Turn restrictions | 0 (the region-wide restriction query has not been fetched) |
 
 The UI shows a "partial" chip and lists the missing tiles in provenance.
 
 ### Raw tile cache
 
-Committed under `data/cache/osm/pune-bibwewadi/`: **51 tile files OK** out of 85 after the merge (run `pnpm city:acquire pune-bibwewadi --status` for the exact failed and missing list) (42 tiles × {streets, buildings} + 1 restrictions query).
+Committed under `data/cache/osm/pune-bibwewadi/`: **55 tile files OK** out of 85 (42 tiles × {streets, buildings} + 1 restrictions query). Run `pnpm city:acquire pune-bibwewadi --status` for the exact failed and missing list. The third session had reached 59, but its container ended before those 4 files were committed, so they must be fetched again.
 
 To continue, rerun the acquisition; it resumes from the manifest:
 
@@ -248,26 +252,27 @@ pnpm city:build pune-bibwewadi                                                  
 ```
 
 * The two environment variables are needed in the Claude cloud container, because outbound HTTPS goes through a proxy.
-* **In the second session the proxy refused every Overpass mirror (HTTP 403 on CONNECT)**, so no tiles were added. The owner must allow the mirror host (for example `maps.mail.ru`) in the environment's network settings before the acquisition can continue. When it works, `maps.mail.ru` is slow but reliable.
-* Do **not** hammer the servers, and commit the cache once per run, not per tile.
+* Whether the mirror is reachable depends on the environment's network policy. In the second and fourth sessions the proxy refused every Overpass mirror (HTTP 403 on CONNECT): stop at once, do not retry, and ask the owner to allow `maps.mail.ru` in the environment's network settings. In the third session `maps.mail.ru` was reachable but slow (mostly HTTP 504, about 4 tiles an hour).
+* Do **not** hammer the servers, and commit the cache once per run, not per tile. Commit it before the session can end, so downloads are not lost again.
 
-### Benchmarks (51-tile bundle, after the merge; full tables in TEST_PLAN §5)
+### Benchmarks (55-tile bundle, fourth session; full tables in TEST_PLAN §5)
 
-* P2P, car by time, median of 200 queries: Dijkstra 0.46 ms, A* 0.56 ms, bidirectional 0.29 ms, ALT 0.18 ms, CH 0.041 ms. CH preprocessing 583–818 ms across profiles.
-* Coverage, whole network: directed exact 547.68 km in 0.3 s. Undirected heuristic 445.67 km against a lower bound of 419.08 km (gap 6.35 %) in **9.0 s, 6.1 s of it the fractional-matching lower bound**. On the 47-tile bundle the second session's speed-up took this from 20.2 s (17.5 s for the bound) to 9.4 s with the identical result.
+* P2P, car by time, median of 200 queries: Dijkstra 0.51 ms, A* 0.56 ms, bidirectional 0.31 ms, ALT 0.23 ms, CH 0.028 ms. CH preprocessing 662–987 ms across profiles.
+* Coverage, whole network: directed exact 589.66 km in 0.4 s. Undirected heuristic 476.16 km against a lower bound of 447.26 km (gap 6.46 %) in **5.4 s, 1.75 s of it the lower bound**. History: 20.2 s → 9.4 s (typed-array heaps, second session, 47 tiles); bound 6.0 s → 1.55 s (sparse assignment start, third session, 54 tiles).
 
 ### Phase status
 
 | Phase | Status |
 |---|---|
 | 1 Audit | done |
-| 2 Real Pune data | partial: 51 of 85 tile files; acquisition blocked by the environment's network policy in the second session |
-| 3 Renderer and themes | done for the workspace; same-camera screenshots of both themes in `docs/screenshots/city-*.png` |
+| 2 Real Pune data | partial: 55 of 85 tile files; needs an environment that can reach an Overpass mirror |
+| 3 Renderer and themes | done for the workspace; same-camera screenshots of both themes in `docs/screenshots/city-*.png`; page-load freeze fixed (§4.1) |
 | 4–6 Routing, profiles, reachability | done and tested; printable Route lab report with route sheet done and tested |
-| 7 Coverage | done: rectangle, circle and polygon zones; engine and UI tested against each other |
-| 8 Fleet, scenarios, cost, report | done: multi-vehicle plans with honest over-fleet diagnosis, scenario plan overrides (depot, vehicles, shift, costs) with baseline comparison, cost from the routes actually driven, printable coverage report |
+| 7 Coverage | done: rectangle, circle and polygon zones; turn-aware order; faster whole-network bound; engine and UI tested against each other |
+| 8 Fleet, scenarios, cost, report | done: multi-vehicle plans with honest over-fleet diagnosis, several depots, scenario plan overrides (depot, vehicles, shift, costs) with baseline comparison, cost from the routes actually driven, printable coverage report, GPX/CSV exports |
 | 9 Shift timeline | done, including multi-vehicle plans (e2e) |
-| 10 Docs, full verify, final report | docs updated (README, ARCHITECTURE, MATHEMATICAL_SPEC §12–14, SECURITY, IMPLEMENTATION_STATUS, this file); final report in `docs/FINAL_REPORT.md`, reconciled with the merged state |
+| 10 Docs, full verify, final report | docs refreshed in the fourth session (README, IMPLEMENTATION_STATUS, TEST_PLAN, DEPLOYMENT, this file, `docs/FINAL_REPORT.md`); MATHEMATICAL_SPEC §12–16 |
+| 11 Public deployment | not done: the owner asked for the Vercel deployment to be updated; see §5 |
 
 ---
 
@@ -312,7 +317,7 @@ Profiled on the whole 47-tile network (3,032 odd intersections): the optional op
 ### 4.4 Screenshots and the final report
 
 * Same-camera screenshots of `/workspace` in both themes, the Route lab and a coverage plan are in `docs/screenshots/city-*.png` (second session) and in README. Recapture them after the data changes.
-* The final report for the owner is `docs/FINAL_REPORT.md`. It was reconciled with the merged state (51-tile bundle, re-measured contrast and benchmarks, test results after the merge). Update it whenever the data or the test figures change.
+* The final report for the owner is `docs/FINAL_REPORT.md`. The fourth session updated it to the 55-tile bundle and the third session's features (re-measured contrast and benchmarks, current test results). Update it whenever the data or the test figures change.
 
 ### 4.5 Next features
 
@@ -334,5 +339,5 @@ Profiled on the whole 47-tile network (3,032 odd intersections): the optional op
 ## 5. Deployment note
 
 * The owner earlier asked for a Vercel deployment of the static build. That deployment, https://sweep-ashy.vercel.app (project "sweep"), predates the city workspace.
-* Do **not** redeploy without the owner's go-ahead.
+* The owner has asked for this work to be put on Vercel. The fourth session could not do it: its Vercel connector could list the "sweep" project but was refused (HTTP 403) for the project's team scope, and the container had no Vercel CLI login. The owner needs to re-authorise the Vercel connector for that team (or deploy from a machine with access). Then deploy `apps/web/dist-static/` (build it with `pnpm build:static`); no rewrites are needed because the static build uses hash routes (`/#/workspace`).
 * `pnpm build:static` produces `apps/web/dist-static/`. The city JSON is served from `public/cities/`, and `cityUrl()` respects `BASE_URL`.

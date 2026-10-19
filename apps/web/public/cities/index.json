@@ -11,17 +11,17 @@
     73.888
    ],
    "file": "cities/pune-bibwewadi.json",
-   "bytes": 904076,
+   "bytes": 1302764,
    "stats": {
     "areaKm2": 16.04,
-    "nodes": 2636,
-    "segments": 3103,
-    "roadLengthKm": 203.69,
-    "buildings": 7142
+    "nodes": 3776,
+    "segments": 4517,
+    "roadLengthKm": 267.2,
+    "buildings": 10412
    },
    "osmBase": [
-    "2026-07-15T15:22:01Z",
-    "2026-10-19T10:29:21Z"
+    "2026-06-01T08:52:28Z",
+    "2026-10-19T13:16:18Z"
    ],
    "complete": false
   }

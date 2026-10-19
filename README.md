@@ -13,14 +13,15 @@ No account is needed for any of it.
 
 ## City workspace: real Pune (`/workspace`)
 
-The city workspace runs on real OpenStreetMap data for Pune, Bibwewadi and the VIT area (about 4 × 4 km). The bundled extract is **partial**; the app shows which tiles are missing.
+The city workspace runs on real OpenStreetMap data for Pune, Bibwewadi and the VIT area (about 4 × 4 km). The bundled extract is **partial**: it was built from 47 of the 85 tile downloads, and the app lists the missing tiles in its provenance dialog.
 
 | Item | Count |
 |---|---|
-| Street segments | 3,103 (203.69 km) |
-| Building footprints | 6,725 |
+| Intersections | 3,776 |
+| Street segments | 4,517 (267.2 km; 466 one-way) |
+| Building footprints | 10,412 |
 
-Most building heights are estimates, and the app flags them as such.
+Building heights come from the OSM `height` tag (1 building), `building:levels` (11), or otherwise an estimate (10,400). Estimates are flagged as such, and the camera toolbar can tint them.
 
 * **Route lab: who reaches first, and why.**
   * Five algorithms answer the same turn-aware query on the same graph with the same cost: Dijkstra, A*, bidirectional Dijkstra, ALT and contraction hierarchies.
@@ -28,17 +29,19 @@ Most building heights are estimates, and the app flags them as such.
   * Every route is checked by an independent validator.
   * Replay shows each algorithm's real settle order.
   * Reachability bands show what can be reached in 5, 10 and 15 minutes.
+  * A printable report with the algorithm table, the independent checks, the profile assumptions and a street-by-street route sheet whose turns match the engine's turn model.
 * **Coverage & fleet.**
-  * Draw a service zone and place a depot (and optionally a disposal site), then plan routes that cover every street in the zone.
+  * Draw a service zone (rectangle, circle or free outline) and place a depot (and optionally a disposal site), then plan routes that cover every street in the zone.
   * Methods:
     * respecting one-way streets: exact directed min-cost flow;
     * ignoring them: exact undirected matching, or for large zones a heuristic reported with a valid lower bound and gap.
-  * Multi-vehicle plans with shift and capacity limits, with their lower bounds.
+  * Multi-vehicle plans with shift and capacity limits, with their lower bounds. When the limits need more vehicles than you have, the plan says how many routes it needs instead of claiming a result.
   * A deterministic shift timeline.
-  * Cost and CO₂ estimates from your own assumptions.
+  * Cost and CO₂ estimates from your own assumptions, applied to the distance and hours the vehicles actually drive.
   * A printable report.
 * **Scenarios.**
   * Close a road or change its direction on the map, then recompute routes and coverage against the unchanged baseline.
+  * Change the operation for coverage: another depot, fleet size, shift limit, fuel price or wage. "Compare with baseline" plans both and shows the change in distance, hours, vehicles, fuel, CO₂ and cost.
 
 The original abstract-network laboratory (editor, proofs, Zurich sample) is at `/lab`. To refresh the Pune data, run `pnpm city:acquire pune-bibwewadi` (resumable and polite to the public Overpass servers), then `pnpm city:build pune-bibwewadi`. See `HANDOFF.md` and `IMPLEMENTATION_STATUS.md` for the current state.
 
@@ -149,10 +152,10 @@ Street data acquired or bundled from OpenStreetMap is © OpenStreetMap contribut
 ## Limitations
 
 * **Mixed networks.** The *either direction* rule is exact only up to 12 required two-way streets; larger instances are refused with an explanation rather than approximated.
-* **Disconnected required streets.** These make the rural postman problem NP-hard, so SWEEP refuses them, explains why, and suggests connectors.
-* **Fleets.** Fleet plans split one certified route and come with the stated bound; they are not proven min–max optima. There are no capacities, time windows or turn costs.
+* **Disconnected required streets.** These make the rural postman problem NP-hard. The lab refuses them, explains why and suggests connectors. The city workspace joins them with shortest connector paths and reports the result with a lower bound and gap, never as optimal.
+* **Fleets.** In the lab, fleet plans split one certified route and come with the stated bound; there are no capacities or time windows. In the city workspace, fleet plans handle capacity, a shift limit and a disposal site; they are heuristics reported with valid lower bounds and gaps, not proven optima. Coverage plans do not model turn costs or time windows.
 * **Size.** Exact undirected matching is limited to 600 odd intersections in interactive use, and a map acquisition to 4 km².
 * **3D context.** In the lab (`/lab`), buildings are procedural context generated from the streets. In the city workspace (`/workspace`) they are real OSM footprints, but most heights are flagged estimates.
-* **Pune extract.** The bundled Pune data is partial (public Overpass mirrors often time out). Turn restrictions are via-node only.
+* **Pune extract.** The bundled Pune data is partial: 47 of 85 tile downloads, because the public Overpass mirrors often time out and some environments block them. The region-wide turn-restriction query is among the missing downloads, so no turn restrictions are applied yet; when present, only via-node restrictions are supported.
 * **Accounts.** There is no password reset, because no email service is configured.
 * **Hosting.** There is no public deployment yet; see [DEPLOYMENT.md](DEPLOYMENT.md).

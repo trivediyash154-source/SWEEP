@@ -6,7 +6,7 @@ import { DEFAULT_CITY, buildMeshesInWorker, fetchCity, fetchCityIndex, type City
 export type CityMode = 'route' | 'coverage' | 'scenarios';
 
 /** What the next click on the map selects. */
-export type PickTarget = null | 'origin' | 'destination' | 'depot' | 'dump' | 'close-road' | 'make-oneway' | 'zone-a' | 'zone-b';
+export type PickTarget = null | 'origin' | 'destination' | 'depot' | 'dump' | 'close-road' | 'make-oneway' | 'zone' | 'scenario-depot';
 
 export interface LoadTimings {
   fetchMs: number;

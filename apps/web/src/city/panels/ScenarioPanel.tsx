@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { Icon } from '../../components/Icon';
 import { useCity } from '../store';
 import { useRoute } from '../routeStore';
-import { BASELINE, specOf, useScenarios } from '../scenario';
+import { BASELINE, overrideCount, specOf, useScenarios, type Scenario } from '../scenario';
 import { segmentLabel } from '../Inspector';
 import { router } from '../routerClient';
 import type { RouterResponse } from '../router.worker';
 import { rerunAll } from '../actions';
 import { fmtDist, fmtTime, nodeLabel } from './RouteLab';
+import { NumberField } from './CoveragePanel';
+import { useCoverage } from '../coverageStore';
 
 interface Comparison {
   baseline: { found: boolean; timeS: number; distanceM: number };
@@ -48,7 +50,7 @@ export function ScenarioPanel() {
     }
   };
 
-  const tool = (t: 'close-road' | 'make-oneway') => {
+  const tool = (t: 'close-road' | 'make-oneway' | 'scenario-depot') => {
     useCity.getState().setPickTarget(pickTarget === t ? null : t);
   };
   const changed = active.closed.length + active.oneway.length;
@@ -78,7 +80,9 @@ export function ScenarioPanel() {
               data-testid={`scenario-${s.id === 'baseline' ? 'baseline' : 'custom'}`}
             >
               <strong>{s.name}</strong>
-              <span className="faint small">{s.id === 'baseline' ? 'As mapped in OpenStreetMap' : `${s.closed.length} closure${s.closed.length === 1 ? '' : 's'} · ${s.oneway.length} direction change${s.oneway.length === 1 ? '' : 's'}`}</span>
+              <span className="faint small">
+                {s.id === 'baseline' ? 'As mapped in OpenStreetMap' : `${s.closed.length} closure${s.closed.length === 1 ? '' : 's'} · ${s.oneway.length} direction change${s.oneway.length === 1 ? '' : 's'}${overrideCount(s) ? ` · ${overrideCount(s)} operation change${overrideCount(s) === 1 ? '' : 's'}` : ''}`}
+              </span>
             </button>
             {s.id !== 'baseline' && (
               <button type="button" className="btn btn--ghost btn--icon btn--sm" aria-label={`Delete ${s.name}`} onClick={() => {
@@ -140,6 +144,8 @@ export function ScenarioPanel() {
         </ul>
       )}
 
+      <OperationsEditor active={active} picking={pickTarget === 'scenario-depot'} onPickDepot={() => tool('scenario-depot')} />
+
       <section className="sc-compare" aria-label="Comparison with baseline">
         <h3>Route impact</h3>
         {origin === null || destination === null ? (
@@ -183,5 +189,56 @@ export function ScenarioPanel() {
         )}
       </section>
     </>
+  );
+}
+
+/**
+ * Plan overrides of the active scenario: coverage plans made under this scenario
+ * use these values instead of the Coverage & fleet panel's. A blank field keeps
+ * the panel's value. Editing while the baseline is active creates a scenario.
+ */
+function OperationsEditor({ active, picking, onPickDepot }: { active: Scenario; picking: boolean; onPickDepot: () => void }) {
+  const city = useCity((s) => s.city)!;
+  // Separate primitive selectors: zustand 5 re-renders forever on a selector that builds a new object.
+  const base = {
+    depot: useCoverage((s) => s.depot),
+    vehicles: useCoverage((s) => s.fleet.vehicles),
+    shift: useCoverage((s) => s.fleet.shiftSeconds),
+    fuelPrice: useCoverage((s) => s.costs.fuelPricePerL),
+    wage: useCoverage((s) => s.costs.wagePerHour),
+  };
+  const p = active.plan ?? {};
+  const set = useScenarios.getState().setPlan;
+  const panel = (v: number | null, unit = '') => (v === null ? 'panel: none' : `panel: ${v}${unit}`);
+  return (
+    <section className="sc-ops" aria-label="Coverage operation in this scenario" data-testid="scenario-ops">
+      <h3>Coverage operation</h3>
+      <p className="faint small">Change the depot, fleet or cost assumptions for coverage plans in this scenario. Blank fields keep the Coverage & fleet panel's values.</p>
+      <div className="rl-end rl-end--plain">
+        <div className="rl-end__body">
+          <div className="rl-end__row">
+            <span className="rl-end__label">Depot</span>
+            <strong className="rl-end__value" data-testid="scenario-depot">
+              {p.depot !== undefined ? nodeLabel(city, p.depot) : picking ? 'Click an intersection' : base.depot !== null ? `as panel: ${nodeLabel(city, base.depot)}` : 'as panel (not set)'}
+            </strong>
+            {p.depot !== undefined && (
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => set({ depot: undefined })} data-testid="scenario-depot-clear">
+                Clear
+              </button>
+            )}
+            <button type="button" className={`btn btn--ghost btn--sm${picking ? ' is-on' : ''}`} aria-pressed={picking} onClick={onPickDepot} data-testid="pick-scenario-depot">
+              <Icon name="focus" size={13} /> Pick
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="cv-grid">
+        <NumberField label="Vehicles" value={p.vehicles ?? null} onChange={(v) => set({ vehicles: v === null ? undefined : Math.round(v) })} min={1} max={20} step={1} placeholder={panel(base.vehicles)} testid="scenario-vehicles" />
+        <NumberField label="Shift limit" value={p.shiftSeconds === undefined || p.shiftSeconds === null ? null : p.shiftSeconds / 3600} onChange={(v) => set({ shiftSeconds: v === null ? undefined : Math.round(v * 3600) })} min={0.25} max={24} step={0.25} placeholder={panel(base.shift === null ? null : base.shift / 3600, ' h')} unit="h" testid="scenario-shift" />
+        <NumberField label="Fuel price" value={p.costs?.fuelPricePerL ?? null} onChange={(v) => set({ costs: { fuelPricePerL: v ?? undefined } })} min={0} max={1000} step={0.5} placeholder={panel(base.fuelPrice)} unit="₹/L" testid="scenario-fuel-price" />
+        <NumberField label="Wage" value={p.costs?.wagePerHour ?? null} onChange={(v) => set({ costs: { wagePerHour: v ?? undefined } })} min={0} max={10000} step={1} placeholder={panel(base.wage)} unit="₹/h" testid="scenario-wage" />
+      </div>
+      {active.id === 'baseline' && <p className="faint small">Editing here creates a new scenario; the baseline keeps the panel's values.</p>}
+    </section>
   );
 }

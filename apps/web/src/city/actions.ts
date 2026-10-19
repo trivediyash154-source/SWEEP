@@ -28,9 +28,14 @@ export function handleCityPick(p: PickResult): void {
     city.select(p);
     return;
   }
-  if (target === 'zone-a' || target === 'zone-b') {
-    useCoverage.getState().setCorner(target === 'zone-a' ? 'a' : 'b', p.x, p.y);
-    city.setPickTarget(target === 'zone-a' ? 'zone-b' : null);
+  if (p.kind === 'node' && target === 'scenario-depot') {
+    useScenarios.getState().setPlan({ depot: p.node });
+    city.setPickTarget(null);
+    city.select(p);
+    return;
+  }
+  if (target === 'zone') {
+    if (useCoverage.getState().addZonePoint(p.x, p.y)) city.setPickTarget(null);
     return;
   }
   if (p.kind === 'segment' && target === 'close-road') {
@@ -58,5 +63,5 @@ export function rerunAll(): void {
   if (r.origin !== null && r.destination !== null) void r.run();
   if (r.reach && r.origin !== null) void r.runReach();
   const cv = useCoverage.getState();
-  if (cv.result && cv.zone && cv.depot !== null) void cv.run();
+  if (cv.result && cv.zone) void cv.run(); // run() checks the depot the plan uses (a scenario may set it)
 }

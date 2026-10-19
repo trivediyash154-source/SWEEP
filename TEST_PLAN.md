@@ -12,9 +12,9 @@ The run used Linux 6.18, a 4-core Intel Xeon at 2.10 GHz, Node 22.22.0, Python 3
 |---|---|---|
 | Typecheck (engine, server, web) | `pnpm typecheck` | passed |
 | Lint (ESLint, TypeScript rules, React hooks) | `pnpm lint` | passed, 0 warnings |
-| Engine unit + property tests | `pnpm --filter @sweep/engine test` | **96 / 96 passed** |
+| Engine unit + property tests | `pnpm --filter @sweep/engine test` | **154 / 154 passed** (13 files, including routing and coverage on the real Pune bundle) |
 | Server integration tests | `pnpm --filter @sweep/server test` | **38 / 38 passed** |
-| Web unit tests | `pnpm --filter @sweep/web test` | **7 / 7 passed** |
+| Web unit tests | `pnpm --filter @sweep/web test` | **26 / 26 passed** (9 files) |
 | Python oracle, undirected | `pnpm test:oracle` | **661 graphs; 537 compared with networkx, 439 with brute force; all agree**. The other 124 were rejected by SWEEP, and the oracle confirmed each has genuinely disconnected required streets. The real Zurich sample is included as its explicit undirected relaxation (one-way restrictions ignored). |
 | Python oracle, directed and mixed | `pnpm test:oracle` | **1,401 graphs; 490 compared with networkx min-cost flow, 681 with a state-space search; all agree**. The other 610 were rejected by SWEEP, and the oracle confirmed each has no legal covering closed walk or has disconnected required streets. |
 | Production build | `pnpm build` (and `pnpm build:static`) | passed |
@@ -97,11 +97,23 @@ The oracle re-walks every SWEEP route, including the legal direction of every st
 |---|---|
 | `landing.spec.ts` | The hero and the live instrument; the ledger row equals engine output; WebGL canvas or fallback; the cursor field has `pointer-events: none` and links under it stay clickable; under reduced motion there is no field and the toggle state is right; theme toggle and persistence; mathematics page figures; 404 |
 | `workspace.spec.ts` (17) | Opens straight into a solved city without signing in; bundled network: the total equals the engine total, and the exact route is compared with real baselines; 3D/2D stage switch; building and editing a network, where changes propagate, re-solve automatically and undo restores the result; playback play, pause and speed; the mathematical investigation (odd vertices, shortest paths, matching, verification) highlights the real record; every verification check is listed as passed; theme change; local save and reopen after reload; JSON and CSV exports equal the engine output; **the real Zurich sample solved in directed mode, with OSM attribution, compared with the two-way relaxation (wrong-way traversals) and its LP certificate**; a fleet where each vehicle animates its own route and the plan exports with validation; a GeoJSON import with a one-way dead end is explained and fixed; map acquisition through the dialog (provider response mocked); clearing local data only after confirmation; the blossom field never blocks controls; reduced motion (no field, playback jumps to the finished route) |
+| `city.spec.ts` (11) | The city workspace on the real Pune bundle, always compared with an engine run on the same data: provenance and attribution; five algorithms agree and validate, and the printable Route lab report shows the same figures and a route sheet that ends at the route distance; reachability nests 5 ⊆ 10 ⊆ 15 min; a closure clicked on the map equals the engine with that segment closed; roof/ground contrast > 1.3 in both themes (measured on screenshots); theme switch rebuilds the scene; building click shows the OSM feature and height source; coverage of a rectangle (directed and undirected; honest method labels; timeline; cost model; report; scenario comparison); circle and polygon zones (self-crossing point refused; undo); a 3-vehicle fleet with a shift limit equal to `planFleet`, over-shift flags, the over-fleet diagnosis when the makespan bound proves the shift infeasible, and a scenario with another depot, fleet size and fuel price compared with the baseline |
 | `auth.spec.ts` | Optional accounts. Register; save to account; stored run history; reload; sign out guards the account page; a second user cannot open the first user's scenario; generic sign-in error |
 | `responsive.spec.ts` (mobile) | The workspace optimises at 390 px; no horizontal overflow on the landing page or workspace |
 | `a11y.spec.ts` | axe-core on `/`, `/workspace`, `/mathematics`, `/signin` and `/register` in **both themes**: no serious or critical violations (canvas elements excluded) |
 
 ## 4. Web unit tests (`apps/web/src/**/*.test.ts`)
+
+City workspace:
+
+* **Zone drawing** (`zoneShape.test.ts`): segment intersection (crossing, touching, collinear overlap, apart); refusing points that would make an outline cross itself, fold back or repeat a vertex; simple versus self-crossing closed outlines (including concave ones); zones the engine reads with the expected extent and area; minimum sizes; closed outline rings on the boundary; the readout text.
+* **Route sheet** (`routeSheet.test.ts`): on 60 real car routes, the per-junction turn classification equals the engine's `result.turns`, legs cover every arc, and leg distances add up to the route distance.
+* **Shift timeline** (`timeline.test.ts`): step times from length and speed plus unloading; deterministic, monotone positions.
+* **Cost model** (`costModel.test.ts`): only entered rates produce figures; the arithmetic.
+* **Formats** (`format.test.ts`): rounded seconds carry into the minute (no "51:60"); distance units.
+* **Building geometry** (`geometry.test.ts`): extruded real footprints have wall winding that agrees with outward normals and roofs that face up; road ribbons face up and keep their segment for every triangle.
+
+Network lab:
 
 * **Petal system:** emission is proportional to distance, not to the number of events (3 large moves and 300 small moves both give 30 petals); the pool is bounded; dead particles are recycled; nothing sprays on re-entry; intensity 0 and the bloom limit are respected.
 * **Route geometry:** progress maps onto true distance (0 → 0, end → total); distance is monotone; no spatial jumps over 2,000 samples (no teleporting).

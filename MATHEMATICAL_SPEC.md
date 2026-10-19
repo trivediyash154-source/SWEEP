@@ -200,7 +200,63 @@ Converts Overpass API JSON into a network: included road classes are whitelisted
 
 The bundled Zurich sample (see `packages/engine/src/examples/data/README.md`) is real data downloaded once; one-way streets cut by the sample's boundary cannot be serviced legally inside it, so they are kept but marked optional at load time (recorded in its notes).
 
-## 12. References
+## 12. Point-to-point routing on the city network (`engine/p2p/`)
+
+**Graph.** Each street segment gives two arcs, `a = 2·segment + direction`. A route from intersection `o` to `t` is a sequence of arcs `a₁ … a_k` with `tail(a₁) = o`, `head(a_k) = t`, every arc permitted for the profile and scenario, and a permitted transition between consecutive arcs. Its cost is `c(a₁) + Σ w(aᵢ → aᵢ₊₁)` with `w(a → b) = turn(a, b) + c(b)`, where `c` is travel time (length ÷ profile speed for the road class) or length. Turn costs (time objective only, left-hand traffic): straight 0 s, left 4 s, right 10 s, U-turn 20 s. A turn is straight when the angle between the incoming and outgoing directions is under 30°. U-turns are permitted only where no other continuation exists. Via-node turn restrictions remove transitions; via-way restrictions are counted and not applied. This is a shortest-path problem with non-negative weights on the arc graph, with a super-source joined to every arc leaving `o` and a super-sink reached from every arc entering `t`.
+
+**Algorithms (all exact on that graph).**
+
+* **Dijkstra.** Labels settle in non-decreasing order; the first arc entering `t` taken from the queue is optimal.
+* **A\*.** Heuristic `h(a)` = straight-line distance from `head(a)` to `t`, shrunk by 0.5 % and 0.2 m against projection and rounding error, divided by the fastest speed in the graph for the time objective. It never exceeds the true remaining cost, and labels may be re-opened, so the first target taken from the queue is optimal for any admissible heuristic.
+* **Bidirectional Dijkstra.** Forward from the arcs leaving `o`, backward from the arcs entering `t`. `μ` is the best meeting cost seen. The search stops when `topF + topB ≥ μ`: any path not yet found costs at least that much.
+* **ALT** (Goldberg and Harrelson). For 8 landmarks `L` and the target set `E` (arcs entering `t`), by the triangle inequality `min_e δ(a, e) ≥ max_L max(min_e δ(L, e) − δ(L, a), δ(a, L) − max_e δ(e, L))`. The bound is admissible, and is `+∞` (pruned) only when it proves no target arc is reachable.
+* **Contraction hierarchies** (Geisberger et al.) on the arc graph, so turn costs and restrictions are part of the contracted graph. Contracting `v` adds the shortcut `u → w` unless a witness search finds a path no longer than `u → v → w`. A bounded witness search can only add superfluous shortcuts, never omit a needed one, so the hierarchy preserves every shortest-path distance. The query is an upward bidirectional search with the same stopping rule, and shortcuts are unpacked into real arcs.
+
+**Independent validation** (`validateRoute`, every run in the UI): the endpoints, continuity, that every arc and transition is permitted, the turn counts, and distance, time and cost recomputed from the city data. **Tests**: on the real Pune bundle, for every profile and both objectives, the five algorithms agree to 1e-9 on 200 random queries and every route validates. **Route sheet** (`apps/web/src/city/routeSheet.ts`): legs are grouped by street, and turns use the engine's own `arcDirections` and `classifyTurn`, so the sheet's per-junction turn counts equal the engine's (unit-tested on real routes).
+
+**Reachability.** One Dijkstra from the origin gives the earliest arrival at every arc. A street is drawn as reached up to the point where its arrival time crosses each threshold. The 5, 10 and 15-minute sets nest by construction (monotone labels), and the browser test checks the nesting.
+
+## 13. Street coverage of a zone (`engine/coverage/`)
+
+**Zone.** A rectangle, circle or simple polygon in the city frame. A segment is **required** when its length midpoint lies in the zone (point-in-polygon by the even–odd rule; the UI refuses self-crossing outlines). Every other segment of the connected network stays available as optional deadhead, so a vehicle may leave the zone to turn round or to follow a one-way street back in.
+
+**Models.**
+
+* **Directed** (respect one-ways): every required one-way segment is one required arc; every required two-way segment gives two required arcs (kerbside service in both directions).
+* **Undirected** (relaxation for crews on foot): every required segment is required once in either direction. Wrong-way traversals of one-way streets are counted and reported.
+
+**Methods.**
+
+* **Directed:** exact by minimum-cost flow on the balance `b(v) = in_R(v) − out_R(v)` (§9).
+* **Undirected, connected required set with at most 600 odd vertices:** exact Edmonds–Johnson (§3).
+* **Larger undirected:** candidate matching. The pairing is restricted to each odd vertex's nearest odd vertices by exact network distance, matched by blossom, completed greedily, then improved by pair exchanges. It is reported as a heuristic with a lower bound and gap.
+* **Disconnected required streets** (the rural postman problem, NP-hard): groups are joined by a minimum spanning tree of shortest connector paths, and the connected problem is solved. The route is valid, but optimality holds only for the connected problem, so it is reported with the bound and gap of the original problem and never labelled optimal.
+
+**Lower bounds (valid for the original problem).**
+
+* *Undirected (T-join bound).* Any covering closed walk traverses `R + X` with every degree even, so `X` contains `|T|/2` paths pairing the odd vertices `T` of `R`. Hence `cost ≥ c(R) + min_M Σ_{(a,b)∈M} d(a, b)`. This is exact (blossom) for `|T| ≤ 600`. Above that, SWEEP uses a feasible dual of the fractional perfect-matching LP: numbers `y_v` with `y_a + y_b ≤ d(a, b)` for every pair. `Σ y_v` bounds every perfect matching from below. The start `y_v = nn(v)/2` (half the distance to the nearest other odd vertex) is feasible, and coordinate ascent only increases it. Pairs beyond each vertex's exact search radius are bounded below by that radius.
+* *Directed (flow bound).* The extra arcs `X` satisfy `out_X(v) − in_X(v) = b(v)`, so `X` is a feasible flow and `cost ≥ c(R) + (minimum-cost flow)`.
+
+`optimal` is true only for an exact method on the unrelaxed, connected problem.
+
+## 14. Fleet planning for a zone (`planFleet`, `engine/coverage/carp.ts`)
+
+**Problem.** Up to `k` vehicles from one depot, optionally a disposal site. Service at speed `v_s` and transit at `v_d`, per-vehicle shift limit `S`, capacity `Q` with demand per serviced kilometre, unloading time `u`. Objective: minimise the latest return (makespan) or the total distance.
+
+**Method (route first, cluster second).** The giant tour of the coverage solution (§13) fixes a task order. An optimal dynamic programme splits that order into at most `k` routes that satisfy the limits, with optimal placement of unloading stops when there is a disposal site. A deterministic local search with a fixed evaluation budget follows; its result is kept unless it makes the plan worse. No optimality is claimed; the plan is reported with the bounds below and its gaps.
+
+**Lower bounds (valid for every plan with at most `k` vehicles).**
+
+* *Total distance:* `LB_total` = the single-vehicle coverage bound of §13. All routes start and end at the depot, so together they form one closed walk covering every street.
+* *Minimum total working time:* `T_min = c(R)/v_s + max(0, LB_total − c(R))/v_d + trips_min·u`, where `trips_min = ⌈total demand / Q⌉` when unloading applies. Every plan services `c(R)` at service speed, drives at least `LB_total − c(R)` in transit, and unloads at least `trips_min` times.
+* *Makespan:* `max(T_min / k, D)`, where `D` is the largest, over required streets, of the cheapest depot round trip that services that street (transit at `v_d`, the street at `v_s`, plus an unloading stop when it carries demand). Some vehicle works at least the average, and every street is served by some vehicle.
+* *Vehicles for the shift:* `⌈T_min / S⌉`. *Vehicles or trips for capacity:* `⌈total demand / Q⌉`.
+
+**Infeasible limits.** When no split of the task order into `k` routes meets the limits, the planner tries `2k`, `4k` and then 50 routes, as a **diagnosis**. The plan is marked infeasible and says how many routes it uses. The makespan bound applies only to plans with at most `k` routes, so such a plan gets **no makespan gap**, and the workspace says that the fleet is too small instead of showing a bound larger than the makespan. If even one route per street violates the limits, that is reported as such.
+
+**Verification.** `verifyFleetPlan` checks each route's legality, closure, distances, time, capacity and shift (all recomputed from the steps), and that together the routes service every required street exactly once. **Browser test**: a 3-vehicle plan on a real zone equals the engine's `planFleet` (routes, totals, bounds); with a quarter-hour shift, where the makespan bound proves no 3-vehicle plan fits, the UI must report the shortfall.
+
+## 15. References
 
 * L. Euler, *Solutio problematis ad geometriam situs pertinentis*, 1736.
 * C. Hierholzer, *Über die Möglichkeit, einen Linienzug ohne Wiederholung und ohne Unterbrechung zu umfahren*, Math. Ann., 1873.
@@ -211,3 +267,8 @@ The bundled Zurich sample (see `packages/engine/src/examples/data/README.md`) is
 * G. N. Frederickson, M. S. Hecht, C. E. Kim, *Approximation algorithms for some routing problems*, SIAM J. Computing, 1978.
 * N. Tomizawa, *On some techniques useful for solution of transportation network problems*, Networks, 1971 (successive shortest paths with potentials).
 * D. Ahr, G. Reinelt, *New heuristics and lower bounds for the min-max k-Chinese postman problem*, ESA 2002.
+* P. E. Hart, N. J. Nilsson, B. Raphael, *A formal basis for the heuristic determination of minimum cost paths*, IEEE Trans. SSC, 1968.
+* A. V. Goldberg, C. Harrelson, *Computing the shortest path: A\* search meets graph theory*, SODA 2005.
+* R. Geisberger, P. Sanders, D. Schultes, D. Delling, *Contraction hierarchies: faster and simpler hierarchical routing in road networks*, WEA 2008.
+* J. M. Belenguer, E. Benavent, *A cutting plane algorithm for the capacitated arc routing problem*, Computers & OR, 2003 (lower bounds for arc routing).
+* C. Prins, *A simple and effective evolutionary algorithm for the vehicle routing problem*, Computers & OR, 2004 (route-first, cluster-second split).

@@ -54,15 +54,15 @@ This is a living record of the city-scale redesign: what exists, what was verifi
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Audit and baseline | done |
-| 2 | Pune data: tiled acquisition, merge, validation, provenance, bundled offline dataset | partial: the pipeline is done and tested, but the bundle was built from 34 of 85 tile files and the acquisition is still resuming (see `HANDOFF.md` §3) |
+| 2 | Pune data: tiled acquisition, merge, validation, provenance, bundled offline dataset | partial: the pipeline is done and tested. The bundle is built from 47 of 85 tile files (3,776 nodes, 4,517 segments over 267.2 km, 10,412 buildings). In the second session the environment's proxy refused every Overpass mirror (HTTP 403), so the acquisition could not continue (see `HANDOFF.md` §3) |
 | 3 | Real geographic renderer; Velvet and Porcelain materials | done in `/workspace`. Measured roof/ground contrast is 6.14:1 in Velvet and 1.52:1 in Porcelain (e2e). The landing page and lab Velvet materials were lifted. |
 | 4 | Point-to-point Dijkstra and A* with validation and a recorded search trace | done and tested (engine and e2e) |
 | 5 | Bidirectional search, ALT and Contraction Hierarchies, with equivalence tests | done and tested. All 5 algorithms agree to 1e-9 on the real network. |
 | 6 | Travel-time profiles, restrictions, reachability | done and tested: car, truck, bicycle and foot profiles; turn penalties; via-node restrictions; 5/10/15-minute reachability nests |
-| 7 | Coverage on real extracts: exact, directed, scalable heuristic with lower bound, multi-vehicle | engine done and tested (21 tests). **UI not built yet.** |
-| 8 | Fleet planning, scenarios, shift timeline, report | routing scenarios (closures and direction changes) done with baseline comparison. The fleet engine is done. Coverage UI, timeline, cost model and report are **not built yet**. |
-| 9 | Full test suite, browser inspection of both themes, performance measurements | partial. Engine 154/154; web 9/9; city e2e 8/8. The last full e2e run had 44 passing and 4 failing (listed in `HANDOFF.md` §3). |
-| 10 | Documentation | not started (beyond this file and `HANDOFF.md`) |
+| 7 | Coverage on real extracts: exact, directed, scalable heuristic with lower bound, multi-vehicle | done and tested: engine (21 tests) and the Coverage & fleet workspace with rectangle, circle and polygon zones; each zone shape is checked against an engine run in the browser tests |
+| 8 | Fleet planning, scenarios, shift timeline, report | done and tested: multi-vehicle plans (equal to `planFleet` in the browser test, with an honest diagnosis when the limits need more vehicles than available), the shift timeline, the cost model (applied to the routes actually driven), scenario plan overrides (depot, vehicles, shift, cost assumptions) compared with the baseline, and printable coverage and Route lab reports |
+| 9 | Full test suite, browser inspection of both themes, performance measurements | Engine 154/154, server 38/38, web 26/26, e2e 51/51 (second session). Benchmarks were measured on the earlier 34-tile bundle and must be re-run. |
+| 10 | Documentation | updated: README, ARCHITECTURE (city workspace), MATHEMATICAL_SPEC §12–14 (routing, coverage bounds, fleet bounds), SECURITY (acquisition etiquette, city inputs), this file and `HANDOFF.md`. The final report to the owner is still to write. |
 
 ## Reference repository
 

@@ -44,7 +44,7 @@ export default function CityWorkspace() {
   const st = useCity.getState();
   const [prov, setProv] = useState(false);
   const [lowPower] = useState(startInLowPower);
-  const debugRef = useRef<{ project: (x: number, y: number, h: number) => [number, number] } | null>(null);
+  const debugRef = useRef<{ project: (x: number, y: number, h: number) => [number, number]; moving: () => boolean; appliedNonce: () => number } | null>(null);
   const webgl = webglAvailable();
   const overlays: SceneOverlays = useCityOverlays();
 
@@ -61,6 +61,9 @@ export default function CityWorkspace() {
   useEffect(() => {
     (window as unknown as { __sweepCity?: unknown }).__sweepCity = {
       project: (x: number, y: number, h: number) => debugRef.current?.project(x, y, h) ?? null,
+      // True while a camera command is pending or the camera glides between views; screen positions are only
+      // stable once it is false. A command reaches the scene after a delay, so "not animating" alone is not enough.
+      cameraMoving: () => !debugRef.current || debugRef.current.moving() || debugRef.current.appliedNonce() !== useCity.getState().camera.nonce,
       state: () => useCity.getState(),
       route: () => useRoute.getState(),
       sample: (n?: number) => {
@@ -72,7 +75,7 @@ export default function CityWorkspace() {
     };
   }, []);
 
-  const pickMode = useMemo(() => (pickTarget === 'origin' || pickTarget === 'destination' || pickTarget === 'depot' || pickTarget === 'dump' ? 'node' : pickTarget === 'close-road' || pickTarget === 'make-oneway' ? 'segment' : 'any'), [pickTarget]);
+  const pickMode = useMemo(() => (pickTarget === 'origin' || pickTarget === 'destination' || pickTarget === 'depot' || pickTarget === 'dump' || pickTarget === 'scenario-depot' ? 'node' : pickTarget === 'close-road' || pickTarget === 'make-oneway' ? 'segment' : pickTarget === 'zone' ? 'ground' : 'any'), [pickTarget]);
 
   return (
     <div className="cw" data-testid="city-workspace">
@@ -167,7 +170,7 @@ export default function CityWorkspace() {
 
         {city && <CityPanels />}
 
-        {city && (hover || selection) && (
+        {city && ((selection && selection.kind !== 'ground') || (hover && hover.kind !== 'ground')) && (
           <aside className="cw-inspect" aria-live="polite" data-testid="city-inspector">
             {selection && selection.kind !== 'ground' ? (
               <>

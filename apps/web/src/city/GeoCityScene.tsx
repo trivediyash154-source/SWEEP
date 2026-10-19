@@ -75,8 +75,11 @@ export interface SceneOverlays {
   highlights: { ribbon: RibbonOut; color: string; opacity: number; key: string }[];
   /** Ref with the vehicles to draw this frame (shift simulation). */
   vehicles?: { current: VehiclePose[] };
-  /** Optional rectangle (city metres) outlining a service zone. */
-  zone?: { minX: number; minY: number; maxX: number; maxY: number } | null;
+  /**
+   * Service-zone outline in city metres: a finished zone (closed), or the zone being
+   * drawn (open, with `preview` = the rubber-band part that follows the cursor).
+   */
+  zone?: { points: [number, number][]; closed: boolean; preview: [number, number][] } | null;
 }
 
 export type PickResult = { kind: 'segment'; seg: number; x: number; y: number } | { kind: 'node'; node: number; x: number; y: number } | { kind: 'building'; building: number; x: number; y: number } | { kind: 'ground'; x: number; y: number };
@@ -92,13 +95,15 @@ export interface GeoCitySceneProps {
   showEstimates: boolean;
   overlays: SceneOverlays;
   camera: { cmd: CameraCommand; nonce: number; frame?: { minX: number; minY: number; maxX: number; maxY: number } | null };
-  pickMode: 'node' | 'segment' | 'any';
+  /** What a click resolves to: 'ground' returns the exact ground point (zone drawing), never a feature. */
+  pickMode: 'node' | 'segment' | 'any' | 'ground';
   onPick: (p: PickResult) => void;
   onHover: (p: PickResult | null) => void;
   /** Width (px) of the panel covering the left edge of the canvas; the view is centred in the remaining area. */
   panelPx?: number;
   /** Exposed for tests: projects a city point to normalised screen coordinates. */
-  debugRef?: { current: { project: (x: number, y: number, h: number) => [number, number] } | null };
+  /** Test hooks: project a city point to normalised device coordinates; whether a camera transition is running; the last camera command applied. */
+  debugRef?: { current: { project: (x: number, y: number, h: number) => [number, number]; moving: () => boolean; appliedNonce: () => number } | null };
 }
 
 function makeGeometry(attrs: Record<string, Float32Array>, index: Uint32Array): THREE.BufferGeometry {
@@ -362,20 +367,54 @@ function Vehicles({ vehicles, scale }: { vehicles: { current: VehiclePose[] }; s
   );
 }
 
-function ZoneOutline({ zone, theme }: { zone: NonNullable<SceneOverlays['zone']>; theme: ThemeName }) {
+function lineGeometry(points: [number, number][], closed: boolean): THREE.BufferGeometry {
+  const y = 1.4;
+  const ring = closed && points.length > 2 ? [...points, points[0]!] : points;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ring.flatMap(([x, z]) => [x, y, z])), 3));
+  return g;
+}
+
+/** Vertex handles of a zone being drawn: small squares on the ground. */
+function ZoneHandles({ points, color }: { points: [number, number][]; color: string }) {
   const geo = useMemo(() => {
-    const y = 1.4;
-    const pts = [zone.minX, y, zone.minY, zone.maxX, y, zone.minY, zone.maxX, y, zone.maxY, zone.minX, y, zone.maxY, zone.minX, y, zone.minY];
+    const y = 1.5;
+    const h = 3;
+    const pos: number[] = [];
+    for (const [x, z] of points) pos.push(x - h, y, z - h, x + h, y, z - h, x + h, y, z + h, x - h, y, z - h, x + h, y, z + h, x - h, y, z + h);
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts), 3));
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
     return g;
-  }, [zone]);
+  }, [points]);
   useEffect(() => () => geo.dispose(), [geo]);
   return (
-    <line>
+    <mesh raycast={() => null} renderOrder={8}>
       <primitive object={geo} attach="geometry" />
-      <lineBasicMaterial color={theme === 'velvet' ? '#e9c98c' : '#2c1a3a'} toneMapped={false} />
-    </line>
+      <meshBasicMaterial color={color} side={THREE.DoubleSide} toneMapped={false} />
+    </mesh>
+  );
+}
+
+function ZoneOutline({ zone, theme }: { zone: NonNullable<SceneOverlays['zone']>; theme: ThemeName }) {
+  const color = theme === 'velvet' ? '#e9c98c' : '#2c1a3a';
+  const geo = useMemo(() => lineGeometry(zone.points, zone.closed), [zone.points, zone.closed]);
+  const preview = useMemo(() => (zone.preview.length > 1 ? lineGeometry(zone.preview, false) : null), [zone.preview]);
+  useEffect(() => () => geo.dispose(), [geo]);
+  useEffect(() => () => preview?.dispose(), [preview]);
+  return (
+    <>
+      <line>
+        <primitive object={geo} attach="geometry" />
+        <lineBasicMaterial color={color} toneMapped={false} />
+      </line>
+      {preview && (
+        <line>
+          <primitive object={preview} attach="geometry" />
+          <lineBasicMaterial color={color} transparent opacity={0.55} toneMapped={false} />
+        </line>
+      )}
+      {!zone.closed && <ZoneHandles points={zone.points} color={color} />}
+    </>
   );
 }
 
@@ -384,6 +423,8 @@ function CameraRig({ city, camera, debugRef, panelPx }: { city: CityModel; camer
   const { camera: cam, size, invalidate } = useThree();
   const controls = useThree((s) => s.controls) as unknown as OrbitControlsImpl | null;
   const anim = useRef<{ fp: THREE.Vector3; tp: THREE.Vector3; ft: THREE.Vector3; tt: THREE.Vector3; t: number } | null>(null);
+  // Nonce of the last camera command turned into a transition (commands reach this component after a delay).
+  const applied = useRef(-1);
   const b = city.region;
   // A side panel covers the left of the canvas: render a wider virtual view and show its right part,
   // so the scene's centre sits in the middle of the visible area.
@@ -402,6 +443,8 @@ function CameraRig({ city, camera, debugRef, panelPx }: { city: CityModel; camer
         const v = new THREE.Vector3(x, h, y).project(cam);
         return [v.x, v.y];
       },
+      moving: () => anim.current !== null,
+      appliedNonce: () => applied.current,
     };
     return () => {
       debugRef.current = null;
@@ -433,6 +476,7 @@ function CameraRig({ city, camera, debugRef, panelPx }: { city: CityModel; camer
       pos.set(target.x - s * 0.12, s * 0.95, target.z + s * 0.95);
     }
     anim.current = { fp: cam.position.clone(), tp: pos, ft: controls.target.clone(), tt: target, t: 0 };
+    applied.current = camera.nonce;
     invalidate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camera.nonce, controls]);
@@ -451,10 +495,10 @@ function CameraRig({ city, camera, debugRef, panelPx }: { city: CityModel; camer
 }
 
 /** Pointer picking: ground-plane projection + spatial index for streets; ray-cast against buildings on click only. */
-function Picker({ city, index, pickMode, buildingsRef, onPick, onHover }: { city: CityModel; index: SegmentIndex; pickMode: GeoCitySceneProps['pickMode']; buildingsRef: React.RefObject<THREE.Group | null>; onPick: GeoCitySceneProps['onPick']; onHover: GeoCitySceneProps['onHover'] }) {
+type PickerCallbacks = { current: Pick<GeoCitySceneProps, 'onPick' | 'onHover' | 'pickMode'> };
+
+function Picker({ city, index, cbs, buildingsRef }: { city: CityModel; index: SegmentIndex; cbs: PickerCallbacks; buildingsRef: React.RefObject<THREE.Group | null> }) {
   const { camera, gl } = useThree();
-  const cbs = useRef({ onPick, onHover, pickMode });
-  cbs.current = { onPick, onHover, pickMode };
   useEffect(() => {
     const el = gl.domElement;
     const ray = new THREE.Raycaster();
@@ -470,6 +514,7 @@ function Picker({ city, index, pickMode, buildingsRef, onPick, onHover }: { city
       return ray.ray.intersectPlane(ground, hit) ? { x: hit.x, y: hit.z } : null;
     };
     const resolve = (p: { x: number; y: number }, mode: GeoCitySceneProps['pickMode']): PickResult => {
+      if (mode === 'ground') return { kind: 'ground', x: p.x, y: p.y };
       const tol = Math.max(12, camera.position.y * 0.02);
       const node = mode !== 'segment' ? index.nearestNode(p.x, p.y, tol * 1.6) : null;
       if (node && (mode === 'node' || node.dist < tol * 0.6)) return { kind: 'node', node: node.node, x: city.nodeX[node.node]!, y: city.nodeY[node.node]! };
@@ -521,7 +566,7 @@ function Picker({ city, index, pickMode, buildingsRef, onPick, onHover }: { city
       el.removeEventListener('pointerup', onUp);
       el.removeEventListener('pointerleave', onLeave);
     };
-  }, [camera, gl, index, city, buildingsRef]);
+  }, [camera, gl, index, city, buildingsRef, cbs]);
   return null;
 }
 
@@ -545,6 +590,11 @@ export default function GeoCityScene(props: GeoCitySceneProps) {
   const shadows = !lowPower && theme === 'porcelain';
   const index = useMemo(() => new SegmentIndex(city), [city]);
   const buildingsRef = useRef<THREE.Group>(null);
+  // The pick mode and callbacks are read when the pointer event arrives, from this (DOM-side) render. Props
+  // inside <Canvas> reach the R3F reconciler later; on slow frames a quick click after choosing a tool would
+  // otherwise resolve with the previous mode (e.g. an intersection instead of the street to close).
+  const pickerCbs = useRef<PickerCallbacks['current']>({ onPick: props.onPick, onHover: props.onHover, pickMode: props.pickMode });
+  pickerCbs.current = { onPick: props.onPick, onHover: props.onHover, pickMode: props.pickMode };
   const cx = (b.minX + b.maxX) / 2;
   const cy = (b.minY + b.maxY) / 2;
   const markerScale = Math.max(1, ext / 2500);
@@ -600,7 +650,7 @@ export default function GeoCityScene(props: GeoCitySceneProps) {
       {overlays.zone && <ZoneOutline zone={overlays.zone} theme={theme} />}
       <OrbitControls makeDefault enableDamping dampingFactor={0.08} maxPolarAngle={Math.PI * 0.46} minDistance={25} maxDistance={ext * 3} screenSpacePanning={false} />
       <CameraRig city={city} camera={props.camera} panelPx={props.panelPx ?? 0} {...(props.debugRef ? { debugRef: props.debugRef } : {})} />
-      <Picker city={city} index={index} pickMode={props.pickMode} buildingsRef={buildingsRef} onPick={props.onPick} onHover={props.onHover} />
+      <Picker city={city} index={index} cbs={pickerCbs} buildingsRef={buildingsRef} />
       <Animator active={animating} />
       {!lowPower && (
         <EffectComposer multisampling={0}>

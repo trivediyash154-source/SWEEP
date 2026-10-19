@@ -177,13 +177,13 @@ Coverage (zone, solve, bound and verification):
 | Zone | Model | Method | Route | Lower bound | Gap | Time |
 |---|---|---|---:|---:|---:|---:|
 | circle r = 400 m (13.3 km required) | directed | exact min-cost flow, connectors added | 32.37 km | 26.65 km | 21.45 % | 0.8 s |
-| circle r = 400 m | undirected | exact Edmonds–Johnson, connectors added | 24.54 km | 21.38 km | 14.76 % | 1.2 s |
+| circle r = 400 m | undirected | exact Edmonds–Johnson, connectors added | 24.54 km | 21.38 km | 14.76 % | 0.8 s |
 | circle r = 800 m (53.9 km required) | directed | exact min-cost flow, connectors added | 111.52 km | 106.93 km | 4.29 % | 0.3 s |
-| circle r = 800 m | undirected | candidate-matching heuristic | 86.73 km | 77.27 km | 12.24 % | 0.9 s |
+| circle r = 800 m | undirected | candidate-matching heuristic | 86.73 km | 77.27 km | 12.24 % | 0.6 s |
 | whole network (267.2 km) | directed | exact min-cost flow (optimal; 26 one-way segments unserviceable) | 503.00 km | 503.00 km | 0 % | 0.3 s |
-| whole network | undirected | candidate-matching heuristic | 409.40 km | 384.48 km | 6.48 % | 20.2 s (17.5 s of it the lower bound) |
+| whole network | undirected | candidate-matching heuristic | 409.40 km | 384.48 km | 6.48 % | 9.4 s (6.2 s of it the lower bound) |
 
-The lower bound does not include the cost of joining separate street groups (6 and 10 connector paths in the circle zones), so there the gap is an upper limit on the distance from the optimum, not an estimate of it. Fleet plans for these zones take 0.4–3.5 s (distance table, split and local search); the benchmark prints each one.
+The undirected times are after the heap and flow speed-up of the second session (whole network before: 20.2 s, 17.5 s of it the bound; identical route, bound and gap). The lower bound does not include the cost of joining separate street groups (6 and 10 connector paths in the circle zones), so there the gap is an upper limit on the distance from the optimum, not an estimate of it. Fleet plans for these zones take 0.4–3.5 s (distance table, split and local search); the benchmark prints each one.
 
 ### Frontend (headless Chromium, software WebGL via SwiftShader, local server)
 

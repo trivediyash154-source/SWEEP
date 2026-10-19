@@ -251,7 +251,7 @@ pnpm city:build pune-bibwewadi                                                  
 ### Benchmarks (47-tile bundle, second session; full tables in TEST_PLAN §5)
 
 * P2P, car by time, median of 200 queries: Dijkstra 0.42 ms, A* 0.47 ms, bidirectional 0.21 ms, ALT 0.08 ms, CH 0.026 ms. CH preprocessing 415–772 ms across profiles.
-* Coverage, whole network: directed exact 503.00 km in 0.3 s. Undirected heuristic 409.40 km against a lower bound of 384.48 km (gap 6.48 %) in **20.2 s, 17.5 s of it the fractional-matching lower bound** (4.9 s in total on the 34-tile bundle). It runs in a worker, but a whole-map undirected plan is a long wait; making the bound faster is a worthwhile next step.
+* Coverage, whole network: directed exact 503.00 km in 0.3 s. Undirected heuristic 409.40 km against a lower bound of 384.48 km (gap 6.48 %) in **9.4 s, 6.2 s of it the fractional-matching lower bound**. Before the second session's speed-up it took 20.2 s (17.5 s for the bound) with the identical result.
 
 ### Phase status
 
@@ -282,9 +282,9 @@ Run `npx playwright test --reporter=line`. Inspect failures with `test-results/<
 
 Ask the owner to allow an Overpass mirror in the environment's network settings, then resume the acquisition (§3), rebuild the bundle, run the full suite and update the numbers in README, this file and IMPLEMENTATION_STATUS. The tests compare the UI with the engine on whatever bundle is present, so they need no changes for new data.
 
-### 4.3 Faster lower bound for large undirected zones
+### 4.3 Faster lower bound for large undirected zones (partly done)
 
-`fractionalMatchingDual` (`engine/coverage/bounds.ts`) takes 17.5 s for the whole 47-tile network. Profile it first; the coordinate ascent and the bounded Dijkstra per odd vertex are the candidates. Keep the bound valid (feasible dual) and keep the engine tests.
+Profiled on the whole 47-tile network (3,032 odd intersections): the optional optimal-assignment start of `fractionalMatchingDual` (`engine/coverage/bounds.ts`) dominated, with 9.5 s in `minCostFlow` and 1.8 s in its pricing searches. Without that start the bound takes 0.13 s but is weaker (T-join part 96.0 km instead of 106.4 km). The second session replaced the allocation-heavy heaps in `mincostflow.ts` and `coverage/arcs.ts` with typed-array heaps (same ordering, so results are bit-identical; engine tests and both oracles agree) and flattened the flow's arcs: the bound now takes about 6 s. Next idea: a dedicated sparse assignment solver with a column-reduction start for this bound only (not in the shared exact flow); it may return a different optimal dual, so compare bound values.
 
 ### 4.4 Screenshots and the final report
 

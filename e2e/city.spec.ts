@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type CDPSession, type Page } from '@playwright/test';
-import { decodeCityBundle, planFleet, RoutingEngine, reachability, solveZoneCoverage, zoneCoverageGraph } from './engine';
+import { planMultiDepotFleet, decodeCityBundle, planFleet, RoutingEngine, reachability, solveZoneCoverage, zoneCoverageGraph } from './engine';
 import { contrastRatio, decodePng, luminanceAt } from './png';
 
 // The bundled real dataset; the UI must show exactly what the engine computes on it.
@@ -692,5 +692,72 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     // The timeline ends when the last vehicle is back.
     const max = Number(await page.getByTestId('tl-scrub').getAttribute('max'));
     expect(Math.abs(max - Math.ceil(fp.totals.makespanSeconds))).toBeLessThanOrEqual(1);
+  });
+
+  test('several depots: each street goes to one depot, the UI shows the engine plan and honest bounds', async ({ page }) => {
+    type W = {
+      __sweepCity: {
+        project: (x: number, y: number, h: number) => [number, number] | null;
+        state: () => { city: { focus: { xy: [number, number] } | null; nodeX: Float64Array; nodeY: Float64Array; nodeCount: number } };
+        coverage: () => { zone: { kind: 'circle'; cx: number; cy: number; r: number } | null; depot: number | null; extraDepots: { node: number; vehicles: number }[]; result: { method: string; optimal: boolean; depots: { node: number; requiredSegments: number }[] | null; fleet: { totals: { distance: number; makespanSeconds: number; vehiclesUsed: number }; lowerBounds: { makespanSeconds: { value: number }; totalDistance: { value: number } } } | null; routes: { depotNode: number }[] } | null };
+      };
+    };
+    await openCity(page);
+    await page.getByTestId('mode-coverage').click();
+    await page.getByTestId('cam-top').click();
+    await waitForCamera(page);
+    const box = (await page.getByTestId('city-stage').boundingBox())!;
+    const [cx, cy] = await page.evaluate(() => (window as unknown as W).__sweepCity.state().city.focus?.xy ?? [0, 0]);
+    const click = async (x: number, y: number) => {
+      const p = (await page.evaluate(([a, b]) => (window as unknown as W).__sweepCity.project(a!, b!, 0), [x, y]))!;
+      await page.mouse.click(box.x + ((p[0] + 1) / 2) * box.width, box.y + ((1 - p[1]) / 2) * box.height);
+    };
+    const nearest = (x: number, y: number) =>
+      page.evaluate(([px, py]) => {
+        const c = (window as unknown as W).__sweepCity.state().city;
+        let best = 0;
+        let bd = Infinity;
+        for (let i = 0; i < c.nodeCount; i++) {
+          const d = (c.nodeX[i]! - px!) ** 2 + (c.nodeY[i]! - py!) ** 2;
+          if (d < bd) [best, bd] = [i, d];
+        }
+        return { x: c.nodeX[best]!, y: c.nodeY[best]! };
+      }, [x, y]);
+    await page.getByTestId('cov-shape-circle').click();
+    await page.getByTestId('cov-draw-zone').click();
+    await click(cx, cy);
+    await click(cx + 450, cy);
+    await expect(page.getByTestId('cov-zone')).toContainText('Radius');
+    const west = await nearest(cx - 300, cy);
+    const east = await nearest(cx + 300, cy);
+    await page.getByTestId('pick-depot').click();
+    await click(west.x, west.y);
+    await expect(page.getByTestId('cov-depot')).not.toHaveText(/Not set|Click/);
+    await page.getByTestId('cov-vehicles').fill('2');
+    await page.getByTestId('cov-add-depot').click();
+    await click(east.x, east.y);
+    await expect(page.getByTestId('cov-extra-depot-0')).toBeVisible();
+    await page.getByTestId('cov-extra-vehicles-0').fill('2');
+    await page.getByTestId('cov-run').click();
+    await expect(page.getByTestId('cov-depots')).toBeVisible({ timeout: 120_000 });
+
+    const st = await page.evaluate(() => (window as unknown as W).__sweepCity.coverage());
+    expect(st.extraDepots.length).toBe(1);
+    const ids = [st.depot!, st.extraDepots[0]!.node].map((n) => `n${city.nodeOsm[n]}`);
+    const zg = zoneCoverageGraph(city, { zone: st.zone!, direction: 'directed', depotId: ids[0]! });
+    const exp = planMultiDepotFleet(zg.graph, { depots: [{ depotId: ids[0]!, vehicles: 2 }, { depotId: ids[1]!, vehicles: 2 }], dumpId: null, direction: 'directed', objective: 'min-makespan', capacity: null, demandPerKm: 0, shiftSeconds: null, serviceSpeedKmh: 8, deadheadSpeedKmh: 20, dumpSeconds: 0 });
+    if (!exp.ok) throw new Error(exp.message);
+    const r = st.result!;
+    expect(r.method).toBe('nearest-depot-partition');
+    expect(r.optimal).toBe(false);
+    await expect(page.getByTestId('cov-optimal')).not.toHaveText('Proven optimal');
+    expect(Math.abs(r.fleet!.totals.distance - exp.totals.distance)).toBeLessThan(1e-6);
+    expect(Math.abs(r.fleet!.totals.makespanSeconds - exp.totals.makespanSeconds)).toBeLessThan(1e-6);
+    expect(r.depots!.map((d) => d.requiredSegments)).toEqual(exp.depots.map((d) => d.requiredEdges.length));
+    expect(r.fleet!.lowerBounds.makespanSeconds.value).toBeLessThanOrEqual(r.fleet!.totals.makespanSeconds + 1e-6);
+    expect(r.fleet!.lowerBounds.totalDistance.value).toBeLessThanOrEqual(r.fleet!.totals.distance + 1e-6);
+    // Every route belongs to one of the two depots; both depots are used.
+    expect(new Set(r.routes.map((v) => v.depotNode))).toEqual(new Set([st.depot!, st.extraDepots[0]!.node]));
+    for (const c of exp.validation.checks) expect(c.passed, c.detail).toBe(true);
   });
 });

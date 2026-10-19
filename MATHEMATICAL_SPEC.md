@@ -256,7 +256,33 @@ The bundled Zurich sample (see `packages/engine/src/examples/data/README.md`) is
 
 **Verification.** `verifyFleetPlan` checks each route's legality, closure, distances, time, capacity and shift (all recomputed from the steps), and that together the routes service every required street exactly once. **Browser test**: a 3-vehicle plan on a real zone equals the engine's `planFleet` (routes, totals, bounds); with a quarter-hour shift, where the makespan bound proves no 3-vehicle plan fits, the UI must report the shortfall.
 
-## 15. References
+## 15. Several depots (`planMultiDepotFleet`, `engine/coverage/multidepot.ts`)
+
+**Method** (heuristic, never called optimal):
+
+1. **Partition.** Each required street goes to the depot with the cheapest round trip through it: shortest legal path from the depot to one end, the street itself, then the shortest legal path back. Exact network distances; a reverse search is used for directed networks. A two-way street in directed mode stays with one depot: the one whose worse direction is cheapest.
+2. **Per-depot plans.** Each depot's streets are covered by its own vehicles with the single-depot engine (§13–14).
+
+**Lower bounds.** These are valid for every plan that serves all streets from these depots with at most K vehicles in total, whatever the partition.
+
+* **Total distance** ≥ Σ (length of each service obligation): every obligation must be driven.
+* **Makespan** ≥ max( max over obligations o of min over depots d of T(d, o), Σ service time ÷ K ). Here T(d, o) = d(d → tail o) ÷ v_transit + len(o) ÷ v_service + d(head o → d) ÷ v_transit. Some vehicle must leave a depot, service o and return; any service it does on the way is slower than transit, so this is a lower bound on that vehicle's time.
+
+**Independent checks:**
+
+* every serviceable obligation is serviced by some route;
+* every route starts and ends at its own depot;
+* every per-depot plan passes its own verification.
+
+**Sparse assignment** (`engine/coverage/assignment.ts`). The optimal-assignment start of the fractional-matching dual (§13) is solved by an exact sparse Jonker–Volgenant method:
+
+* column reduction;
+* shortest augmenting paths over reduced costs, stopped at the first free column;
+* the dual update v_j += d_j − μ.
+
+The final duals satisfy u_i + v_j ≤ c_ij on every edge and are tight on the assignment, so they are optimal. The bound then clips them against every known pair and the pricing radius, as before.
+
+## 16. References
 
 * L. Euler, *Solutio problematis ad geometriam situs pertinentis*, 1736.
 * C. Hierholzer, *Über die Möglichkeit, einen Linienzug ohne Wiederholung und ohne Unterbrechung zu umfahren*, Math. Ann., 1873.

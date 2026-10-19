@@ -43,6 +43,7 @@ export const METHOD_LABEL = {
   'exact-directed-min-cost-flow': 'Exact · directed min-cost flow',
   'exact-undirected-edmonds-johnson': 'Exact · undirected matching (Edmonds–Johnson)',
   'heuristic-candidate-matching': 'Heuristic · candidate matching',
+  'nearest-depot-partition': 'Several depots · nearest-depot partition (heuristic)',
 } as const;
 
 export const VEHICLE_COLORS = ['#7dffb8', '#75e0ff', '#ffd98c', '#f3a7c4', '#b7a6ff', '#ff9f6e', '#9be15d', '#e9c98c'];
@@ -272,6 +273,36 @@ export function CoveragePanel() {
             </div>
           );
         })}
+        <div className="cv-depots" data-testid="cov-extra-depots">
+          {cv.extraDepots.map((d, i) => (
+            <div key={d.node} className="rl-end rl-end--plain" data-testid={`cov-extra-depot-${i}`}>
+              <div className="rl-end__body">
+                <div className="rl-end__row">
+                  <span className="rl-end__label">Depot {i + 2}</span>
+                  <strong className="rl-end__value">{nodeLabel(city, d.node)}</strong>
+                  <label className="cv-ops-label">
+                    <span className="faint small">vehicles</span>
+                    <input className="input input--sm cv-ops-input" type="number" min={1} max={20} step={1} value={d.vehicles} onChange={(e) => cv.setExtraDepotVehicles(i, Number(e.target.value) || 1)} aria-label={`Vehicles at depot ${i + 2}`} data-testid={`cov-extra-vehicles-${i}`} />
+                  </label>
+                  <button type="button" className="btn btn--ghost btn--sm" onClick={() => cv.removeExtraDepot(i)} aria-label={`Remove depot ${i + 2}`}>
+                    Remove
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+          <button
+            type="button"
+            className={`btn btn--ghost btn--sm${pickTarget === 'extra-depot' ? ' is-on' : ''}`}
+            aria-pressed={pickTarget === 'extra-depot'}
+            disabled={cv.depot === null}
+            onClick={() => useCity.getState().setPickTarget(pickTarget === 'extra-depot' ? null : 'extra-depot')}
+            data-testid="cov-add-depot"
+          >
+            <Icon name="add" size={13} /> {pickTarget === 'extra-depot' ? 'Click an intersection for the depot' : 'Add another depot'}
+          </button>
+          {cv.extraDepots.length > 0 && <p className="faint small">With several depots, each street goes to the depot with the cheapest round trip through it, and each depot plans its own vehicles (the Vehicles field is the first depot's fleet).</p>}
+        </div>
       </div>
 
       <fieldset className="cv-group">
@@ -380,7 +411,19 @@ export function CoveragePanel() {
             <dd>
               {r.report.requiredSegments.toLocaleString('en-US')} segments · {r.report.requiredKm.toFixed(2)} km{r.report.onewayRequired ? ` · ${r.report.onewayRequired} one-way` : ''}
             </dd>
-            {r.fleet && (
+            {r.depots && (
+              <>
+                <dt>Depots</dt>
+                <dd data-testid="cov-depots">
+                  {r.depots.map((d, i) => (
+                    <span key={d.node} className="cv-depot-line">
+                      {i + 1}. {nodeLabel(city, d.node)}: {d.vehicles} vehicle{d.vehicles === 1 ? '' : 's'}, {d.requiredSegments.toLocaleString('en-US')} street segments{d.message ? ` (${d.message})` : ''}
+                    </span>
+                  ))}
+                </dd>
+              </>
+            )}
+            {r.fleet && !r.depots && (
               <>
                 <dt>Single closed route</dt>
                 <dd data-testid="cov-single">{fmtDist(r.totals.distanceM)}, which the fleet plan splits into vehicle routes from the depot</dd>
@@ -464,6 +507,7 @@ export function CoveragePanel() {
             <thead>
               <tr>
                 <th scope="col">Vehicle</th>
+                {r.depots && <th scope="col">Depot</th>}
                 <th scope="col">Distance</th>
                 <th scope="col">Time</th>
                 <th scope="col">Trips</th>
@@ -476,6 +520,7 @@ export function CoveragePanel() {
                     <i className="cv-swatch" style={{ background: VEHICLE_COLORS[i % VEHICLE_COLORS.length] }} aria-hidden="true" /> {i + 1}
                     {!v.feasible.shift || !v.feasible.capacity ? <span className="sc-tag sc-tag--closed">over limit</span> : null}
                   </th>
+                  {r.depots && <td>{r.depots.findIndex((d) => d.node === v.depotNode) + 1}</td>}
                   <td>{fmtDist(v.distanceM)}</td>
                   <td>{fmtTime(v.seconds)}</td>
                   <td>{v.trips}</td>

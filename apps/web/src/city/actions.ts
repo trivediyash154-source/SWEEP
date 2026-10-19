@@ -28,6 +28,12 @@ export function handleCityPick(p: PickResult): void {
     city.select(p);
     return;
   }
+  if (p.kind === 'node' && target === 'extra-depot') {
+    useCoverage.getState().addExtraDepot(p.node);
+    city.setPickTarget(null);
+    city.select(p);
+    return;
+  }
   if (p.kind === 'node' && target === 'scenario-depot') {
     useScenarios.getState().setPlan({ depot: p.node });
     city.setPickTarget(null);

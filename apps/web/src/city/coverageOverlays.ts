@@ -28,6 +28,7 @@ export function useCoverageOverlays(): CoverageLayers {
   const scenarioDepot = useScenarios((s) => s.scenarios.find((x) => x.id === s.activeId)?.plan?.depot);
   const depot = scenarioDepot ?? baseDepot;
   const dump = useCoverage((s) => s.dump);
+  const extraDepots = useCoverage((s) => s.extraDepots);
   const result = useCoverage((s) => s.result);
 
   const paths = useMemo(() => {
@@ -59,9 +60,10 @@ export function useCoverageOverlays(): CoverageLayers {
   return useMemo(() => {
     const markers: Marker[] = [];
     if (city && mode === 'coverage') {
-      if (depot !== null) markers.push({ id: 'depot', x: city.nodeX[depot]!, y: city.nodeY[depot]!, kind: 'depot', label: 'Depot' });
+      if (depot !== null) markers.push({ id: 'depot', x: city.nodeX[depot]!, y: city.nodeY[depot]!, kind: 'depot', label: extraDepots.length ? 'Depot 1' : 'Depot' });
+      extraDepots.forEach((d, i) => markers.push({ id: `depot-${i + 2}`, x: city.nodeX[d.node]!, y: city.nodeY[d.node]!, kind: 'depot', label: `Depot ${i + 2}` }));
       if (dump !== null) markers.push({ id: 'dump', x: city.nodeX[dump]!, y: city.nodeY[dump]!, kind: 'dump', label: 'Disposal' });
     }
     return { paths, highlights: [], markers, zone: zoneLayer, vehicles: mode === 'coverage' && result ? vehiclePoses : undefined };
-  }, [city, mode, depot, dump, zoneLayer, paths, result]);
+  }, [city, mode, depot, extraDepots, dump, zoneLayer, paths, result]);
 }

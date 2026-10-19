@@ -1103,3 +1103,15 @@
 .cv-ops-input {
   width: 110px;
 }
+.cv-depots {
+  display: grid;
+  gap: 6px;
+}
+.cv-ops-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cv-depot-line {
+  display: block;
+}

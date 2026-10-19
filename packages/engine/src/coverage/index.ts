@@ -5,3 +5,4 @@ export * from './assignment.js';
 export * from './heuristic.js';
 export * from './solveCoverage.js';
 export * from './carp.js';
+export * from './multidepot.js';

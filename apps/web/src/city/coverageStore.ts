@@ -75,6 +75,8 @@ interface CoverageState {
   zoneHint: string | null;
   zone: Zone | null;
   depot: number | null;
+  /** Further depots (city node and vehicles), planned together with the main depot. */
+  extraDepots: { node: number; vehicles: number }[];
   dump: number | null;
   /** OSM highway classes to service; null = every class present. */
   roadClasses: string[] | null;
@@ -100,6 +102,9 @@ interface CoverageState {
   /** Drops an unfinished drawing; the last completed zone stays until a new one is finished. */
   cancelZone: () => void;
   setDepot: (n: number | null) => void;
+  addExtraDepot: (node: number) => void;
+  setExtraDepotVehicles: (i: number, vehicles: number) => void;
+  removeExtraDepot: (i: number) => void;
   setDump: (n: number | null) => void;
   setRoadClasses: (c: string[] | null) => void;
   setDirection: (d: 'directed' | 'undirected') => void;
@@ -110,10 +115,10 @@ interface CoverageState {
 }
 
 /** Stable description of every input of a coverage plan, including the active scenario. */
-export function coverageKey(s: Pick<CoverageState, 'zone' | 'depot' | 'dump' | 'roadClasses' | 'direction' | 'fleet'>): string {
+export function coverageKey(s: Pick<CoverageState, 'zone' | 'depot' | 'extraDepots' | 'dump' | 'roadClasses' | 'direction' | 'fleet'>): string {
   const active = activeScenario();
   const plan = active.plan ? { ...active.plan, costs: undefined } : null; // cost assumptions do not change the plan itself
-  return JSON.stringify([s.zone, s.depot, s.dump, s.roadClasses, s.direction, s.fleet, specOf(active).key, plan]);
+  return JSON.stringify([s.zone, s.depot, s.extraDepots, s.dump, s.roadClasses, s.direction, s.fleet, specOf(active).key, plan]);
 }
 
 let runToken = 0;
@@ -127,6 +132,7 @@ export const useCoverage = create<CoverageState>((set, get) => ({
   zoneHint: null,
   zone: null,
   depot: null,
+  extraDepots: [],
   dump: null,
   roadClasses: null,
   direction: 'directed',
@@ -180,12 +186,19 @@ export const useCoverage = create<CoverageState>((set, get) => ({
   undoZonePoint: () => set({ draft: get().draft.slice(0, -1), zoneHint: null }),
   cancelZone: () => set({ draft: [], zoneHint: null }),
   setDepot: (depot) => set({ depot }),
+  addExtraDepot: (node) => {
+    const s = get();
+    if (node === s.depot || s.extraDepots.some((d) => d.node === node)) return;
+    set({ extraDepots: [...s.extraDepots, { node, vehicles: 1 }] });
+  },
+  setExtraDepotVehicles: (i, vehicles) => set({ extraDepots: get().extraDepots.map((d, k) => (k === i ? { ...d, vehicles: Math.max(1, Math.min(20, Math.round(vehicles))) } : d)) }),
+  removeExtraDepot: (i) => set({ extraDepots: get().extraDepots.filter((_, k) => k !== i) }),
   setDump: (dump) => set({ dump }),
   setRoadClasses: (roadClasses) => set({ roadClasses }),
   setDirection: (direction) => set({ direction }),
   setFleet: (f) => set({ fleet: { ...get().fleet, ...f } }),
   setCosts: (c) => set({ costs: { ...get().costs, ...c } }),
-  clear: () => set({ draft: [], zoneHint: null, zone: null, depot: null, dump: null, result: null, resultKey: null, status: 'idle', error: null }),
+  clear: () => set({ draft: [], zoneHint: null, zone: null, depot: null, extraDepots: [], dump: null, result: null, resultKey: null, status: 'idle', error: null }),
   compare: async () => {
     const s = get();
     const active = activeScenario();
@@ -197,7 +210,7 @@ export const useCoverage = create<CoverageState>((set, get) => ({
     const key = coverageKey(s);
     const ask = async (scenario: ReturnType<typeof specOf>, depotNode: number, fleet: FleetSettings): Promise<PlanSummary | { error: string }> => {
       try {
-        const res = await coverage.send<Extract<CoverageResponse, { op: 'plan' }>>({ op: 'plan', zone: s.zone!, roadClasses: s.roadClasses, direction: s.direction, scenario, depotNode, dumpNode: s.dump, fleet });
+        const res = await coverage.send<Extract<CoverageResponse, { op: 'plan' }>>({ op: 'plan', zone: s.zone!, roadClasses: s.roadClasses, direction: s.direction, scenario, depotNode, dumpNode: s.dump, fleet, extraDepots: s.extraDepots });
         return summarise(res.result);
       } catch (e) {
         return { error: e instanceof Error ? e.message : String(e) };
@@ -235,6 +248,7 @@ export const useCoverage = create<CoverageState>((set, get) => ({
         depotNode: eff.depot,
         dumpNode: s.dump,
         fleet: eff.fleet,
+        extraDepots: s.extraDepots,
       });
       if (token !== runToken) return;
       set({ status: 'done', result: res.result, resultKey: key });

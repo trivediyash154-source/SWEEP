@@ -77,8 +77,14 @@ export function CoverageReport({ onClose }: { onClose: () => void }) {
           <dd data-testid="rep-required">
             {r.report.requiredSegments.toLocaleString('en-US')} segments, {r.report.requiredKm.toFixed(2)} km{cv.roadClasses ? ` (classes: ${cv.roadClasses.join(', ')})` : ' (all road classes)'}
           </dd>
-          <dt>Depot</dt>
-          <dd>{eff.depot !== null ? nodeLabel(city, eff.depot) : '–'}</dd>
+          <dt>{r.depots ? 'Depots' : 'Depot'}</dt>
+          <dd data-testid="rep-depots">
+            {r.depots
+              ? r.depots.map((d, i) => `${i + 1}. ${nodeLabel(city, d.node)} (${d.vehicles} vehicle${d.vehicles === 1 ? '' : 's'}, ${d.requiredSegments} segments)`).join('; ')
+              : eff.depot !== null
+                ? nodeLabel(city, eff.depot)
+                : '–'}
+          </dd>
           <dt>Disposal site</dt>
           <dd>{cv.dump !== null ? nodeLabel(city, cv.dump) : 'none'}</dd>
           <dt>One-way model</dt>

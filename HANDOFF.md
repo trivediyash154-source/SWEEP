@@ -314,10 +314,14 @@ Profiled on the whole 47-tile network (3,032 odd intersections): the optional op
 * Same-camera screenshots of `/workspace` in both themes, the Route lab and a coverage plan are in `docs/screenshots/city-*.png` (second session) and in README. Recapture them after the data changes.
 * The final report for the owner is `docs/FINAL_REPORT.md`. It was reconciled with the merged state (51-tile bundle, re-measured contrast and benchmarks, test results after the merge). Update it whenever the data or the test figures change.
 
-### 4.5 Possible next features (not started)
+### 4.5 Next features
 
-* Coverage plans with time windows or turn costs.
-* Several depots in one plan.
+* **Several depots in one plan: DONE** (third session).
+  * Engine: `planMultiDepotFleet`, which partitions streets by nearest round trip and then plans each depot.
+  * The lower bounds hold for any partition (MATHEMATICAL_SPEC §15).
+  * UI: "Add another depot" in the Coverage panel, with vehicles per depot, per-depot results, a depot column per vehicle, map markers and the report.
+  * Tests: engine (4), and e2e against the engine.
+* **Not built:** coverage with time windows or turn costs. Turn penalties exist in point-to-point routing, but the coverage solvers ignore them. Exact coverage with turn costs is NP-hard, so any version must be a heuristic with a stated bound.
 
 ## 5. Deployment note
 

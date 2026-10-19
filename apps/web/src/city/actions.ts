@@ -28,6 +28,12 @@ export function handleCityPick(p: PickResult): void {
     city.select(p);
     return;
   }
+  if (p.kind === 'node' && target === 'scenario-depot') {
+    useScenarios.getState().setOps({ depot: p.node });
+    city.setPickTarget(null);
+    city.select(p);
+    return;
+  }
   if (target === 'zone-a' || target === 'zone-b') {
     useCoverage.getState().setCorner(target === 'zone-a' ? 'a' : 'b', p.x, p.y);
     city.setPickTarget(target === 'zone-a' ? 'zone-b' : null);

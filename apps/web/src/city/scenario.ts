@@ -11,6 +11,8 @@ export interface Scenario {
   name: string;
   closed: number[];
   oneway: [number, 'forward' | 'reverse' | 'two-way'][];
+  /** Operational changes for coverage plans: another depot or fleet size (absent = the plan's own inputs). */
+  ops?: { depot?: number; vehicles?: number };
 }
 
 export const BASELINE: Scenario = { id: 'baseline', name: 'Baseline (as mapped)', closed: [], oneway: [] };
@@ -31,6 +33,8 @@ interface ScenarioState {
   remove: (id: string) => void;
   toggleClosed: (seg: number) => void;
   setOneway: (seg: number, dir: 'forward' | 'reverse' | 'two-way' | null) => void;
+  /** Set (number) or clear (null) an operational override on the active scenario. */
+  setOps: (o: { depot?: number | null; vehicles?: number | null }) => void;
 }
 
 export const useScenarios = create<ScenarioState>((set, get) => ({
@@ -42,7 +46,7 @@ export const useScenarios = create<ScenarioState>((set, get) => ({
     const n = get().scenarios.length;
     const id = `scn-${Date.now().toString(36)}-${n}`;
     const base = get().active();
-    set({ scenarios: [...get().scenarios, { id, name: name ?? `Scenario ${n}`, closed: [...base.closed], oneway: [...base.oneway] }], activeId: id });
+    set({ scenarios: [...get().scenarios, { id, name: name ?? `Scenario ${n}`, closed: [...base.closed], oneway: [...base.oneway], ...(base.ops ? { ops: { ...base.ops } } : {}) }], activeId: id });
     return id;
   },
   rename: (id, name) => set({ scenarios: get().scenarios.map((s) => (s.id === id ? { ...s, name } : s)) }),
@@ -59,5 +63,26 @@ export const useScenarios = create<ScenarioState>((set, get) => ({
     let id = get().activeId;
     if (id === 'baseline') id = get().create('Direction change');
     set({ scenarios: get().scenarios.map((s) => (s.id === id ? { ...s, oneway: dir === null ? s.oneway.filter(([g]) => g !== seg) : [...s.oneway.filter(([g]) => g !== seg), [seg, dir]] } : s)) });
+  },
+  setOps: (o) => {
+    let id = get().activeId;
+    if (id === 'baseline') id = get().create('Operations change');
+    set({
+      scenarios: get().scenarios.map((sc) => {
+        if (sc.id !== id) return sc;
+        const ops = { ...sc.ops };
+        if (o.depot !== undefined) {
+          if (o.depot === null) delete ops.depot;
+          else ops.depot = o.depot;
+        }
+        if (o.vehicles !== undefined) {
+          if (o.vehicles === null) delete ops.vehicles;
+          else ops.vehicles = o.vehicles;
+        }
+        const { ops: _old, ...rest } = sc;
+        void _old;
+        return Object.keys(ops).length ? { ...rest, ops } : rest;
+      }),
+    });
   },
 }));

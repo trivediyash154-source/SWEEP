@@ -72,7 +72,7 @@ export default function CityWorkspace() {
     };
   }, []);
 
-  const pickMode = useMemo(() => (pickTarget === 'origin' || pickTarget === 'destination' || pickTarget === 'depot' || pickTarget === 'dump' ? 'node' : pickTarget === 'close-road' || pickTarget === 'make-oneway' ? 'segment' : 'any'), [pickTarget]);
+  const pickMode = useMemo(() => (pickTarget === 'origin' || pickTarget === 'destination' || pickTarget === 'depot' || pickTarget === 'dump' || pickTarget === 'scenario-depot' ? 'node' : pickTarget === 'close-road' || pickTarget === 'make-oneway' ? 'segment' : 'any'), [pickTarget]);
 
   return (
     <div className="cw" data-testid="city-workspace">

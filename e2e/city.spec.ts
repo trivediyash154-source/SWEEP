@@ -301,6 +301,18 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     if (!exp3.ok) throw new Error(exp3.message);
     expect(Math.abs(cmp.baseline.distanceM - exp2.route.totalDistance)).toBeLessThan(1e-6);
     expect(Math.abs(cmp.scenario.distanceM - exp3.route.totalDistance)).toBeLessThan(1e-6);
+
+    // Operational change in the same scenario: two vehicles instead of one; both sides re-planned.
+    await page.getByTestId('cov-scenario-vehicles').fill('2');
+    await page.getByTestId('cov-compare').click();
+    await expect(page.getByTestId('cov-comparison')).toContainText('Vehicles used', { timeout: 90_000 });
+    const cmp2 = await page.evaluate(() => (window as unknown as { __sweepCity: { coverage: () => { comparison: { baseline: { distanceM: number; vehiclesUsed: number }; scenario: { distanceM: number; makespanS: number; vehiclesUsed: number } } } } }).__sweepCity.coverage().comparison);
+    const fp2 = planFleet(exp3.graph, { vehicles: 2, depotId, direction: 'undirected', objective: 'min-makespan', capacity: null, demandPerKm: 0, shiftSeconds: null, serviceSpeedKmh: 8, deadheadSpeedKmh: 20, dumpSeconds: 0, coverage: exp3 });
+    if (!fp2.ok) throw new Error(fp2.message);
+    expect(Math.abs(cmp2.baseline.distanceM - exp2.route.totalDistance)).toBeLessThan(1e-6);
+    expect(Math.abs(cmp2.scenario.distanceM - fp2.totals.distance)).toBeLessThan(1e-6);
+    expect(Math.abs(cmp2.scenario.makespanS - fp2.totals.makespanSeconds)).toBeLessThan(1e-6);
+    expect(cmp2.scenario.vehiclesUsed).toBe(fp2.totals.vehiclesUsed);
   });
 
   test('circle zone with a three-vehicle fleet and shift limit: the UI shows the engine plan and its bounds', async ({ page }) => {

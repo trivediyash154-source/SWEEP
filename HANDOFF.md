@@ -394,7 +394,7 @@ Rules:
 
 **Done.** The coverage panel has "Compare with baseline", which plans the same zone, depot and fleet on the baseline and on the active scenario (closures and direction changes) and shows distance, transit, makespan and vehicle hours. The e2e test checks both plans against the engine.
 
-**Still to do:** depot, fleet-size, profile and cost-assumption variants stored inside a scenario.
+**Also done:** a scenario's operational overrides (another depot, or another fleet size), applied wherever the scenario is active and in the comparison; the e2e test checks a 2-vehicle variant against `planFleet`. **Still to do:** a profile variant per scenario (the Route lab profile switch already recalculates).
 
 Original plan, for reference:
 

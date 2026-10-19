@@ -2,7 +2,8 @@ import { useMemo } from 'react';
 import type { Marker, PathOverlay, SceneOverlays } from './GeoCityScene';
 import { arcsPath } from './overlays';
 import { useCity } from './store';
-import { useCoverage } from './coverageStore';
+import { effectiveInputs, useCoverage } from './coverageStore';
+import { useScenarios } from './scenario';
 import { VEHICLE_COLORS } from './panels/CoveragePanel';
 import { vehiclePoses } from './shift';
 
@@ -16,7 +17,9 @@ export function useCoverageOverlays(): CoverageLayers {
   const mode = useCity((s) => s.mode);
   const zone = useCoverage((s) => s.zone);
   const cornerA = useCoverage((s) => s.cornerA);
-  const depot = useCoverage((s) => s.depot);
+  const planDepot = useCoverage((s) => s.depot);
+  const scenario = useScenarios((s) => s.scenarios.find((x) => x.id === s.activeId));
+  const depot = effectiveInputs({ depot: planDepot, fleet: useCoverage.getState().fleet }, scenario).depot;
   const dump = useCoverage((s) => s.dump);
   const result = useCoverage((s) => s.result);
 

@@ -3,7 +3,7 @@ import type { Zone } from '@sweep/engine';
 import { cityUrl } from './data';
 import { coverage } from './coverageClient';
 import type { CoveragePlanResult, CoverageResponse, FleetSettings } from './coverage.worker';
-import { specOf, useScenarios } from './scenario';
+import { specOf, useScenarios, type Scenario } from './scenario';
 import { useCity } from './store';
 import { DEFAULT_COSTS, type CostAssumptions } from './costModel';
 
@@ -100,7 +100,12 @@ interface CoverageState {
 export function coverageKey(s: Pick<CoverageState, 'zone' | 'depot' | 'dump' | 'roadClasses' | 'direction' | 'fleet'>): string {
   const sc = useScenarios.getState();
   const active = sc.scenarios.find((x) => x.id === sc.activeId);
-  return JSON.stringify([s.zone, s.depot, s.dump, s.roadClasses, s.direction, s.fleet, active ? specOf(active).key : 'baseline']);
+  return JSON.stringify([s.zone, s.depot, s.dump, s.roadClasses, s.direction, s.fleet, active ? specOf(active).key : 'baseline', active?.ops ?? null]);
+}
+
+/** Depot and fleet in effect under a scenario: its operational overrides on top of the plan's own inputs. */
+export function effectiveInputs(s: Pick<CoverageState, 'depot' | 'fleet'>, scenario: Scenario | undefined): { depot: number | null; fleet: FleetSettings } {
+  return { depot: scenario?.ops?.depot ?? s.depot, fleet: scenario?.ops?.vehicles ? { ...s.fleet, vehicles: scenario.ops.vehicles } : s.fleet };
 }
 
 let runToken = 0;
@@ -147,9 +152,10 @@ export const useCoverage = create<CoverageState>((set, get) => ({
     const sc = useScenarios.getState();
     const active = sc.scenarios.find((x) => x.id === sc.activeId);
     const key = coverageKey(s);
-    const ask = async (scenario: ReturnType<typeof specOf>): Promise<PlanSummary | { error: string }> => {
+    const ask = async (scenario: ReturnType<typeof specOf>, inputs: { depot: number | null; fleet: FleetSettings }): Promise<PlanSummary | { error: string }> => {
       try {
-        const res = await coverage.send<Extract<CoverageResponse, { op: 'plan' }>>({ op: 'plan', zone: s.zone!, roadClasses: s.roadClasses, direction: s.direction, scenario, depotNode: s.depot!, dumpNode: s.dump, fleet: s.fleet });
+        if (inputs.depot === null) throw new Error('No depot.');
+        const res = await coverage.send<Extract<CoverageResponse, { op: 'plan' }>>({ op: 'plan', zone: s.zone!, roadClasses: s.roadClasses, direction: s.direction, scenario, depotNode: inputs.depot, dumpNode: s.dump, fleet: inputs.fleet });
         return summarise(res.result);
       } catch (e) {
         return { error: e instanceof Error ? e.message : String(e) };
@@ -158,8 +164,8 @@ export const useCoverage = create<CoverageState>((set, get) => ({
     try {
       if (!entry) throw new Error('City not loaded.');
       await coverage.init(cityUrl(entry.file));
-      const baseline = await ask({ key: 'baseline', closed: [], oneway: [] });
-      const scenario = await ask(active ? specOf(active) : { key: 'baseline', closed: [], oneway: [] });
+      const baseline = await ask({ key: 'baseline', closed: [], oneway: [] }, { depot: s.depot, fleet: s.fleet });
+      const scenario = await ask(active ? specOf(active) : { key: 'baseline', closed: [], oneway: [] }, effectiveInputs(s, active));
       set({ comparison: { baseline, scenario, key }, comparing: false });
     } catch (e) {
       set({ comparison: { baseline: { error: String(e) }, scenario: { error: String(e) }, key }, comparing: false });
@@ -178,15 +184,16 @@ export const useCoverage = create<CoverageState>((set, get) => ({
       const sc = useScenarios.getState();
       const active = sc.scenarios.find((x) => x.id === sc.activeId);
       const key = coverageKey(s);
+      const eff = effectiveInputs(s, active);
       const res = await coverage.send<Extract<CoverageResponse, { op: 'plan' }>>({
         op: 'plan',
         zone: s.zone,
         roadClasses: s.roadClasses,
         direction: s.direction,
         scenario: active ? specOf(active) : { key: 'baseline', closed: [], oneway: [] },
-        depotNode: s.depot,
+        depotNode: eff.depot!,
         dumpNode: s.dump,
-        fleet: s.fleet,
+        fleet: eff.fleet,
       });
       if (token !== runToken) return;
       set({ status: 'done', result: res.result, resultKey: key });

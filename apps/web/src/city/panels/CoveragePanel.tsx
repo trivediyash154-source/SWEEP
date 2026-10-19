@@ -5,7 +5,7 @@ import { useCity } from '../store';
 import { coverageKey, useCoverage, zoneLabel, type PlanSummary } from '../coverageStore';
 import { useScenarios } from '../scenario';
 import { fmtDist, fmtTime, nodeLabel } from './RouteLab';
-import { estimateCost } from '../costModel';
+import { estimateCost, type CostAssumptions } from '../costModel';
 import { CoverageReport } from './CoverageReport';
 
 export const METHOD_LABEL = {
@@ -61,14 +61,18 @@ function NumberField({ label, value, onChange, min, max, step, placeholder, test
 
 const methodWord = (p: PlanSummary) => (p.optimal ? 'proven optimal' : p.method === 'heuristic-candidate-matching' ? 'heuristic, with bound' : 'exact, connectors added');
 
-function CompareTable({ baseline, scenario, name }: { baseline: PlanSummary | { error: string }; scenario: PlanSummary | { error: string }; name: string }) {
+function CompareTable({ baseline, scenario, name, costs }: { baseline: PlanSummary | { error: string }; scenario: PlanSummary | { error: string }; name: string; costs: CostAssumptions }) {
   const ok = (x: PlanSummary | { error: string }): x is PlanSummary => !('error' in x);
+  const est = (p: PlanSummary) => estimateCost({ serviceM: p.serviceM, transitM: p.transitM, vehicleSeconds: p.vehicleSeconds }, costs);
   const rows: [string, (p: PlanSummary) => number, (v: number) => string][] = [
     ['Total distance', (p) => p.distanceM, fmtDist],
     ['Transit (deadhead)', (p) => p.transitM, fmtDist],
     ['Finish (makespan)', (p) => p.makespanS, fmtTime],
     ['Vehicle hours', (p) => p.vehicleSeconds, fmtTime],
+    ['Vehicles used', (p) => p.vehiclesUsed, (v) => String(v)],
   ];
+  if (ok(baseline) && est(baseline).fuelL !== null) rows.push(['Fuel (your rates)', (p) => est(p).fuelL!, (v) => `${v.toFixed(1)} L`], ['CO₂ (your factor)', (p) => est(p).co2Kg!, (v) => `${v.toFixed(1)} kg`]);
+  if (ok(baseline) && est(baseline).totalCost !== null) rows.push(['Cost (your rates)', (p) => est(p).totalCost!, (v) => `₹${Math.round(v).toLocaleString('en-IN')}`]);
   return (
     <table className="sc-table" data-testid="cov-comparison">
       <thead>
@@ -161,6 +165,7 @@ export function CoveragePanel() {
                   <span className="rl-end__label">{w === 'depot' ? 'Depot' : 'Disposal'}</span>
                   <strong className="rl-end__value" data-testid={`cov-${w}`}>
                     {n !== null ? nodeLabel(city, n) : pickTarget === w ? 'Click an intersection' : w === 'depot' ? 'Not set' : 'None (optional)'}
+                    {w === 'depot' && activeScenario?.ops?.depot !== undefined && <span className="faint small"> · this scenario uses another depot</span>}
                   </strong>
                   {w === 'dump' && n !== null && (
                     <button type="button" className="btn btn--ghost btn--sm" onClick={() => cv.setDump(null)}>
@@ -395,13 +400,45 @@ export function CoveragePanel() {
             ) : (
               <>
                 <p className="faint small">
-                  Same zone, depot and fleet, planned on the baseline and on <strong>{activeScenario.name}</strong>.
+                  The same zone, planned on the baseline (your depot and fleet) and on <strong>{activeScenario.name}</strong> (its street changes, plus the depot and fleet below).
                 </p>
+                <dl className="cv-facts" data-testid="cov-scenario-ops">
+                  <dt>Depot</dt>
+                  <dd>
+                    {activeScenario.ops?.depot !== undefined ? nodeLabel(city, activeScenario.ops.depot) : 'same as plan'}{' '}
+                    <button type="button" className={`btn btn--ghost btn--sm${pickTarget === 'scenario-depot' ? ' is-on' : ''}`} aria-pressed={pickTarget === 'scenario-depot'} onClick={() => useCity.getState().setPickTarget(pickTarget === 'scenario-depot' ? null : 'scenario-depot')} data-testid="pick-scenario-depot">
+                      Pick
+                    </button>
+                    {activeScenario.ops?.depot !== undefined && (
+                      <button type="button" className="btn btn--ghost btn--sm" onClick={() => useScenarios.getState().setOps({ depot: null })}>
+                        Reset
+                      </button>
+                    )}
+                  </dd>
+                  <dt>Vehicles</dt>
+                  <dd>
+                    <input
+                      className="input input--sm cv-ops-input"
+                      type="number"
+                      min={1}
+                      max={20}
+                      step={1}
+                      placeholder={`same (${f.vehicles})`}
+                      value={activeScenario.ops?.vehicles ?? ''}
+                      onChange={(e) => {
+                        const v = e.target.value.trim();
+                        useScenarios.getState().setOps({ vehicles: v === '' ? null : Math.min(20, Math.max(1, Math.round(Number(v)) || 1)) });
+                      }}
+                      aria-label="Vehicles in this scenario"
+                      data-testid="cov-scenario-vehicles"
+                    />
+                  </dd>
+                </dl>
                 <button type="button" className="btn btn--primary btn--sm" disabled={cv.comparing} onClick={() => void cv.compare()} data-testid="cov-compare">
                   {cv.comparing ? <span className="spinner" aria-hidden="true" /> : null} Compare with baseline
                 </button>
                 {cv.comparison && cv.comparison.key === coverageKey(cv) && (
-                  <CompareTable baseline={cv.comparison.baseline} scenario={cv.comparison.scenario} name={activeScenario.name} />
+                  <CompareTable baseline={cv.comparison.baseline} scenario={cv.comparison.scenario} name={activeScenario.name} costs={cv.costs} />
                 )}
               </>
             )}

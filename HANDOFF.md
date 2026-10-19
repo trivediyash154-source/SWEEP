@@ -182,6 +182,7 @@ Run `pnpm dev`, or build and then run `node scripts/e2e-server.mjs 8790` to serv
 | `zoneShape.ts` | **done**: rectangle, circle and polygon zones (construction, simplicity checks, outline, labels; unit-tested). Zone drawing uses pick target `zone` and the scene's `ground` pick mode. |
 | `routeSheet.ts`, `panels/RouteReport.tsx` | **done**: street-by-street route sheet whose turns use the engine's `arcDirections` and `classifyTurn` (unit-tested against `result.turns` on real routes), and the printable Route lab report |
 | `format.ts` | `fmtDist`, `fmtTime` (re-exported from `panels/RouteLab.tsx`; unit-tested) |
+| `coverageExport.ts` | **done**: GPX tracks and a step CSV of a coverage plan (unit- and e2e-tested). Uses the engine's new `localUnprojection` (inverse of the bundle projection, tested against the stored node coordinates). |
 | `Inspector.tsx`, `Provenance.tsx` | feature details (height source, OSM links) and the data provenance dialog |
 
 ### Changes elsewhere in the web app
@@ -213,7 +214,7 @@ Helpers: `e2e/png.ts` decodes screenshots for pixel measurements; `e2e/engine.ts
 ### Checks that pass (2026-10-19, second session)
 
 * `pnpm typecheck` ✓ and `pnpm lint` ✓ (0 warnings).
-* Unit tests: engine 154/154, server 38/38, web 26/26.
+* Unit tests: engine 156/156, server 38/38, web 29/29 (after the exports were added; see TEST_PLAN for the run figures).
 * E2E: **51 of 51 passed** in a full local run (10.9 min, one worker), on the 47-tile bundle.
 * Last `pnpm verify` (final code of the second session): typecheck, lint, unit tests, both oracles and the build passed; the browser suite had **50 of 51**. The one failure was the known intermittent page-load freeze (§4.1) in "every algorithm returns the engine optimum"; that test and the whole city spec then passed when rerun. So `pnpm verify` did **not** exit 0 on that run.
 
@@ -295,7 +296,6 @@ Profiled on the whole 47-tile network (3,032 odd intersections): the optional op
 
 * Coverage plans with time windows or turn costs.
 * Several depots in one plan.
-* Exporting coverage routes as GPX or CSV for vehicle navigation.
 
 ## 5. Deployment note
 

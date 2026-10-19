@@ -38,7 +38,7 @@ Building heights come from the OSM `height` tag (1 building), `building:levels` 
   * Multi-vehicle plans with shift and capacity limits, with their lower bounds. When the limits need more vehicles than you have, the plan says how many routes it needs instead of claiming a result.
   * A deterministic shift timeline.
   * Cost and CO₂ estimates from your own assumptions, applied to the distance and hours the vehicles actually drive.
-  * A printable report.
+  * A printable report, GPX tracks (one per vehicle, for navigation devices) and a step list (CSV) with street names, OSM ids and times of day.
 * **Scenarios.**
   * Close a road or change its direction on the map, then recompute routes and coverage against the unchanged baseline.
   * Change the operation for coverage: another depot, fleet size, shift limit, fuel price or wage. "Compare with baseline" plans both and shows the change in distance, hours, vehicles, fuel, CO₂ and cost.

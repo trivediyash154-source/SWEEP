@@ -552,6 +552,17 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     await expect(page.getByTestId('tl-progress-0')).toHaveText('100 %');
     await expect(page.getByTestId('tl-vehicle-0')).toContainText('back at depot');
 
+    // Exports follow the same plan: one CSV row per engine route step, ending at the engine's total, and one GPX track.
+    const [csvFile] = await Promise.all([page.waitForEvent('download'), page.getByTestId('cov-export-csv').click()]);
+    const csv = readFileSync((await csvFile.path())!, 'utf8').trim().split('\r\n');
+    expect(csv).toHaveLength(1 + exp.route.steps.length);
+    expect(csv[1]!.split(',')[9]).toBe('06:00:00');
+    expect(Math.abs(Number(csv[csv.length - 1]!.split(',').at(-1)) - exp.route.totalDistance / 1000)).toBeLessThan(0.0015);
+    const [gpxFile] = await Promise.all([page.waitForEvent('download'), page.getByTestId('cov-export-gpx').click()]);
+    const gpx = readFileSync((await gpxFile.path())!, 'utf8');
+    expect(gpx.match(/<trk>/g)).toHaveLength(1);
+    expect(gpx).toContain('OpenStreetMap contributors');
+
     // Cost model: nothing is shown until assumptions are entered; then fuel and CO₂ follow from the plan's distances.
     await expect(page.getByTestId('cost-fuel')).toHaveText('enter both fuel rates');
     await page.getByTestId('cost-fuel-service').fill('40');

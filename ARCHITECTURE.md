@@ -67,6 +67,7 @@ apps/web/src/city
 | Zone drawing | `web/city/zoneShape.ts` | Rectangle (two corners), circle (centre, rim), polygon (vertices; self-crossing points refused). The zone object goes to the engine unchanged |
 | Scenarios | `web/city/scenario.ts` | Network changes (closed segments, one-way overrides) and plan overrides (depot, vehicles, shift, cost assumptions). The coverage panel's inputs are the baseline operation; `effectiveInputs` applies the active scenario's overrides |
 | Shift timeline | `web/city/timeline.ts`, `panels/Timeline.tsx` | Deterministic clock from the planned steps (length ÷ speed, plus unloading) |
+| Exports | `web/city/coverageExport.ts` | GPX 1.1 (one track per vehicle, coordinates converted back with `localUnprojection`, the inverse of the bundle's projection) and a step CSV whose times come from the timeline's schedule |
 | Cost model | `web/city/costModel.ts` | Only from user-entered rates, applied to the distances and vehicle hours of the routes actually driven |
 
 **Picking.** The scene resolves a click on the canvas (ground plane plus a segment/node index; buildings are ray-cast on click only) according to a pick mode. The mode and callbacks are kept in a ref that the DOM-side `GeoCityScene` render updates, and are read when the pointer event arrives: props inside `<Canvas>` reach the R3F reconciler later, and on slow frames a quick click after choosing a tool would otherwise use the previous mode. Zone drawing uses the `ground` mode, which returns the exact ground point (never a building roof).

@@ -867,6 +867,11 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+.cv-exports {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .cv-group {
   display: grid;
   gap: 8px;

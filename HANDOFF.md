@@ -355,6 +355,6 @@ Profiled on the whole 47-tile network (3,032 odd intersections): the optional op
 
 ## 5. Deployment note
 
-* The owner earlier asked for a Vercel deployment of the static build. That deployment, https://sweep-ashy.vercel.app (project "sweep"), predates the city workspace.
-* The owner has asked for this work to be put on Vercel. The fourth session could not do it: its Vercel connector could list the "sweep" project but was refused (HTTP 403) for the project's team scope, and the container had no Vercel CLI login. The owner needs to re-authorise the Vercel connector for that team (or deploy from a machine with access). Then deploy `apps/web/dist-static/` (build it with `pnpm build:static`); no rewrites are needed because the static build uses hash routes (`/#/workspace`). The exact commands are in DEPLOYMENT.md, "Static build on Vercel".
+* **Deployed.** The owner asked for this work to be on Vercel. The third session deployed the static build of `fd4740d` to the existing project "sweep" on 2026-10-19 (22:56 UTC), with the Vercel CLI logged in inside its container. It is live at https://sweep-ashy.vercel.app, with the city at `/#/workspace`. Landing, lab, city load, Route lab and a coverage plan were checked on the live site, with no console errors.
+* To redeploy after changes, follow DEPLOYMENT.md, "Static build on Vercel". A session without a Vercel login cannot deploy: the fourth session's Vercel connector was refused (HTTP 403) for the project's team. Ask the owner first, as before.
 * `pnpm build:static` produces `apps/web/dist-static/`. The city JSON is served from `public/cities/`, and `cityUrl()` respects `BASE_URL`.

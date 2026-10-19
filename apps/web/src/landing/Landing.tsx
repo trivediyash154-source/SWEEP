@@ -9,6 +9,7 @@ import { Icon } from '../components/Icon';
 import { StaticNetwork } from './StaticNetwork';
 import { usePrefs, useReducedMotion } from '../state/prefs';
 import { webglAvailable } from '../lib/webgl';
+import { WebGLBoundary } from '../components/WebGLBoundary';
 import { formatDistance, formatMs, formatNumber, formatPercent } from '../lib/format';
 import '../styles/landing.css';
 
@@ -126,9 +127,11 @@ export default function Landing() {
       <section className="hero" ref={heroRef} data-bloom-zone aria-labelledby="hero-title">
         <div className="hero__scene" aria-hidden="true">
           {gl ? (
+            <WebGLBoundary fallback={null}>
             <Suspense fallback={null}>
               <HeroScene theme={theme} paused={!heroVisible} reduced={reduced} />
             </Suspense>
+            </WebGLBoundary>
           ) : (
             <div className="hero-fallback">
               <StaticNetwork graph={hero.graph} result={hero.record} overlay="route" label="" />

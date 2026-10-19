@@ -98,6 +98,7 @@ Run `pnpm dev`, or build and then run `node scripts/e2e-server.mjs 8790` to serv
 * **Do not run `pkill -f <pattern>`** in a command line that itself contains the pattern. It kills its own shell (exit 144).
 * **Do not commit OSM tiles one at a time.** Each push triggers CI, each CI result wakes the session, and the loop burns the owner's usage. Commit the cache once, when a download run ends.
 * **The cloud proxy may block Overpass.** In the second session every mirror (`maps.mail.ru`, `overpass-api.de`, `overpass.private.coffee`) returned `403` on CONNECT: the environment's network policy, not the servers. Check with `curl -sS "$HTTPS_PROXY/__agentproxy/status"` and a `curl` to the mirror. If it is a policy denial, stop the acquisition (the rules say not to retry a confirmed denial) and ask the owner to allow the host in the environment's network settings.
+* **Never create a throwaway WebGL context** (a feature probe) on a page that will create a scene. On software rasterisers it stalls the main thread (see §4.1). Detect the renderer from the scene's own context.
 * **Pick modes are read from a ref, not a prop.** Props inside `<Canvas>` reach the R3F reconciler late on slow frames, so `GeoCityScene` keeps `pickMode`, `onPick` and `onHover` in a DOM-side ref that the picker reads at event time. Keep it that way; passing the mode as a prop made quick clicks after choosing a tool resolve with the old mode (this was the intermittent "close a road" e2e failure).
 * **Wait for the camera with `__sweepCity.cameraMoving()`** before computing click positions in e2e tests. A fixed timeout or "projection unchanged for 400 ms" is not enough when one software-rendered frame takes over a second.
 * **Headless Chromium uses SwiftShader** (software WebGL). The app detects this and starts the 3D scene in low-power mode (`lib/webgl.ts` → `startInLowPower`; demand frameloop, DPR 1, no shadows). Two browsers in parallel on four cores make the real-data tests slow, so the city spec has a 180 s describe timeout. The assertions were not changed.
@@ -276,7 +277,24 @@ pnpm city:build pune-bibwewadi                                                  
 
 Run `npx playwright test --reporter=line`. Inspect failures with `test-results/<name>/trace.zip` (unzip and read `0-trace.trace`, or `npx playwright show-trace`). Fix root causes; never weaken or delete tests.
 
-**Still open: the intermittent page-load freeze** (about 1 in 200 page loads in the second session). Evidence from the latest trace: the city JSON arrives (200), the app then requests the scene chunk, its dependencies and the geometry worker, and none of them ever reports a response; the screen stays at "Loading city…" and Playwright cannot query the DOM for 60 s. That pattern means the renderer's main thread stopped running tasks just after the city data was decoded. `openCity` in `e2e/city.spec.ts` now opens a DevTools session with the debugger enabled before navigation (detached once the city loads) and, if the city never appears, pauses the page and attaches the JavaScript stack, or reports that the thread is stuck outside JavaScript (native or GPU), as a `freeze-diagnosis` attachment. The assertion is unchanged. Read that attachment the next time it happens.
+**Resolved in the third session: the intermittent page-load freeze.**
+
+* **Reproducer.** Load `/workspace` repeatedly in one headless Chromium (SwiftShader). 11 of 60 loads stalled. In every stall, `page.evaluate` and a CDP `Debugger.pause` both went unanswered, so the main thread was blocked outside JavaScript.
+* **Bisection:**
+
+  | Run | Stalls |
+  |---|---|
+  | as built | 11 of 60 |
+  | `--disable-webgl --disable-3d-apis` | 0 of 60 |
+  | probe creates no context | 0 of 60 |
+  | after the fix | 0 of 120 |
+
+* **Cause.** The feature probe in `lib/webgl.ts` created a throwaway WebGL context, read the renderer name and called `loseContext()`. On SwiftShader this left the page's main thread blocked in a later synchronous GPU call.
+* **Fix.**
+  * `webglAvailable()` now only checks that the API exists.
+  * Software rendering is detected from each scene's own context (`lowPowerFor(gl)` in `onCreated`).
+  * Scenes start in low power until a hardware GPU is confirmed. The `sweep.quality` preference still wins.
+  * Every 3D scene is wrapped in `components/WebGLBoundary` with a readable fallback, in case context creation fails.
 
 **Resolved in the second session:** the intermittent "close a road" failure. The click arrived, but the picker still had the previous pick mode because the prop had not yet reached the R3F reconciler (main-thread frame gaps of up to 3 s in SwiftShader). The picker now reads the mode from a DOM-side ref.
 
@@ -284,7 +302,10 @@ Run `npx playwright test --reporter=line`. Inspect failures with `test-results/<
 
 Ask the owner to allow an Overpass mirror in the environment's network settings, then resume the acquisition (§3), rebuild the bundle, run the full suite and update the numbers in README, this file and IMPLEMENTATION_STATUS. The tests compare the UI with the engine on whatever bundle is present, so they need no changes for new data.
 
-### 4.3 Faster lower bound for large undirected zones (partly done)
+### 4.3 Faster lower bound for large undirected zones: DONE (third session)
+
+The new sparse Jonker–Volgenant assignment (`coverage/assignment.ts`, unit-tested against brute force and min-cost flow) replaced the general min-cost flow in the optimal-assignment start. On the whole 54-tile network (3,606 odd intersections) the bound went from **6.0 s to 1.55 s**, and the value from 437,285.7 m to 437,302.1 m (slightly stronger, still feasible for every pair). The history is kept below.
+
 
 Profiled on the whole 47-tile network (3,032 odd intersections): the optional optimal-assignment start of `fractionalMatchingDual` (`engine/coverage/bounds.ts`) dominated, with 9.5 s in `minCostFlow` and 1.8 s in its pricing searches. Without that start the bound takes 0.13 s but is weaker (T-join part 96.0 km instead of 106.4 km). The second session replaced the allocation-heavy heaps in `mincostflow.ts` and `coverage/arcs.ts` with typed-array heaps (same ordering, so results are bit-identical; engine tests and both oracles agree) and flattened the flow's arcs: the bound now takes about 6 s. Next idea: a dedicated sparse assignment solver with a column-reduction start for this bound only (not in the shared exact flow); it may return a different optimal dual, so compare bound values.
 

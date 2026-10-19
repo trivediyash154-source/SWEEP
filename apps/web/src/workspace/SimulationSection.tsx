@@ -4,6 +4,7 @@ import { isOneway } from '@sweep/engine';
 import { useWorkspace } from '../state/workspace';
 import { useReducedMotion } from '../state/prefs';
 import { webglAvailable } from '../lib/webgl';
+import { WebGLBoundary } from '../components/WebGLBoundary';
 import { formatDistance, formatNumber } from '../lib/format';
 import { Icon } from '../components/Icon';
 import { RouteProjection } from './RouteProjection';
@@ -251,9 +252,11 @@ export function SimulationSection() {
     <section id="surface-simulation" className="surface surface--sim" aria-labelledby="sim-title" data-bloom-zone data-petal-intensity="0.7">
       <div className="sim-stage" data-testid="sim-stage">
         {use3d ? (
+          <WebGLBoundary fallback={<div className="stage-loading" role="status">The 3D view could not start on this device (WebGL is unavailable). Use the 2D stage.</div>}>
           <Suspense fallback={<div className="stage-loading" role="status">Building the district…</div>}>
             <DistrictScene district={district} tracks={fresh ? tracks3d : []} trackColors={colors} theme={theme} reduced={reduced} highlight={highlight} dimRoute={analysisStep !== null && !highlight.showRoute} />
           </Suspense>
+          </WebGLBoundary>
         ) : (
           <RouteProjection
             graph={graph}

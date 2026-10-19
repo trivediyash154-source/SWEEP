@@ -622,8 +622,8 @@
    ],
    "status": "failed",
    "file": "t2_4_buildings.json",
-   "attempts": 30,
-   "lastError": "HTTP 504"
+   "attempts": 42,
+   "lastError": "TimeoutError: The operation was aborted due to timeout"
   },
   "t2_5:streets": {
    "key": "t2_5",

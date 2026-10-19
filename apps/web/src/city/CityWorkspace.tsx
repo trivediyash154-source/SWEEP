@@ -4,7 +4,8 @@ import { Wordmark } from '../components/Wordmark';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { Icon } from '../components/Icon';
 import { usePrefs, useReducedMotion } from '../state/prefs';
-import { startInLowPower, webglAvailable } from '../lib/webgl';
+import { lowPowerFor, startInLowPower, webglAvailable } from '../lib/webgl';
+import { WebGLBoundary } from '../components/WebGLBoundary';
 import { useCity, type CityMode } from './store';
 import { FeatureDetails } from './Inspector';
 import { ProvenanceDialog } from './Provenance';
@@ -43,7 +44,7 @@ export default function CityWorkspace() {
   const pickTarget = useCity((s) => s.pickTarget);
   const st = useCity.getState();
   const [prov, setProv] = useState(false);
-  const [lowPower] = useState(startInLowPower);
+  const [lowPower, setLowPower] = useState(startInLowPower);
   const debugRef = useRef<{ project: (x: number, y: number, h: number) => [number, number]; moving: () => boolean; appliedNonce: () => number } | null>(null);
   const webgl = webglAvailable();
   const overlays: SceneOverlays = useCityOverlays();
@@ -115,6 +116,7 @@ export default function CityWorkspace() {
           </div>
         )}
         {city && webgl ? (
+          <WebGLBoundary fallback={<div className="cw-loading" role="status">The 3D view could not start on this device (WebGL is unavailable). The panels still work.</div>}>
           <Suspense fallback={<div className="cw-loading" role="status">Building the city…</div>}>
             <GeoCityScene
               city={city}
@@ -122,6 +124,7 @@ export default function CityWorkspace() {
               theme={theme}
               reduced={reduced}
               lowPower={lowPower}
+              onContext={(gl) => setLowPower(lowPowerFor(gl))}
               showEstimates={showEstimates}
               overlays={overlays}
               camera={camera}
@@ -132,6 +135,7 @@ export default function CityWorkspace() {
               panelPx={420}
             />
           </Suspense>
+          </WebGLBoundary>
         ) : city && !webgl ? (
           <div className="cw-error notice notice--warn" role="alert">
             This browser cannot create a WebGL context, so the 3D city cannot be drawn. Routing and planning still run; results appear in the panels.

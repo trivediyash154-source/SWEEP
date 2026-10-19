@@ -92,6 +92,8 @@ export interface GeoCitySceneProps {
   theme: ThemeName;
   reduced: boolean;
   lowPower: boolean;
+  /** Called with the scene's own WebGL context once it exists (renderer detection). */
+  onContext?: (gl: WebGLRenderingContext | WebGL2RenderingContext) => void;
   showEstimates: boolean;
   overlays: SceneOverlays;
   camera: { cmd: CameraCommand; nonce: number; frame?: { minX: number; minY: number; maxX: number; maxY: number } | null };
@@ -609,6 +611,7 @@ export default function GeoCityScene(props: GeoCitySceneProps) {
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = p.exposure;
+        props.onContext?.(gl.getContext());
       }}
       data-testid="city-canvas"
     >

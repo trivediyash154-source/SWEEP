@@ -5,6 +5,7 @@ import { useCity } from '../store';
 import { coverageKey, useCoverage } from '../coverageStore';
 import { useScenarios } from '../scenario';
 import { fmtDist, fmtTime, nodeLabel } from './RouteLab';
+import { estimateCost } from '../costModel';
 
 const METHOD_LABEL = {
   'exact-directed-min-cost-flow': 'Exact · directed min-cost flow',
@@ -26,6 +27,7 @@ function useClasses(city: CityModel) {
   }, [city]);
 }
 
+const inr = (x: number | null) => (x === null ? '–' : `₹${Math.round(x).toLocaleString('en-IN')}`);
 const pct = (x: number | null) => (x === null ? '–' : `${(x * 100).toFixed(2)} %`);
 
 function NumberField({ label, value, onChange, min, max, step, placeholder, testid, unit }: { label: string; value: number | null; onChange: (v: number | null) => void; min: number; max: number; step: number; placeholder?: string; testid: string; unit?: string }) {
@@ -305,6 +307,36 @@ export function CoveragePanel() {
               ))}
             </tbody>
           </table>
+
+          <fieldset className="cv-group" data-testid="cov-costs">
+            <legend>Cost estimate · from your assumptions</legend>
+            <div className="cv-grid">
+              <NumberField label="Fuel, servicing" value={cv.costs.fuelServiceLPer100km} onChange={(v) => cv.setCosts({ fuelServiceLPer100km: v })} min={0} max={500} step={0.5} placeholder="enter" unit="L/100 km" testid="cost-fuel-service" />
+              <NumberField label="Fuel, transit" value={cv.costs.fuelTransitLPer100km} onChange={(v) => cv.setCosts({ fuelTransitLPer100km: v })} min={0} max={500} step={0.5} placeholder="enter" unit="L/100 km" testid="cost-fuel-transit" />
+              <NumberField label="Fuel price" value={cv.costs.fuelPricePerL} onChange={(v) => cv.setCosts({ fuelPricePerL: v })} min={0} max={1000} step={0.5} placeholder="enter" unit="₹/L" testid="cost-fuel-price" />
+              <NumberField label="Crew per vehicle" value={cv.costs.crewPerVehicle} onChange={(v) => cv.setCosts({ crewPerVehicle: v })} min={0} max={20} step={1} placeholder="enter" testid="cost-crew" />
+              <NumberField label="Wage" value={cv.costs.wagePerHour} onChange={(v) => cv.setCosts({ wagePerHour: v })} min={0} max={10000} step={1} placeholder="enter" unit="₹/h" testid="cost-wage" />
+              <NumberField label="CO₂ factor" value={cv.costs.co2KgPerL} onChange={(v) => cv.setCosts({ co2KgPerL: v ?? 2.68 })} min={0} max={10} step={0.01} unit="kg/L" testid="cost-co2" />
+            </div>
+            {(() => {
+              const e = estimateCost({ serviceM: r.totals.serviceM, transitM: r.totals.deadheadM + r.totals.repeatM, vehicleSeconds: r.routes.reduce((a, v) => a + v.seconds, 0) }, cv.costs);
+              return (
+                <dl className="cv-facts" data-testid="cost-results">
+                  <dt>Fuel</dt>
+                  <dd data-testid="cost-fuel">{e.fuelL === null ? 'enter both fuel rates' : `${e.fuelL.toFixed(1)} L`}</dd>
+                  <dt>CO₂ (tailpipe)</dt>
+                  <dd data-testid="cost-co2-kg">{e.co2Kg === null ? '–' : `${e.co2Kg.toFixed(1)} kg`}</dd>
+                  <dt>Fuel cost</dt>
+                  <dd>{inr(e.fuelCost)}</dd>
+                  <dt>Labour</dt>
+                  <dd>{inr(e.labourCost)}</dd>
+                  <dt>Total</dt>
+                  <dd data-testid="cost-total">{inr(e.totalCost)}</dd>
+                </dl>
+              );
+            })()}
+            <p className="faint small">Estimates from the numbers you enter, applied to this plan's distances and vehicle hours. Nothing here is a measured municipal figure. The 2.68 kg/L default is the usual combustion factor for diesel; change it for other fuels.</p>
+          </fieldset>
 
           <details className="cv-checks" data-testid="cov-checks">
             <summary>

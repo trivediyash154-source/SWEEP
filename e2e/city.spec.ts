@@ -251,6 +251,15 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     await expect(page.getByTestId('tl-progress-0')).toHaveText('100 %');
     await expect(page.getByTestId('tl-vehicle-0')).toContainText('back at depot');
 
+    // Cost model: nothing is shown until assumptions are entered; then fuel and CO₂ follow from the plan's distances.
+    await expect(page.getByTestId('cost-fuel')).toHaveText('enter both fuel rates');
+    await page.getByTestId('cost-fuel-service').fill('40');
+    await page.getByTestId('cost-fuel-transit').fill('25');
+    const fuel = (exp.route.serviceDistance / 1000) * 0.4 + ((exp.route.totalDistance - exp.route.serviceDistance) / 1000) * 0.25;
+    await expect(page.getByTestId('cost-fuel')).toHaveText(`${fuel.toFixed(1)} L`);
+    await expect(page.getByTestId('cost-co2-kg')).toHaveText(`${(fuel * 2.68).toFixed(1)} kg`);
+    await expect(page.getByTestId('cost-total')).toHaveText('–');
+
     // Undirected relaxation: a different problem, labelled as such; a heuristic never claims optimality.
     await page.getByTestId('cov-dir-undirected').click();
     await expect(page.getByTestId('cov-stale')).toBeVisible();

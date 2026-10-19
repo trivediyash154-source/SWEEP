@@ -173,7 +173,8 @@ Run `pnpm dev`, or build and then run `node scripts/e2e-server.mjs 8790` to serv
 | `overlays.ts` | route path, search exploration ribbons, reach ribbons, scenario highlights |
 | `coverage.worker.ts`, `coverageClient.ts`, `coverageStore.ts` | coverage plans off the main thread: `zoneCoverageGraph` → `solveZoneCoverage` → `planFleet` (when there is more than one vehicle, or a capacity, shift or disposal site is set). Routes come back as arcs. The store holds zone, depot, dump, classes, direction, fleet, result and `resultKey` (a stale flag that includes the scenario key). |
 | `panels/CoveragePanel.tsx`, `coverageOverlays.ts` | **done**: the Coverage & fleet panel (rectangle zone drawn with two clicks; depot and disposal picks; road classes; respect or ignore one-ways; fleet inputs; results with method, guarantee, lower bound, gap, per-vehicle table, fleet bounds and checks) and its map layers (one coloured path per vehicle, zone outline, markers) |
-| `panels/Timeline.tsx` | **placeholder**: the next work, see §4.3 |
+| `timeline.ts`, `shift.ts`, `panels/Timeline.tsx` | **done**: the deterministic shift timeline (unit-tested), with shift start, clock, scrubber, fixed-rate playback, per-vehicle street, % done, finish time, over-shift warnings, and vehicle markers on the map |
+| `costModel.ts` | **done**: cost and CO₂ estimate from user assumptions only (unit-tested). Shown in the coverage results. |
 | `Inspector.tsx`, `Provenance.tsx` | feature details (height source, OSM links) and the data provenance dialog |
 
 ### Changes elsewhere in the web app
@@ -279,8 +280,8 @@ Measured with `pnpm bench` on the partial bundle:
 | 3 Renderer and themes | done for the workspace; recapture the same-camera screenshots in both themes for the report |
 | 4–6 Routing, profiles, reachability | done and tested |
 | 7 Coverage | engine done and tested; Coverage & fleet UI done, with an e2e test against the engine (rectangle zones) |
-| 8 Fleet in UI, scenarios for coverage, cost model, report | fleet planning is in the coverage panel; coverage scenarios, cost model and report **not built** |
-| 9 Shift timeline | **not started**; `Timeline.tsx` is a placeholder |
+| 8 Fleet in UI, scenarios for coverage, cost model, report | fleet planning and the cost model are in the coverage panel; coverage-vs-baseline scenario comparison and the printable report are **not built** |
+| 9 Shift timeline | **done** (coverage plans); e2e-checked against the engine route timed at the set speeds |
 | 10 Docs, full verify, final report | **not started** |
 
 ---
@@ -359,7 +360,7 @@ The original plan for this section is kept below for reference.
 * A heuristic result shows an LB and never says "optimal".
 * A closure changes the coverage result against the baseline.
 
-### 4.3 Shift timeline (replaces the old speed buttons)
+### 4.3 Shift timeline: DONE (kept for reference; consider adding a timeline for multi-vehicle plans to the e2e test)
 
 **`panels/Timeline.tsx`**
 
@@ -375,7 +376,7 @@ The original plan for this section is kept below for reference.
 * Play/pause runs in real time × a fixed factor. It must not be a set of arbitrary "speed buttons".
 * Put the pure timeline maths in `apps/web/src/city/timeline.ts` and unit-test it. Required property: the same input gives the same positions, and they are monotonic in t.
 
-### 4.4 Cost model (assumptions, never claims)
+### 4.4 Cost model: DONE (fields start blank; only the 2.68 kg/L diesel factor has a default)
 
 **`apps/web/src/city/costModel.ts`** holds configurable, **visibly labelled assumptions**:
 

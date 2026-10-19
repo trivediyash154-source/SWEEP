@@ -5,6 +5,7 @@ import { coverage } from './coverageClient';
 import type { CoveragePlanResult, CoverageResponse, FleetSettings } from './coverage.worker';
 import { specOf, useScenarios } from './scenario';
 import { useCity } from './store';
+import { DEFAULT_COSTS, type CostAssumptions } from './costModel';
 
 export type RectZone = Extract<Zone, { kind: 'rect' }>;
 
@@ -29,6 +30,8 @@ interface CoverageState {
   roadClasses: string[] | null;
   direction: 'directed' | 'undirected';
   fleet: FleetSettings;
+  /** Operating-cost assumptions (user inputs; never measured values). */
+  costs: CostAssumptions;
   status: 'idle' | 'running' | 'done' | 'error';
   error: string | null;
   result: CoveragePlanResult | null;
@@ -40,6 +43,7 @@ interface CoverageState {
   setRoadClasses: (c: string[] | null) => void;
   setDirection: (d: 'directed' | 'undirected') => void;
   setFleet: (f: Partial<FleetSettings>) => void;
+  setCosts: (c: Partial<CostAssumptions>) => void;
   clear: () => void;
   run: () => Promise<void>;
 }
@@ -61,6 +65,7 @@ export const useCoverage = create<CoverageState>((set, get) => ({
   roadClasses: null,
   direction: 'directed',
   fleet: DEFAULT_FLEET,
+  costs: DEFAULT_COSTS,
   status: 'idle',
   error: null,
   result: null,
@@ -78,6 +83,7 @@ export const useCoverage = create<CoverageState>((set, get) => ({
   setRoadClasses: (roadClasses) => set({ roadClasses }),
   setDirection: (direction) => set({ direction }),
   setFleet: (f) => set({ fleet: { ...get().fleet, ...f } }),
+  setCosts: (c) => set({ costs: { ...get().costs, ...c } }),
   clear: () => set({ cornerA: null, zone: null, depot: null, dump: null, result: null, resultKey: null, status: 'idle', error: null }),
   run: async () => {
     const s = get();

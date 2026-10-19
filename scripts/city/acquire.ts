@@ -142,9 +142,19 @@ const liveEndpoints = (r: RegionConfig): string[] => {
   return live.length ? live : r.endpoints;
 };
 
+/** Milliseconds requested by a Retry-After header (seconds or an HTTP date); 0 when absent or unparsable. */
+export function retryAfter(h: string | null, now = Date.now()): number {
+  if (!h) return 0;
+  const secs = Number(h.trim());
+  if (Number.isFinite(secs)) return Math.max(0, secs * 1000);
+  const t = Date.parse(h);
+  return Number.isFinite(t) ? Math.max(0, t - now) : 0;
+}
+
 async function fetchOne(r: RegionConfig, query: string, log: (s: string) => void): Promise<{ text: string; endpoint: string; osmBase?: string } | { error: string; attempts: number }> {
   let lastError = '';
   let lastRequest = 0;
+  let retryAfterMs = 0;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const live = liveEndpoints(r);
     const endpoint = live[Math.floor((attempt - 1) / 2) % live.length]!;
@@ -163,7 +173,10 @@ async function fetchOne(r: RegionConfig, query: string, log: (s: string) => void
         const u = usableResponse(text);
         if (u.ok) return { text, endpoint, ...(u.osmBase ? { osmBase: u.osmBase } : {}) };
         lastError = u.reason;
-      } else lastError = `HTTP ${res.status}`;
+      } else {
+        lastError = `HTTP ${res.status}`;
+        retryAfterMs = retryAfter(res.headers.get('retry-after'));
+      }
     } catch (e) {
       lastError = e instanceof Error ? `${e.name}: ${e.message}`.slice(0, 160) : String(e);
       if (e instanceof TypeError) {
@@ -171,7 +184,9 @@ async function fetchOne(r: RegionConfig, query: string, log: (s: string) => void
         if (connectionFailures.get(endpoint) === 2) log(`    ${new URL(endpoint).host} unreachable twice; skipping it for the rest of this run`);
       }
     }
-    const backoff = Math.min(120_000, 15_000 * 2 ** (attempt - 1));
+    // Exponential backoff, never shorter than the server's Retry-After (capped at 10 minutes).
+    const backoff = Math.max(Math.min(120_000, 15_000 * 2 ** (attempt - 1)), Math.min(600_000, retryAfterMs));
+    retryAfterMs = 0;
     log(`    retry in ${Math.round(backoff / 1000)} s (attempt ${attempt}/${MAX_ATTEMPTS}, ${new URL(endpoint).host}: ${lastError})`);
     await sleep(backoff);
   }

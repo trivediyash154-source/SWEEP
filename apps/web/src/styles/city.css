@@ -145,6 +145,15 @@
   margin: 2px 4px;
   background: var(--line);
 }
+/* The toolbar sits at the right edge: tooltips open to the left, as in the lab's camera tools. */
+.cw-camera [data-tip]:hover::after,
+.cw-camera [data-tip]:focus-visible::after {
+  right: calc(100% + 10px);
+  left: auto;
+  bottom: auto;
+  top: 50%;
+  transform: translateY(-50%);
+}
 .cw-camera .tool.is-on {
   background: color-mix(in srgb, var(--accent) 25%, transparent);
   color: var(--text);

@@ -248,10 +248,10 @@ pnpm city:build pune-bibwewadi                                                  
 * **In the second session the proxy refused every Overpass mirror (HTTP 403 on CONNECT)**, so no tiles were added. The owner must allow the mirror host (for example `maps.mail.ru`) in the environment's network settings before the acquisition can continue. When it works, `maps.mail.ru` is slow but reliable.
 * Do **not** hammer the servers, and commit the cache once per run, not per tile.
 
-### Earlier measurements (34-tile bundle; re-measure on the current data before quoting)
+### Benchmarks (47-tile bundle, second session; full tables in TEST_PLAN §5)
 
-* Car route Swami Vivekanand Marg → Kamate Nagar Road: 10:14 over 4.45 km, all 5 algorithms agreeing; settled arcs Dijkstra 3,513, A* 1,712, bidirectional 1,938, ALT 434, CH 44.
-* `pnpm bench`: P2P car/time median per query Dijkstra 0.33 ms, A* 0.24 ms, bidirectional 0.13 ms, ALT 0.07 ms, CH 0.05 ms (CH preprocessing 227–477 ms). Coverage, full network: directed exact 368.41 km in 158 ms; undirected heuristic 316.58 km against a lower bound of 296.84 km (gap 6.65 %) in 4.9 s.
+* P2P, car by time, median of 200 queries: Dijkstra 0.42 ms, A* 0.47 ms, bidirectional 0.21 ms, ALT 0.08 ms, CH 0.026 ms. CH preprocessing 415–772 ms across profiles.
+* Coverage, whole network: directed exact 503.00 km in 0.3 s. Undirected heuristic 409.40 km against a lower bound of 384.48 km (gap 6.48 %) in **20.2 s, 17.5 s of it the fractional-matching lower bound** (4.9 s in total on the 34-tile bundle). It runs in a worker, but a whole-map undirected plan is a long wait; making the bound faster is a worthwhile next step.
 
 ### Phase status
 
@@ -259,7 +259,7 @@ pnpm city:build pune-bibwewadi                                                  
 |---|---|
 | 1 Audit | done |
 | 2 Real Pune data | partial: 47 of 85 tile files; acquisition blocked by the environment's network policy in the second session |
-| 3 Renderer and themes | done for the workspace; same-camera screenshots of both themes still to capture for the report |
+| 3 Renderer and themes | done for the workspace; same-camera screenshots of both themes in `docs/screenshots/city-*.png` |
 | 4–6 Routing, profiles, reachability | done and tested; printable Route lab report with route sheet done and tested |
 | 7 Coverage | done: rectangle, circle and polygon zones; engine and UI tested against each other |
 | 8 Fleet, scenarios, cost, report | done: multi-vehicle plans with honest over-fleet diagnosis, scenario plan overrides (depot, vehicles, shift, costs) with baseline comparison, cost from the routes actually driven, printable coverage report |
@@ -282,13 +282,13 @@ Run `npx playwright test --reporter=line`. Inspect failures with `test-results/<
 
 Ask the owner to allow an Overpass mirror in the environment's network settings, then resume the acquisition (§3), rebuild the bundle, run the full suite and update the numbers in README, this file and IMPLEMENTATION_STATUS. The tests compare the UI with the engine on whatever bundle is present, so they need no changes for new data.
 
-### 4.3 Re-measure on the current bundle
+### 4.3 Faster lower bound for large undirected zones
 
-`pnpm bench` and the browser route figures above were measured on the 34-tile bundle. Re-run and replace them.
+`fractionalMatchingDual` (`engine/coverage/bounds.ts`) takes 17.5 s for the whole 47-tile network. Profile it first; the coordinate ascent and the bounded Dijkstra per odd vertex are the candidates. Keep the bound valid (feasible dual) and keep the engine tests.
 
 ### 4.4 Screenshots and the final report
 
-* Capture same-camera screenshots of `/workspace` in Velvet and Porcelain (and the coverage and route views) into `docs/screenshots/`, and use them in README.
+* Same-camera screenshots of `/workspace` in both themes, the Route lab and a coverage plan are in `docs/screenshots/city-*.png` (second session) and in README. Recapture them after the data changes.
 * Write the final report for the owner: files changed, dataset extent and partiality, road and building counts, theme verification with the screenshots, algorithms and guarantees, test results, performance, Docker and CI status, run commands, blockers (Overpass access; the reference repository was never received).
 
 ### 4.5 Possible next features (not started)

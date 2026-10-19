@@ -45,7 +45,17 @@ Building heights come from the OSM `height` tag (1 building), `building:levels` 
 
 The original abstract-network laboratory (editor, proofs, Zurich sample) is at `/lab`. To refresh the Pune data, run `pnpm city:acquire pune-bibwewadi` (resumable and polite to the public Overpass servers), then `pnpm city:build pune-bibwewadi`. See `HANDOFF.md` and `IMPLEMENTATION_STATUS.md` for the current state.
 
-![Workspace, Velvet theme: the 3D district with the spectral route and the vehicle](docs/screenshots/workspace-velvet.png)
+| Velvet theme | Porcelain theme (same camera) |
+|---|---|
+| ![City workspace, Velvet theme, focused on VIT Bibwewadi](docs/screenshots/city-velvet.png) | ![City workspace, Porcelain theme, same camera](docs/screenshots/city-porcelain.png) |
+
+| Route lab: five algorithms on one real query | Coverage & fleet: three vehicles on a free-outline zone, mid-shift |
+|---|---|
+| ![Route lab with the computed route](docs/screenshots/city-route-lab.png) | ![Coverage plan with three vehicle routes and the shift timeline](docs/screenshots/city-coverage-fleet.png) |
+
+Network lab (`/lab`):
+
+![Network lab, Velvet theme: the 3D district with the spectral route and the vehicle](docs/screenshots/workspace-velvet.png)
 
 | Real OSM data, directed (Porcelain) | Mathematical investigation |
 |---|---|

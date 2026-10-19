@@ -13,6 +13,13 @@ No account is needed for any of it.
 
 ## City workspace: real Pune (`/workspace`)
 
+| Velvet | Porcelain (same camera) |
+|---|---|
+| ![Pune city workspace around VIT Bibwewadi, Velvet theme](docs/screenshots/city-velvet.png) | ![The same view, Porcelain theme](docs/screenshots/city-porcelain.png) |
+| ![Route lab: five algorithms on a real Pune route](docs/screenshots/city-route-velvet.png) | ![Coverage & fleet: three vehicles in a circular zone, shift timeline](docs/screenshots/city-coverage-porcelain.png) |
+
+Screenshots are regenerated with `node scripts/city-screenshots.mjs`, with a server running on :8790.
+
 The city workspace runs on real OpenStreetMap data for Pune, Bibwewadi and the VIT area (about 4 × 4 km). The bundled extract is **partial** (50 of 85 tile downloads, including the VIT tile); the app shows which tiles are missing.
 
 | Item | Count |

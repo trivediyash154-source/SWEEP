@@ -13,12 +13,12 @@ No account is needed for any of it.
 
 ## City workspace: real Pune (`/workspace`)
 
-The city workspace runs on real OpenStreetMap data for Pune, Bibwewadi and the VIT area (about 4 × 4 km). The bundled extract is **partial**; the app shows which tiles are missing.
+The city workspace runs on real OpenStreetMap data for Pune, Bibwewadi and the VIT area (about 4 × 4 km). The bundled extract is **partial** (50 of 85 tile downloads, including the VIT tile); the app shows which tiles are missing.
 
 | Item | Count |
 |---|---|
-| Street segments | 3,103 (203.69 km) |
-| Building footprints | 6,725 |
+| Street segments | 5,000 (290.97 km), 493 one-way |
+| Building footprints | 10,704 (1 with a height tag, 11 with `building:levels`, 10,692 with estimated heights) |
 
 Most building heights are estimates, and the app flags them as such.
 

@@ -54,7 +54,7 @@ This is a living record of the city-scale redesign: what exists, what was verifi
 | Phase | Scope | Status | Evidence |
 |---|---|---|---|
 | 1 | Audit and baseline | done | this file, Phase 1 section |
-| 2 | Pune data: tiled acquisition, merge, validation, provenance, bundled offline dataset | **partial data**; pipeline done | `scripts/city/*`: polite, resumable, with a quadrant fallback and Retry-After. Raw tiles are committed under `data/cache/osm/`. The bundled `pune-bibwewadi.json` was built from 34 of 85 tile files; the cache now holds 47. The UI shows "partial" and lists the missing tiles. |
+| 2 | Pune data: tiled acquisition, merge, validation, provenance, bundled offline dataset | **partial data**; pipeline done | `scripts/city/*`: polite, resumable, with a quadrant fallback and Retry-After. Raw tiles are committed under `data/cache/osm/`. The bundled `pune-bibwewadi.json` was rebuilt from 50 of 85 tile files (VIT tile included; download order now starts at the focus point): 4,160 nodes, 5,000 segments (290.97 km), 10,704 buildings. The UI shows "partial" and lists the missing tiles. |
 | 3 | Geographic renderer; Velvet and Porcelain scene materials | done | Measured roof/ground contrast is 6.14:1 in Velvet and 1.52:1 in Porcelain (e2e). The theme switch rebuilds the 3D scene (e2e). Same-camera captures are made by `scripts/city-screenshots.mjs`. |
 | 4 | Dijkstra and A* with validation and the real search trace | done | engine tests; e2e (UI cost equals the engine optimum) |
 | 5 | Bidirectional search, ALT and CH; equivalent queries and costs | done | all 5 agree to 1e-9 on synthetic and real networks (engine and e2e); bench in `TEST_PLAN.md` |

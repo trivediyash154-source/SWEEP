@@ -218,14 +218,14 @@ Check CI on the PR for the latest head. On commit `f566421`, CI had 47 of 48 pas
 
 ### Bundled dataset
 
-`apps/web/public/cities/pune-bibwewadi.json` is real but **partial**: it was built from 34 of 85 tile files.
+`apps/web/public/cities/pune-bibwewadi.json` is real but **partial**: it was rebuilt on 2026-10-19 from 50 of 85 tile files, which include the VIT tile `t3_3`.
 
 | Item | Value |
 |---|---|
-| Nodes | 2,636 |
-| Segments | 3,103 (203.69 km) |
-| One-way segments | 324 |
-| Buildings | 6,725 |
+| Nodes | 4,160 |
+| Segments | 5,000 (290.97 km). This is a coincidence, not a cap: 2,512 distinct ways; the import limit is 800,000 and throws instead of truncating. |
+| One-way segments | 493 |
+| Buildings | 10,704 (10,692 with estimated heights) |
 | Turn restrictions | 0 (the restriction query had not been fetched) |
 
 The UI shows a "partial" chip and lists the missing tiles in provenance.

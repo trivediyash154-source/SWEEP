@@ -103,6 +103,8 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     const before = await routeState(page);
     await page.getByTestId('mode-scenarios').click();
     await page.getByTestId('tool-close-road').click();
+    // Close the inspector card left by the endpoint search so it cannot cover the street to click.
+    await page.evaluate(() => (window as unknown as { __sweepCity: { state: () => { select: (p: null) => void } } }).__sweepCity.state().select(null));
     const box = (await page.getByTestId('city-stage').boundingBox())!;
     // A street of the route that is visible on the map (not under the 420 px side panel or the tool rail).
     const target = await page.evaluate(
@@ -123,7 +125,8 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
           if (!p) continue;
           const px = ((p[0] + 1) / 2) * w0;
           const py = ((1 - p[1]) / 2) * h0;
-          if (px > 450 && px < w0 - 100 && py > 120 && py < h0 - 120) return { s, p };
+          // Open map: right of the side panel, left of the tool rail, clear of the top bar, the legend and the inspector corner.
+          if (px > 450 && px < w0 - 100 && py > 120 && py < h0 - 120 && !(px > w0 - 420 && py < 320)) return { s, p };
         }
         return null;
       },

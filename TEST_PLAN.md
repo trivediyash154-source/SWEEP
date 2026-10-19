@@ -165,6 +165,38 @@ Fleets (`solveFleet`, base solve + split + verification):
 
 Raw results are in `packages/engine/bench/results.json`.
 
+### Real Pune network (`npx tsx bench/p2p.ts`, `npx tsx bench/coverage.ts`, 2026-10-19)
+
+The dataset is the bundled partial extract (50 of 85 tiles): 4,160 intersections, 5,000 segments, 290.97 km.
+
+**Point-to-point routing.** Median per-query times over random origin–destination pairs. Every algorithm returns the same optimum (asserted in the tests).
+
+| Profile, objective | Directed arcs | ALT prep | CH prep (shortcuts) | Dijkstra | A* | Bidirectional | ALT | CH |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| car, time | 8,020 | 53 ms | 674 ms (27,418) | 0.453 ms (3,524 settled) | 0.468 ms (1,963) | 0.265 ms (1,562) | 0.120 ms (483) | 0.029 ms (102) |
+| car, distance | 8,020 | 21 ms | 585 ms | 0.419 ms (3,581) | 0.204 ms (891) | 0.289 ms (2,084) | 0.158 ms (724) | 0.023 ms (101) |
+| bicycle, time | 8,027 | 33 ms | 553 ms | 0.507 ms | 0.244 ms | 0.283 ms | 0.180 ms | 0.027 ms |
+| foot, time | 8,498 | 20 ms | 564 ms | 0.478 ms | 0.268 ms | 0.365 ms | 0.090 ms | 0.029 ms |
+| truck, time | 8,022 | 23 ms | 620 ms | 0.500 ms | 0.542 ms | 0.238 ms | 0.162 ms | 0.018 ms |
+
+On the time objective, A* is weak because its admissible heuristic divides the straight-line distance by the fastest speed in the graph. ALT and CH need preprocessing; the UI reports it.
+
+**Coverage and fleets.** Circle zones around VIT; capacity case is 1.5 t at 150 kg/km.
+
+| Zone | Mode | Method | Route | Lower bound | Gap | Solve |
+|---|---|---|---:|---:|---:|---:|
+| r = 400 m (262 required segments, 13.33 km) | directed | exact min-cost flow; 6 connectors, so not proven optimal | 32.37 km | 26.65 km | 21.45 % | 597 ms |
+| r = 400 m | undirected | exact Edmonds–Johnson; 6 connectors | 24.54 km | 21.38 km | 14.76 % | 998 ms |
+| r = 800 m (1,121 segments, 54.47 km) | directed | exact min-cost flow; 10 connectors | 112.75 km | 108.16 km | 4.24 % | 144 ms |
+| r = 800 m | undirected | candidate heuristic | 87.02 km | 77.38 km (fractional dual) | 12.46 % | 831 ms |
+| whole network (5,000 segments, 290.98 km) | directed | exact min-cost flow; **proven optimal**; 28 segments unserviceable on a closed legal route, listed | 547.68 km | 547.68 km | 0 % | 197 ms |
+| whole network | undirected | candidate heuristic | 445.67 km | 419.08 km | 6.35 % | 12.3 s (9.8 s of it the bound) |
+
+Fleet examples:
+
+* **r = 800 m, directed, 4 vehicles, finish soonest:** total 121.07 km, makespan 3.47 h against a bound of 3.34 h, feasible, in 3.7 s.
+* **r = 800 m, directed, 6 vehicles, capacity 1.5 t, 6 h shift:** the split needs 12 routes, more than the 6 vehicles. The plan is reported **infeasible**. The makespan bound applies only to plans with at most 6 vehicles, so the infeasible plan's 1.38 h makespan does not contradict the 2.22 h bound.
+
 ### Frontend (headless Chromium, software WebGL via SwiftShader, local server)
 
 | Measurement | Result |

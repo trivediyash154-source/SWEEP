@@ -6,19 +6,19 @@
 
 ## Latest recorded run (2026-10-19)
 
-The run used Linux 6.18, a 4-core Intel Xeon at 2.10 GHz, Node 22.22.0, Python 3.13 with networkx 3.5, and Chromium 141 headless (Playwright 1.56.1, software WebGL via SwiftShader). `pnpm verify` **exited with status 0**. The same checks run on GitHub Actions in the `verify` job; the `docker` job builds and smoke-tests the image (see [DEPLOYMENT.md](DEPLOYMENT.md)).
+The run used Linux 6.18, a 4-core Intel Xeon at 2.10 GHz, Node 22.22.0, Python 3.13 with networkx 3.5, and Chromium 141 headless (Playwright 1.56.1, software WebGL via SwiftShader). `pnpm verify` **exited with status 0** (562 s, re-run after the city workspace was completed). The same checks run on GitHub Actions in the `verify` job; the `docker` job builds and smoke-tests the image (see [DEPLOYMENT.md](DEPLOYMENT.md)).
 
 | Suite | Command | Result |
 |---|---|---|
 | Typecheck (engine, server, web) | `pnpm typecheck` | passed |
 | Lint (ESLint, TypeScript rules, React hooks) | `pnpm lint` | passed, 0 warnings |
-| Engine unit + property tests | `pnpm --filter @sweep/engine test` | **96 / 96 passed** |
+| Engine unit + property tests | `pnpm --filter @sweep/engine test` | **154 / 154 passed**: the original solver suites plus the city bundle (11), point-to-point routing on synthetic and real Pune networks (26) and zone coverage, lower bounds and fleet plans (21) |
 | Server integration tests | `pnpm --filter @sweep/server test` | **38 / 38 passed** |
-| Web unit tests | `pnpm --filter @sweep/web test` | **7 / 7 passed** |
+| Web unit tests | `pnpm --filter @sweep/web test` | **16 / 16 passed**, including the city geometry (2), shift timeline (4) and cost model (3) |
 | Python oracle, undirected | `pnpm test:oracle` | **661 graphs; 537 compared with networkx, 439 with brute force; all agree**. The other 124 were rejected by SWEEP, and the oracle confirmed each has genuinely disconnected required streets. The real Zurich sample is included as its explicit undirected relaxation (one-way restrictions ignored). |
 | Python oracle, directed and mixed | `pnpm test:oracle` | **1,401 graphs; 490 compared with networkx min-cost flow, 681 with a state-space search; all agree**. The other 610 were rejected by SWEEP, and the oracle confirmed each has no legal covering closed walk or has disconnected required streets. |
 | Production build | `pnpm build` (and `pnpm build:static`) | passed |
-| End-to-end + accessibility | `pnpm test:e2e` | **37 / 37 passed** (desktop 1440×900 and mobile 390×844, both themes) |
+| End-to-end + accessibility | `pnpm test:e2e` | **50 / 50 passed** in 8.1 min with one worker (desktop 1440×900 and mobile 390×844, both themes). This includes 10 real-Pune city tests, each checking the UI against an independent engine run (see §3). |
 
 Bugs that the end-to-end suite found during the workspace redesign, and that were then fixed:
 
@@ -100,6 +100,26 @@ The oracle re-walks every SWEEP route, including the legal direction of every st
 | `auth.spec.ts` | Optional accounts. Register; save to account; stored run history; reload; sign out guards the account page; a second user cannot open the first user's scenario; generic sign-in error |
 | `responsive.spec.ts` (mobile) | The workspace optimises at 390 px; no horizontal overflow on the landing page or workspace |
 | `a11y.spec.ts` | axe-core on `/`, `/workspace`, `/mathematics`, `/signin` and `/register` in **both themes**: no serious or critical violations (canvas elements excluded) |
+
+### City workspace (`e2e/city.spec.ts`, real Pune data)
+
+Every test computes its expected values with the engine on the same bundled file, never with hard-coded numbers.
+
+* **Provenance.** The page opens without sign-in, shows OSM attribution, and its building and tile counts equal the bundle's.
+* **Routing.** All 5 algorithms equal the engine optimum (relative 1e-9) and every route validates. ALT and CH settle fewer arcs than Dijkstra. The distance objective is exact too, and the printable report carries the same rows.
+* **Reachability.** The 5, 10 and 15-minute lengths equal the engine's and nest.
+* **Closures.** Closing a street clicked on the map gives the engine's cost on the edited network, never faster than the baseline, with all algorithms agreeing.
+* **Contrast.** Measured roof/ground contrast is above 1.3:1 in both themes (measured 6.14 Velvet, 1.52 Porcelain).
+* **Theme switch.** Switching theme recolours the 3D scene itself (ground luminance ×3 or more).
+* **Building click.** Clicking a building shows the OSM feature, its link and its height source.
+* **Coverage, rectangle zone:**
+  * the directed plan equals `solveZoneCoverage` (exact min-cost flow label);
+  * the undirected relaxation is labelled as such, with wrong-way counts and a bound no higher than the route;
+  * the timeline ends at the engine route timed at the set speeds;
+  * the cost model shows nothing until rates are entered, then fuel and CO₂ follow from the distances;
+  * the report matches the plan;
+  * a scenario closure and a 2-vehicle variant both equal engine runs.
+* **Coverage, circle zone.** A 3-vehicle fleet with a 1 h shift equals `planFleet` (distance, makespan, vehicles used). The makespan bound does not exceed the makespan, and the timeline ends with the last vehicle.
 
 ## 4. Web unit tests (`apps/web/src/**/*.test.ts`)
 

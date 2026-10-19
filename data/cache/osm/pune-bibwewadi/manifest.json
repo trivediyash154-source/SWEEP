@@ -804,10 +804,48 @@
     18.469,
     73.874
    ],
-   "status": "failed",
+   "status": "ok",
    "file": "t3_3_streets.json",
-   "attempts": 6,
-   "lastError": "HTTP 500"
+   "bytes": 67566,
+   "osmBase": "2026-06-01T08:52:28Z",
+   "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+   "fetchedAt": "2026-10-19T15:57:07.642Z",
+   "attempts": 7,
+   "parts": 4
+  },
+  "t3_3:buildings": {
+   "key": "t3_3",
+   "kind": "buildings",
+   "bbox": [
+    18.463,
+    73.868,
+    18.469,
+    73.874
+   ],
+   "status": "ok",
+   "file": "t3_3_buildings.json",
+   "bytes": 144015,
+   "osmBase": "2026-10-19T15:56:36Z",
+   "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+   "fetchedAt": "2026-10-19T15:57:49.137Z",
+   "attempts": 1
+  },
+  "t3_4:streets": {
+   "key": "t3_4",
+   "kind": "streets",
+   "bbox": [
+    18.463,
+    73.874,
+    18.469,
+    73.88
+   ],
+   "status": "ok",
+   "file": "t3_4_streets.json",
+   "bytes": 57242,
+   "osmBase": "2026-10-19T15:56:36Z",
+   "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+   "fetchedAt": "2026-10-19T15:58:11.181Z",
+   "attempts": 1
   }
  }
 }

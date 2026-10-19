@@ -81,7 +81,20 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
   test('closing a road clicked on the map recalculates the route against the baseline', async ({ page }) => {
     await openCity(page);
     await routeBetween(page, 'Swami Vivek', 'Kamate');
-    await page.waitForTimeout(2600); // camera frames the route
+    // The camera glides to frame the route; click only once the view has settled.
+    await page.waitForFunction(
+      () =>
+        new Promise<boolean>((resolve) => {
+          const w = window as unknown as { __sweepCity: { project: (x: number, y: number, h: number) => [number, number] | null } };
+          const a = w.__sweepCity.project(0, 0, 0);
+          setTimeout(() => {
+            const b = w.__sweepCity.project(0, 0, 0);
+            resolve(!!a && !!b && Math.abs(a[0] - b[0]) < 1e-4 && Math.abs(a[1] - b[1]) < 1e-4);
+          }, 400);
+        }),
+      null,
+      { timeout: 30_000, polling: 500 },
+    );
     const before = await routeState(page);
     await page.getByTestId('mode-scenarios').click();
     await page.getByTestId('tool-close-road').click();

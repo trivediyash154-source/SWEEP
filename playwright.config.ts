@@ -15,6 +15,8 @@ export default defineConfig({
     baseURL: `http://localhost:${PORT}`,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
+    // Software WebGL, opted into explicitly as Chromium asks (the implicit fallback is deprecated).
+    launchOptions: { args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader'] },
   },
   webServer: {
     command: `node scripts/e2e-server.mjs ${PORT}`,

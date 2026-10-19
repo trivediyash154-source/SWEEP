@@ -1,36 +1,37 @@
-let cached: boolean | null = null;
+let probed: { available: boolean; software: boolean } | null = null;
+
+/**
+ * One feature probe per page: whether WebGL works, and whether it is rasterised in
+ * software (SwiftShader, llvmpipe, Microsoft Basic Render…), as on machines without
+ * GPU acceleration. The probe context is released straight away, so pages never
+ * hold more than the scene's own context.
+ */
+function probe(): { available: boolean; software: boolean } {
+  if (probed) return probed;
+  probed = { available: false, software: false };
+  try {
+    const c = document.createElement('canvas');
+    const gl = (c.getContext('webgl2') ?? c.getContext('webgl')) as WebGLRenderingContext | null;
+    if (gl) {
+      const info = gl.getExtension('WEBGL_debug_renderer_info');
+      const name = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
+      probed = { available: true, software: /swiftshader|llvmpipe|softpipe|software|basic render/i.test(name) };
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
+    }
+  } catch {
+    // no WebGL: keep the defaults
+  }
+  return probed;
+}
 
 /** Whether WebGL can be used (feature-detected once, never throws). */
 export function webglAvailable(): boolean {
-  if (cached !== null) return cached;
-  try {
-    const c = document.createElement('canvas');
-    cached = !!(c.getContext('webgl2') || c.getContext('webgl'));
-  } catch {
-    cached = false;
-  }
-  return cached;
+  return probe().available;
 }
 
-let software: boolean | null = null;
-
-/**
- * Whether WebGL is rasterised in software (SwiftShader, llvmpipe, Microsoft Basic Render…),
- * as on machines without GPU acceleration. The 3D scene then starts in low-power mode.
- */
+/** Whether WebGL is rasterised in software; the 3D scene then starts in low-power mode. */
 export function softwareRenderer(): boolean {
-  if (software !== null) return software;
-  software = false;
-  try {
-    const gl = (document.createElement('canvas').getContext('webgl2') ?? document.createElement('canvas').getContext('webgl')) as WebGLRenderingContext | null;
-    const info = gl?.getExtension('WEBGL_debug_renderer_info');
-    const name = info && gl ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
-    software = /swiftshader|llvmpipe|softpipe|software|basic render/i.test(name);
-    gl?.getExtension('WEBGL_lose_context')?.loseContext();
-  } catch {
-    software = false;
-  }
-  return software;
+  return probe().software;
 }
 
 /** Initial 3D quality: the `sweep.quality` preference ('full' | 'low') wins, otherwise low on software renderers. */

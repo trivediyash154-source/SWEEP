@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
-import { decodeCityBundle, RoutingEngine, reachability } from './engine';
+import { decodeCityBundle, RoutingEngine, reachability, solveZoneCoverage, zoneCoverageGraph } from './engine';
 import { contrastRatio, decodePng, luminanceAt } from './png';
 
 // The bundled real dataset; the UI must show exactly what the engine computes on it.
@@ -158,5 +158,74 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     await expect(page.getByTestId('feature-building')).toBeVisible();
     await expect(page.getByTestId('height-source')).toHaveText(/OpenStreetMap height tag|building:levels|Estimated for visual context/);
     await expect(page.getByTestId('feature-building').getByRole('link')).toHaveAttribute('href', /openstreetmap\.org\/way\/\d+/);
+  });
+
+  test('coverage plan of a drawn zone matches the engine, with honest method and guarantee labels', async ({ page }) => {
+    await openCity(page);
+    await page.getByTestId('mode-coverage').click();
+    await page.getByTestId('cam-top').click();
+    await page.waitForTimeout(2500);
+    const box = (await page.getByTestId('city-stage').boundingBox())!;
+    type W = { __sweepCity: { project: (x: number, y: number, h: number) => [number, number] | null; state: () => { city: { focus: { xy: [number, number] } | null; nodeX: Float64Array; nodeY: Float64Array; nodeCount: number } }; coverage: () => { zone: { minX: number; minY: number; maxX: number; maxY: number } | null; depot: number | null; result: { method: string; optimal: boolean; gap: number | null; lowerBoundM: number | null; totals: { distanceM: number } } | null } } };
+    const screen = async (x: number, y: number) => {
+      const p = (await page.evaluate(([a, b]) => (window as unknown as W).__sweepCity.project(a!, b!, 0), [x, y]))!;
+      return [box.x + ((p[0] + 1) / 2) * box.width, box.y + ((1 - p[1]) / 2) * box.height] as const;
+    };
+    const centre = await page.evaluate(() => {
+      const c = (window as unknown as W).__sweepCity.state().city;
+      return c.focus?.xy ?? [0, 0];
+    });
+    // A zone of roughly 500 m × 400 m around the VIT focus point, drawn with two clicks.
+    await page.getByTestId('cov-draw-zone').click();
+    let [sx, sy] = await screen(centre[0] - 250, centre[1] - 200);
+    await page.mouse.click(sx, sy);
+    [sx, sy] = await screen(centre[0] + 250, centre[1] + 200);
+    await page.mouse.click(sx, sy);
+    await expect(page.getByTestId('cov-zone')).toContainText('km²');
+    // Depot: the intersection nearest the zone centre.
+    const node = await page.evaluate(([cx, cy]) => {
+      const c = (window as unknown as W).__sweepCity.state().city;
+      let best = 0;
+      let bd = Infinity;
+      for (let i = 0; i < c.nodeCount; i++) {
+        const d = (c.nodeX[i]! - cx!) ** 2 + (c.nodeY[i]! - cy!) ** 2;
+        if (d < bd) [best, bd] = [i, d];
+      }
+      return { i: best, x: c.nodeX[best]!, y: c.nodeY[best]! };
+    }, centre);
+    await page.getByTestId('pick-depot').click();
+    [sx, sy] = await screen(node.x, node.y);
+    await page.mouse.click(sx, sy);
+    await expect(page.getByTestId('cov-depot')).not.toHaveText(/Not set|Click/);
+
+    // Directed (respect one-ways): exact min-cost flow, and the UI shows the engine's own optimum.
+    await page.getByTestId('cov-run').click();
+    await expect(page.getByTestId('cov-results')).toBeVisible({ timeout: 90_000 });
+    const st = await page.evaluate(() => (window as unknown as W).__sweepCity.coverage());
+    const zone = { kind: 'rect' as const, ...st.zone! };
+    const depotId = `n${city.nodeOsm[st.depot!]}`;
+    const zg = zoneCoverageGraph(city, { zone, direction: 'directed', depotId });
+    const exp = solveZoneCoverage(zg.graph, { direction: 'directed', depotId });
+    if (!exp.ok) throw new Error(exp.message);
+    expect(st.result!.method).toBe('exact-directed-min-cost-flow');
+    expect(Math.abs(st.result!.totals.distanceM - exp.route.totalDistance)).toBeLessThan(1e-6);
+    await expect(page.getByTestId('cov-method')).toContainText('Exact · directed min-cost flow');
+    await expect(page.getByTestId('cov-method')).not.toContainText('undirected');
+    if (!exp.optimal) await expect(page.getByTestId('cov-optimal')).not.toHaveText('Proven optimal');
+
+    // Undirected relaxation: a different problem, labelled as such; a heuristic never claims optimality.
+    await page.getByTestId('cov-dir-undirected').click();
+    await expect(page.getByTestId('cov-stale')).toBeVisible();
+    await page.getByTestId('cov-run').click();
+    await expect(page.getByTestId('cov-stale')).toHaveCount(0, { timeout: 90_000 });
+    const st2 = await page.evaluate(() => (window as unknown as W).__sweepCity.coverage());
+    const zg2 = zoneCoverageGraph(city, { zone, direction: 'undirected', depotId });
+    const exp2 = solveZoneCoverage(zg2.graph, { direction: 'undirected', depotId });
+    if (!exp2.ok) throw new Error(exp2.message);
+    expect(st2.result!.method).toBe(exp2.method);
+    expect(Math.abs(st2.result!.totals.distanceM - exp2.route.totalDistance)).toBeLessThan(1e-6);
+    await expect(page.getByTestId('cov-wrongway')).toBeVisible();
+    if (exp2.method === 'heuristic-candidate-matching') await expect(page.getByTestId('cov-optimal')).toContainText('Within');
+    if (st2.result!.lowerBoundM !== null) expect(st2.result!.lowerBoundM).toBeLessThanOrEqual(st2.result!.totals.distanceM + 1e-6);
   });
 });

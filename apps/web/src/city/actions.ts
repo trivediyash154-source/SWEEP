@@ -2,6 +2,7 @@ import type { PickResult } from './GeoCityScene';
 import { useCity } from './store';
 import { useRoute } from './routeStore';
 import { useScenarios } from './scenario';
+import { useCoverage } from './coverageStore';
 
 /** Interprets a click on the city according to the current mode and pick target. */
 export function handleCityPick(p: PickResult): void {
@@ -17,6 +18,19 @@ export function handleCityPick(p: PickResult): void {
       city.setPickTarget(null); // later clicks inspect the city until Pick is pressed again
     }
     city.select(p);
+    return;
+  }
+  if (p.kind === 'node' && (target === 'depot' || target === 'dump')) {
+    const cv = useCoverage.getState();
+    if (target === 'depot') cv.setDepot(p.node);
+    else cv.setDump(p.node);
+    city.setPickTarget(null);
+    city.select(p);
+    return;
+  }
+  if (target === 'zone-a' || target === 'zone-b') {
+    useCoverage.getState().setCorner(target === 'zone-a' ? 'a' : 'b', p.x, p.y);
+    city.setPickTarget(target === 'zone-a' ? 'zone-b' : null);
     return;
   }
   if (p.kind === 'segment' && target === 'close-road') {
@@ -43,4 +57,6 @@ export function rerunAll(): void {
   const r = useRoute.getState();
   if (r.origin !== null && r.destination !== null) void r.run();
   if (r.reach && r.origin !== null) void r.runReach();
+  const cv = useCoverage.getState();
+  if (cv.result && cv.zone && cv.depot !== null) void cv.run();
 }

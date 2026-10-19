@@ -13,6 +13,7 @@ import { useCityOverlays } from './overlays';
 import { handleCityPick } from './actions';
 import { useRoute } from './routeStore';
 import { useScenarios } from './scenario';
+import { useCoverage } from './coverageStore';
 import { sampleScene } from './debug';
 import { CityPanels } from './panels/CityPanels';
 import { Timeline } from './panels/Timeline';
@@ -67,6 +68,7 @@ export default function CityWorkspace() {
         return c && debugRef.current ? sampleScene(c, (x, y, h) => debugRef.current?.project(x, y, h) ?? null, n) : null;
       },
       scenarios: () => useScenarios.getState(),
+      coverage: () => useCoverage.getState(),
     };
   }, []);
 

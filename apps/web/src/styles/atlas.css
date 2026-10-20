@@ -322,3 +322,15 @@
     overflow: visible;
   }
 }
+.atlas__check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.atlas__check input {
+  margin-top: 2px;
+  flex: none;
+}

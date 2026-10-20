@@ -382,7 +382,7 @@ export default function SweepPage() {
                 ))}
               </select>
             </label>
-            <label className="atlas__row atlas__note">
+            <label className="atlas__check">
               <input type="checkbox" checked={settings.turnAware} onChange={(e) => setSettings({ ...settings, turnAware: e.target.checked })} data-testid="sweep-turns" /> Order turns to avoid U-turns and right turns (same streets, same distance)
             </label>
           </div>

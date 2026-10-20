@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { osmToGraph, DRIVABLE_ROAD_CLASSES } from '../packages/engine/src/index';
+import { osmToGraph, mergeElements, DRIVABLE_ROAD_CLASSES, type OsmElement } from '../packages/engine/src/index';
 import { planSweep, type SweepPlan, type SweepSettings, type Zone } from '../apps/web/src/sweep/plan';
 import { formatTravelDistance } from '../apps/web/src/lib/directions';
 
@@ -43,6 +43,17 @@ async function clickAt(page: Page, lng: number, lat: number) {
   const box = (await page.getByTestId('sweep-map').boundingBox())!;
   const p = await page.evaluate(([x, y]) => (window as unknown as W).__sweepMap.project([x!, y!]), [lng, lat]);
   await page.mouse.click(box.x + p.x, box.y + p.y);
+}
+
+// All cached Pune street tiles (real Overpass responses) with their boxes, to answer tiled requests.
+const manifest = JSON.parse(readFileSync(new URL('../data/cache/osm/pune-bibwewadi/manifest.json', import.meta.url), 'utf8')) as { entries: Record<string, { status: string; bbox: number[]; file: string }> };
+const streetTiles = Object.entries(manifest.entries)
+  .filter(([k, e]) => k.endsWith(':streets') && e.status === 'ok')
+  .map(([, e]) => ({ bbox: e.bbox, elements: (JSON.parse(readFileSync(new URL(`../data/cache/osm/pune-bibwewadi/tiles/${e.file}`, import.meta.url), 'utf8')) as { elements: OsmElement[] }).elements }));
+/** What a real Overpass server would return for a box, assembled from the cached real tiles that overlap it. */
+function overpassFor(bb: number[]): { elements: OsmElement[] } {
+  const hits = streetTiles.filter((t) => t.bbox[0]! < bb[2]! && t.bbox[2]! > bb[0]! && t.bbox[1]! < bb[3]! && t.bbox[3]! > bb[1]!);
+  return { elements: mergeElements(hits.map((h) => h.elements)).elements };
 }
 
 test.describe('Sweep planner (any zone, live OpenStreetMap streets)', () => {
@@ -111,6 +122,42 @@ test.describe('Sweep planner (any zone, live OpenStreetMap streets)', () => {
     await expect(page.getByTestId('sweep-vehicles-table').locator('tbody tr')).toHaveCount(exp.routes.length);
     await expect(page.getByTestId('sweep-makespan')).toContainText('no plan with 3 vehicles finishes before');
     await expect(page.getByTestId('sweep-method')).toContainText('heuristic');
+  });
+
+  test('a zone larger than 4 km² is downloaded in polite tiles, merged, and planned exactly as the engine plans it', async ({ page }) => {
+    await setup(page);
+    const requests: number[][] = [];
+    await page.route('https://overpass-api.de/api/interpreter', (r) => {
+      const q = new URLSearchParams(r.request().postData() ?? '').get('data') ?? '';
+      const bb = /\(([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)\);/.exec(q)!.slice(1).map(Number);
+      requests.push(bb);
+      return r.fulfill({ status: 200, contentType: 'application/json', headers: CORS, body: JSON.stringify(overpassFor(bb)) });
+    });
+    // About 2.5 × 2.5 km inside the real Pune extract.
+    const [s, w, n, e] = [18.452, 73.857, 18.4745, 73.8805];
+    await page.evaluate(([x, y]) => (window as unknown as W).__sweepMap.jumpTo({ center: [x!, y!], zoom: 14 }), [(w + e) / 2, (s + n) / 2]);
+    await page.waitForFunction(() => !(window as unknown as W).__sweepMap.isMoving());
+    await page.getByTestId('sweep-draw-rect').click();
+    await clickAt(page, w, s);
+    await clickAt(page, e, n);
+    await expect(page.getByTestId('sweep-tiled')).toBeVisible();
+    await page.getByTestId('sweep-run').click();
+    await expect(page.getByTestId('sweep-result')).toBeVisible({ timeout: 90_000 });
+    expect(requests.length).toBeGreaterThan(1);
+    // Every tile request stays within the polite size.
+    for (const bb of requests) expect((bb[2]! - bb[0]!) * 111.195 * (bb[3]! - bb[1]!) * 111.195 * Math.cos((18.46 * Math.PI) / 180)).toBeLessThanOrEqual(3.5 + 1e-6);
+    const st = await page.evaluate(() => (window as unknown as W).__sweepPlanner.state());
+    expect(st.zone!.kind).toBe('rect');
+    const graph = osmToGraph({ elements: mergeElements(requests.map(overpassFor).map((x) => x.elements)).elements }, { roadClasses: classes }).graph;
+    const zone = st.zone!;
+    const bb = zone.kind === 'rect' ? zone.bbox : [0, 0, 0, 0];
+    const exp = planSweep(graph, zone, [(bb[1]! + bb[3]!) / 2, (bb[0]! + bb[2]!) / 2], st.settings) as SweepPlan;
+    expect(exp.ok).toBe(true);
+    expect(st.plan!.required).toEqual(exp.required);
+    expect(st.plan!.required.km).toBeGreaterThan(20);
+    expect(Math.abs(st.plan!.totals.distanceM - exp.totals.distanceM)).toBeLessThan(1e-6);
+    expect(st.plan!.lowerBound).toEqual(exp.lowerBound);
+    await expect(page.getByTestId('sweep-total')).toHaveText(formatTravelDistance(exp.totals.distanceM));
   });
 
   test('a zone too large for one polite download is refused before any request', async ({ page }) => {

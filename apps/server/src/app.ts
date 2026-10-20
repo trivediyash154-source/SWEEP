@@ -149,6 +149,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
     'https://routing.openstreetmap.de',
     'https://router.project-osrm.org',
     'https://overpass-api.de',
+    'https://overpass.private.coffee',
   ];
   app.use('*', async (c, next) => {
     c.set('requestId', randomUUID());

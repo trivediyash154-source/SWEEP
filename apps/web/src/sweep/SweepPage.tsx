@@ -4,7 +4,7 @@ import { DRIVABLE_ROAD_CLASSES, MAX_BBOX_KM2, type Graph } from '@sweep/engine';
 import { SiteNav } from '../components/SiteNav';
 import { MapCanvas, setGeoJson, EMPTY_FC } from '../map/MapCanvas';
 import { PlaceSearch } from '../map/PlaceSearch';
-import { acquireMap, MapAcquireError } from '../lib/maps';
+import { acquireLargeArea, acquireMap, MapAcquireError, MAX_TILED_KM2, splitBBox } from '../lib/maps';
 import { formatTravelDistance, formatTravelTime, type LngLat } from '../lib/directions';
 import { downloadText, safeFileName } from '../lib/storage';
 import { DEFAULT_SWEEP_SETTINGS, edgeGeometries, planToCsv, planToGpx, ringAreaKm2, ringSelfIntersects, zoneBBox, zoneGraph, zoneRing, type LngLatPair, type SweepPlan, type SweepSettings, type Zone } from './plan';
@@ -75,7 +75,10 @@ export default function SweepPage() {
   const zoneArea = zone ? ringAreaKm2(zoneRing(zone)) : 0;
   const downloadBox = zone ? expandBBox(zoneBBox(zone), MARGIN_M) : null;
   const downloadArea = downloadBox ? bboxKm2(downloadBox) : 0;
-  const tooLarge = downloadArea > MAX_BBOX_KM2;
+  const tiled = downloadArea > MAX_BBOX_KM2;
+  const tooLarge = downloadArea > MAX_TILED_KM2;
+  const tileCount = downloadBox && tiled ? splitBBox(downloadBox).length : 1;
+  const [progress, setProgress] = useState<string | null>(null);
   const inputKey = JSON.stringify([zone, depot, settings, roadSet]);
   const stale = plan !== null && planKey !== inputKey;
 
@@ -247,7 +250,9 @@ export default function SweepPage() {
     const key = inputKey;
     try {
       const classes = ROAD_SETS.find((r) => r.id === roadSet)!.classes;
-      const acq = await acquireMap({ bbox: downloadBox.map((x) => Math.round(x * 1e6) / 1e6) as [number, number, number, number], roadClasses: [...classes], name: 'Sweep planner zone' });
+      const req = { bbox: downloadBox.map((x) => Math.round(x * 1e6) / 1e6) as [number, number, number, number], roadClasses: [...classes], name: 'Sweep planner zone' };
+      const acq = tiled ? await acquireLargeArea(req, { onProgress: (done, total) => setProgress(`Downloading streets: ${done} of ${total} tiles`) }) : await acquireMap(req);
+      setProgress(null);
       setGraph(acq.graph);
       setSource(`${acq.graph.source?.provider ?? 'OpenStreetMap via Overpass API'}${acq.cached ? ' (cached)' : ''}, ${acq.report.stats.ways} ways, ${(acq.report.stats.totalLength / 1000).toFixed(1)} km`);
       setStatus('planning');
@@ -262,6 +267,7 @@ export default function SweepPage() {
       setStatus('done');
     } catch (err) {
       setStatus('error');
+      setProgress(null);
       setError(err instanceof MapAcquireError ? err.message : `Planning failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
@@ -325,10 +331,11 @@ export default function SweepPage() {
             {zoneError && <p className="atlas__error" role="alert">{zoneError}</p>}
             <p className="atlas__note" data-testid="sweep-zone">
               {zone
-                ? `${zone.kind === 'rect' ? 'Rectangle' : `${zoneRing(zone).length}-point outline`}, ${zoneArea.toFixed(2)} km². Download area with a ${MARGIN_M} m margin: ${downloadArea.toFixed(2)} km² (limit ${MAX_BBOX_KM2} km²).`
+                ? `${zone.kind === 'rect' ? 'Rectangle' : `${zoneRing(zone).length}-point outline`}, ${zoneArea.toFixed(2)} km². Download area with a ${MARGIN_M} m margin: ${downloadArea.toFixed(2)} km²${tiled ? `, fetched as ${tileCount} tiles of at most 3.5 km² each` : ''} (limit ${MAX_TILED_KM2} km²).`
                 : 'No zone yet. Zoom to the streets, then draw a rectangle or an outline.'}
             </p>
-            {tooLarge && <p className="atlas__error" role="alert" data-testid="sweep-too-large">This zone is too large for one live download ({downloadArea.toFixed(1)} km² with the margin; the limit is {MAX_BBOX_KM2} km², the polite maximum for the free OpenStreetMap servers). Draw a smaller zone or split the area.</p>}
+            {tooLarge && <p className="atlas__error" role="alert" data-testid="sweep-too-large">This zone is too large to download live ({downloadArea.toFixed(1)} km² with the margin; the limit is {MAX_TILED_KM2} km², about 5 × 5 km, downloaded politely in tiles from the free OpenStreetMap servers). Draw a smaller zone or plan the area in parts.</p>}
+            {tiled && !tooLarge && <p className="atlas__note" data-testid="sweep-tiled">A large zone: its streets are downloaded in {tileCount} tiles, one after another, which can take a minute. Planning several vehicles on very large zones may be refused by the fleet planner; one vehicle always works.</p>}
           </div>
 
           <div className="atlas__section">
@@ -381,7 +388,7 @@ export default function SweepPage() {
           </div>
 
           <button type="button" className="btn btn--primary btn--block" onClick={() => void run()} disabled={!zone || tooLarge || status === 'downloading' || status === 'planning'} data-testid="sweep-run">
-            {status === 'downloading' ? 'Downloading streets…' : status === 'planning' ? 'Planning routes…' : plan && !stale ? 'Plan again' : 'Plan the sweeping routes'}
+            {status === 'downloading' ? (progress ?? 'Downloading streets…') : status === 'planning' ? 'Planning routes…' : plan && !stale ? 'Plan again' : 'Plan the sweeping routes'}
           </button>
           {stale && <p className="atlas__note" data-testid="sweep-stale">Inputs changed since this plan: plan again to update it.</p>}
           {error && <p className="atlas__error" role="alert" data-testid="sweep-error">{error}</p>}

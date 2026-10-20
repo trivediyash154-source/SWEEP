@@ -155,6 +155,16 @@ node scripts/city-screenshots.mjs                     # docs screenshots (server
 docker compose up --build
 ```
 
+## 10b. Real-map pages
+
+* **Directions (`/directions`).**
+  * Any place in the world, by car, bicycle or walking, with alternatives and turn-by-turn steps, on a full map.
+  * Routes come from the public OSRM servers, which the page names; it never presents them as SWEEP's engine.
+* **Sweep planner (`/sweep`).**
+  * Draw any real zone up to 25 km². Its streets are downloaded live from OpenStreetMap, in polite tiles above 4 km².
+  * SWEEP's exact coverage engine, fleet planner and turn order produce the routes, with the proven lower bound, the gap and the checks.
+  * In the tests, the planner's results equal the engine's on real Pune data.
+
 ## 11. Blockers and limitations
 
 * **Data.** 26 of 85 tile files, including the restriction query, are still missing.

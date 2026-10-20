@@ -353,6 +353,23 @@ Profiled on the whole 47-tile network (3,032 odd intersections): the optional op
   * Tests: engine (8), e2e against the engine.
 * **Not built:** earliest-start windows (service not before a time), the deadline with several depots, and per-street windows chosen in the UI. The coverage solvers also do not choose deadhead streets to reduce turns; only the order is turn-aware.
 
+### 4.6 Real-map pages (third session, final pass): DONE and tested
+
+The owner wants a big map. These pages give real data at any size: Directions anywhere, and coverage of any real zone up to 25 km².
+
+* **`/directions`**
+  * Files: `apps/web/src/directions/DirectionsPage.tsx`, `lib/directions.ts` (OSRM client, instructions, server fallback), `lib/geocode.ts` (Photon, Nominatim fallback), `map/MapCanvas.tsx` (MapLibre 5.10, OpenFreeMap styles, OSM raster fallback), `map/PlaceSearch.tsx`.
+  * Routes are OSRM's, never SWEEP's, and the page says so.
+* **`/sweep`**
+  * Files: `apps/web/src/sweep/SweepPage.tsx`, `sweep/plan.ts`, `sweep/sweep.worker.ts`.
+  * Zones up to 4 km² use `acquireMap` (through the server when there is one). Larger zones, up to 25 km², use `acquireLargeArea` in `lib/maps.ts`: browser tiles of at most 3.5 km², sequential, merged by OSM id.
+  * The plan is the engine unchanged: `solveZoneCoverage`, `planFleet` and `orderCoverageForTurns`.
+* **Tests**
+  * Unit: `lib/directions.test.ts`, `lib/geocode.test.ts`, `sweep/plan.test.ts` (on a real cached Pune Overpass response).
+  * e2e: `e2e/directions.spec.ts`, `e2e/sweep.spec.ts`. External services are replaced by stand-ins in their real formats; Overpass answers with the cached real Pune tiles.
+* **Not verified against the live services** from the Claude container: its network policy denied those hosts at the time. The live Vercel site calls them from the visitor's browser.
+* **Parallel session.** A second Claude session (the city-UX session) works on `claude/city-ux` (draft PR #3) and owns `apps/web/src/city/**`, `three/**` and `landing/**`. Instructions go to it as `[main]` comments on PR #3; its status is in `docs/CITY_UX_NOTES.md` on its branch. See `docs/coordination/LEAD_TASKS.md`.
+
 ## 5. Deployment note
 
 * **Deployed.** The owner asked for this work to be on Vercel. The third session deployed the static build of `fd4740d` to the existing project "sweep" on 2026-10-19 (22:56 UTC), with the Vercel CLI logged in inside its container. It is live at https://sweep-ashy.vercel.app, with the city at `/#/workspace`. Landing, lab, city load, Route lab and a coverage plan were checked on the live site, with no console errors.

@@ -11,6 +11,23 @@ SWEEP is an urban route-intelligence platform. You build, import or acquire a st
 
 No account is needed for any of it.
 
+## Real maps: Directions (`/directions`) and Sweep planner (`/sweep`)
+
+Both pages use a full map of the world (OpenFreeMap vector tiles, free and without a key; data © OpenStreetMap contributors).
+
+* **Directions.**
+  * Search any place (Photon type-ahead, Nominatim fallback, or typed coordinates), or click and drag points on the map.
+  * Car, bicycle or walking, with alternatives, turn-by-turn instructions and a shareable link.
+  * The routes come from the public OSRM servers (FOSSGIS, then the Project OSRM demo server for cars), and the page names the server next to every result.
+  * They are **not** SWEEP's own engine. SWEEP's exact algorithms run in the Pune lab and the Sweep planner.
+* **Sweep planner.**
+  * Draw a rectangle or outline over **any real streets**, up to 25 km² (about 5 × 5 km).
+  * The streets are downloaded live from OpenStreetMap: one request up to 4 km², or polite tiles of at most 3.5 km² fetched one after another and merged.
+  * A street is required when its midpoint lies in the zone.
+  * SWEEP's exact coverage engine then plans the routes: min-cost flow when one-way streets are obeyed; exact matching, or a bounded heuristic, when they are ignored.
+  * Several vehicles and shift limits use the fleet planner, and the turns are reordered.
+  * Every result shows the proven lower bound, the gap, an honest method label and the independent checks, and exports GPX and CSV.
+
 ## City workspace: real Pune (`/workspace`)
 
 The city workspace runs on real OpenStreetMap data for Pune, Bibwewadi and the VIT area (about 4 × 4 km). The bundled extract is **partial**: it was built from 59 of the 85 tile downloads, and the app lists the missing tiles in its provenance dialog.
@@ -171,4 +188,5 @@ Street data acquired or bundled from OpenStreetMap is © OpenStreetMap contribut
 * **3D context.** In the lab (`/lab`), buildings are procedural context generated from the streets. In the city workspace (`/workspace`) they are real OSM footprints, but most heights are flagged estimates.
 * **Pune extract.** The bundled Pune data is partial: 59 of 85 tile downloads, because the public Overpass mirrors often time out and some environments block them. The region-wide turn-restriction query is among the missing downloads, so no turn restrictions are applied yet; when present, only via-node restrictions are supported.
 * **Accounts.** There is no password reset, because no email service is configured.
+* **Real-map pages.** They need the public services named above, which can be busy, rate-limited or blocked by a network. Each page says which service failed rather than showing a made-up result. Live downloads are capped at 25 km² to stay within the Overpass usage policy. Fleet plans on very large zones may be refused by the fleet planner; one vehicle always works.
 * **Hosting.** The static build of this version runs at https://sweep-ashy.vercel.app; the city workspace is at https://sweep-ashy.vercel.app/#/workspace. Everything there runs in the browser. Accounts, server-side saving and live map acquisition need the Node server. See [DEPLOYMENT.md](DEPLOYMENT.md).

@@ -20,8 +20,8 @@ Owner of this file: the **city-UX session**. Branch `claude/city-ux`; one draft 
 | Task | State |
 |---|---|
 | 1. Scene-start freeze on `/workspace` | **done**: root cause found in Chromium's native stacks; fixed in the app; 0 stalls in 120 loads (before: about 11 %) |
-| 2. First-visit guide, plain labels, explained terms, empty states, top-down camera, phone layout | next |
-| 3. `/workspace?from=&to=&profile=` deep link into the Route lab, with an e2e test | queued |
+| 2. First-visit guide, plain labels, explained terms, empty states, top-down camera, phone layout | **done** (see below); 3 new e2e tests |
+| 3. `/workspace?from=&to=&profile=` deep link into the Route lab, with an e2e test | next |
 | 4. Landing page: calls to action for Directions, Sweep planner, Pune lab, network lab; light hero | started: the hero now shows the static drawing until fonts settle |
 | 5. Tests for the above, full `pnpm verify` | ongoing |
 
@@ -74,6 +74,28 @@ WebGL is not involved.
 * stress harness: 0 stalls in 120 loads;
 * `e2e/city`, `landing`, `a11y` and `responsive` specs: 36 of 36;
 * typecheck and lint clean; unit tests: engine 178, server 38, web 29.
+
+## 2. Making `/workspace` understandable
+
+* **Getting-started guide** (`panels/CityGuide.tsx`), at the top of the side panel on the first visit. It is not a modal, so nothing on the map is blocked.
+  * One plain sentence for each tool: Route lab, Coverage & fleet, Scenarios.
+  * "Try this" steps for the selected tool, using the panel's own button names.
+  * "Hide guide" is remembered in localStorage (`sweep.cityGuide`); "How does this work?" brings it back.
+* **Terms explained where they appear** (`glossary.ts`, `panels/Term.tsx`). A small "?" button with `aria-expanded` reveals a plain definition:
+  * lower bound, gap, transit (deadhead) and last vehicle back (makespan);
+  * turn penalties and connectors;
+  * exact versus heuristic methods;
+  * arcs settled in the Route lab.
+* **Plain labels:** "Finish (makespan)" became "Last vehicle back"; "Deadhead" became "Transit"; "Gap to bound" became "Gap to the bound".
+* **Empty states say what to click next:** `route-next` (choose a start, then a destination), `cov-next` (draw the zone, then pick the depot) and `scenario-next` (close a road or change a direction).
+* **Top-down by default.** The workspace opens on the `top` view of the whole area, readable like a map. The 3D views stay one click away.
+* **Phone (≤ 760 px):**
+  * the header is two compact rows: name and theme on the first, the three tools on one line below;
+  * the camera buttons sit above the bottom sheet;
+  * the view is shifted up into the visible band between the header and the sheet;
+  * the default top-down view frames about 1.4 km around VIT.
+* **Accessibility:** axe found no serious or critical violations on `/workspace` in either theme. The guide's small label uses the muted text colour, because the faint eyebrow grey reached only 3.75:1 on the guide card in Porcelain.
+* **Tests:** the city spec gains "first visit: a guide …" and "empty panels say what to click next …"; the responsive spec gains "city workspace on a phone …". City, landing, a11y and responsive specs: 39 of 39.
 
 ## Requests for the other session
 

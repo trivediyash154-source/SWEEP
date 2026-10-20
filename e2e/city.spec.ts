@@ -90,6 +90,50 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     expect(errors).toEqual([]);
   });
 
+  test('first visit: a guide explains the three tools, follows the chosen tool, and stays hidden once closed', async ({ page }) => {
+    await openCity(page);
+    const guide = page.getByTestId('city-guide');
+    await expect(guide).toBeVisible();
+    for (const name of ['Route lab', 'Coverage & fleet', 'Scenarios']) await expect(guide).toContainText(name);
+    await expect(page.getByTestId('city-guide-steps')).toContainText('In From, type a street name');
+    // The guide's tool names switch the workspace mode, and its steps follow.
+    await page.getByTestId('guide-coverage').click();
+    await expect(page.getByTestId('panel-coverage')).toBeVisible();
+    await expect(page.getByTestId('city-guide-steps')).toContainText('Under Zone, choose Circle and press Draw');
+    await page.getByTestId('guide-scenarios').click();
+    await expect(page.getByTestId('panel-scenarios')).toBeVisible();
+    await expect(page.getByTestId('city-guide-steps')).toContainText('Press Close a road');
+    // Hidden once closed, remembered across a reload, and one click away.
+    await page.getByTestId('city-guide-hide').click();
+    await expect(guide).toHaveCount(0);
+    expect(await page.evaluate(() => localStorage.getItem('sweep.cityGuide'))).toBe('hidden');
+    await page.reload();
+    await expect(page.getByTestId('city-name')).toContainText('Pune', { timeout: 60_000 });
+    await expect(page.getByTestId('city-guide-show')).toBeVisible();
+    await expect(page.getByTestId('city-guide')).toHaveCount(0);
+    await page.getByTestId('city-guide-show').click();
+    await expect(page.getByTestId('city-guide')).toBeVisible();
+  });
+
+  test('empty panels say what to click next, technical terms are explained, and the first view is top-down', async ({ page }) => {
+    await openCity(page);
+    expect(await page.evaluate(() => (window as unknown as { __sweepCity: { state: () => { camera: { cmd: string } } } }).__sweepCity.state().camera.cmd)).toBe('top');
+    await expect(page.getByTestId('route-next')).toContainText('choose where to start');
+    await page.getByTestId('mode-coverage').click();
+    await expect(page.getByTestId('cov-next')).toContainText('draw the area to sweep');
+    await page.getByTestId('mode-scenarios').click();
+    await expect(page.getByTestId('scenario-next')).toContainText('press Close a road or Change direction');
+    await page.getByTestId('mode-route').click();
+    await routeBetween(page, 'Swami Vivek', 'Kamate');
+    await expect(page.getByTestId('route-next')).toHaveCount(0);
+    // "Arcs settled" is explained in place: the definition is hidden until asked for, then announced as expanded.
+    const q = page.getByTestId('term-settled');
+    await expect(page.getByTestId('term-def-settled')).toBeHidden();
+    await q.click();
+    await expect(q).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByTestId('term-def-settled')).toContainText('the same best route');
+  });
+
   test('every algorithm returns the engine optimum on the real network, and each route validates', async ({ page }) => {
     await openCity(page);
     await routeBetween(page, 'Swami Vivek', 'Kamate');

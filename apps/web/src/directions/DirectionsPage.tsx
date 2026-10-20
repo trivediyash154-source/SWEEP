@@ -294,7 +294,9 @@ export default function DirectionsPage() {
               {both && inExtract(from.point) && inExtract(to.point) && (
                 <p className="atlas__note" data-testid="dir-extract">
                   Both points are inside SWEEP's offline Pune extract around VIT. There, the{' '}
-                  <Link to="/workspace">Pune algorithm lab</Link> computes the same kind of trip with five exact algorithms (Dijkstra, A*, bidirectional, ALT, contraction hierarchies) and checks every route independently.
+                  <Link to={`/workspace?from=${writePoint(from.point)}&to=${writePoint(to.point)}&profile=${mode === 'bike' ? 'bicycle' : mode}`} data-testid="dir-lab-link">
+                    Pune algorithm lab
+                  </Link> computes the same kind of trip with five exact algorithms (Dijkstra, A*, bidirectional, ALT, contraction hierarchies) and checks every route independently.
                 </p>
               )}
             </div>

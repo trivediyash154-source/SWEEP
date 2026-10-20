@@ -108,13 +108,13 @@ Same-camera captures on the 55-tile bundle: `docs/screenshots/city-velvet.png` a
 | Typecheck and lint | clean (0 warnings) |
 | Engine | 178 / 178 (17 files) |
 | Server | 38 / 38 |
-| Web | 29 / 29 |
+| Web | 46 / 46 |
 | Python oracle | 661 undirected and 1,401 directed/mixed graphs; all comparisons agree |
 | Build (server and static) | passed |
-| End-to-end and axe (both themes, desktop and mobile) | 55 / 55 (12.4 min, one worker), 15 of them on the real Pune data |
+| End-to-end and axe (both themes, desktop and mobile) | 65 / 65 (9.3 min, one worker): 15 on the real Pune data, 6 on the Sweep planner, 4 on Directions |
 | Static build in a browser, no API server | landing, lab, city load, Route lab and a coverage plan; no console errors or failed requests |
 
-These are the fourth session's runs on the 55-tile bundle, as the separate steps of `pnpm verify`. CI (`verify` and `docker`) was green on `c4ae948`. Test expectations are computed from the bundle, never hard-coded. The intermittent page-load freeze (about 1 page load in 200 in test runs) was traced to a throwaway WebGL probe context and fixed: in a tight reload loop, 0 stalls in 120 page loads after the fix, against 11 in 60 before.
+These are one full `pnpm verify` run on 2026-10-20 on the 59-tile bundle. Test expectations are computed from the bundle, never hard-coded. The intermittent page-load freeze had two causes, both fixed. A throwaway WebGL probe context stalled SwiftShader: 11 stalls in 60 loads before, 0 in 120 after. A Chromium renderer thread-pool deadlock between web-font loading and the 3D scene's script compile: 4–5 in 40 before, 0 in 120 after starting scenes once fonts settle.
 
 ## 8. Performance (4-core Xeon at 2.10 GHz, Node 22.22, 59-tile bundle; details in `TEST_PLAN.md` §5)
 

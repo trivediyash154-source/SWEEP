@@ -148,16 +148,16 @@ The workspace opens straight into a solved district. Bundled examples work offli
 pnpm verify    # typecheck → lint → unit/property/integration → Python oracle → build → Playwright e2e + axe
 ```
 
-Latest recorded run (2026-10-19, 59-tile Pune bundle): **all green**, locally and on GitHub Actions (the `verify` job, plus a `docker` job that builds the image, checks health, smoke-tests and restarts).
+Latest recorded run (2026-10-20, 59-tile Pune bundle): **all green**, locally and on GitHub Actions (the `verify` job, plus a `docker` job that builds the image, checks health, smoke-tests and restarts).
 
 | Suite | Count |
 |---|---|
 | Engine | 178 tests |
 | Server | 38 tests |
-| Web | 29 tests |
+| Web | 46 tests |
 | Oracle, undirected | 661 graphs, checked against networkx and brute force |
 | Oracle, directed and mixed | 1,401 graphs, checked against networkx min-cost flow and a state-space search |
-| Browser | 55 end-to-end and accessibility tests, desktop and mobile, both themes, including 15 on the real Pune data checked against independent engine runs |
+| Browser | 65 end-to-end and accessibility tests, desktop and mobile, both themes, including 15 on the real Pune data checked against independent engine runs, and the Directions and Sweep planner pages |
 
 Details are in [TEST_PLAN.md](TEST_PLAN.md).
 

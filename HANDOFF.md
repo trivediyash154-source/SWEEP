@@ -224,7 +224,7 @@ Four sessions have worked on this branch.
 * Unit tests: engine 178/178 (17 files), server 38/38, web 50/50 (14 files).
 * Both Python oracles: all comparisons agree.
 * `pnpm build` and `pnpm build:static` ✓.
-* E2E: **70 of 70 passed** in one full `pnpm verify` run (9.5 min, one worker): 19 on the real Pune data, 6 on the Sweep planner, 4 on Directions.
+* E2E: **73 of 73 passed** in one full `pnpm verify` run (10.1 min, one worker): 19 on the real Pune data, 6 on the Sweep planner, 4 on Directions.
 * The static build, served by a plain file server with no API, was checked in headless Chromium: landing page, lab, `/#/workspace` city load, the Route lab (all five algorithms agree) and a coverage plan, with no console errors or failed requests.
 
 ### Bundled dataset

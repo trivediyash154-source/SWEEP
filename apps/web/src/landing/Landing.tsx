@@ -5,7 +5,7 @@ import { solveChinesePostman, type OptimizationRecord } from '@sweep/engine';
 import { EXAMPLES, getExample, heroCity } from '@sweep/engine/examples';
 import { SiteNav } from '../components/SiteNav';
 import { BotanicalCursorField } from '../components/botanical/BotanicalCursorField';
-import { Icon } from '../components/Icon';
+import { Icon, type IconName } from '../components/Icon';
 import { StaticNetwork } from './StaticNetwork';
 import { usePrefs, useReducedMotion } from '../state/prefs';
 import { webglAvailable, whenTextSettled } from '../lib/webgl';
@@ -29,6 +29,58 @@ function solveOk(id: string): OptimizationRecord | null {
   const r = solveChinesePostman(ex.graph);
   return r.ok ? r : null;
 }
+
+interface Tool {
+  id: 'directions' | 'sweep' | 'workspace' | 'lab';
+  to: string;
+  icon: IconName;
+  name: string;
+  where: string;
+  text: string;
+  examples?: string;
+  source: string;
+}
+
+/** The four ways in, in the site navigation's order. Each says what it does and who computes the answer. */
+const TOOLS: Tool[] = [
+  {
+    id: 'directions',
+    to: '/directions',
+    icon: 'route',
+    name: 'Directions',
+    where: 'Anywhere in the world',
+    text: 'Search two places or click the map, then get car, bicycle or walking directions with turn-by-turn instructions and alternatives.',
+    source: 'Computed by the public OSRM service on OpenStreetMap data, not by SWEEP. Free-flow times; no live traffic.',
+  },
+  {
+    id: 'sweep',
+    to: '/sweep',
+    icon: 'truck',
+    name: 'Sweep planner',
+    where: 'Any real zone, up to 25 km²',
+    text: 'Draw a zone over real streets. They are downloaded live from OpenStreetMap, in polite tiles for large zones, and SWEEP plans routes that cover every street for your vehicles. Play the shift to watch them drive it.',
+    examples: 'One-click examples over real Pune areas: around VIT (1 km²), Kothrud (4 km²), the old city (9 km²) and the centre (about 20 km²).',
+    source: "SWEEP's own coverage engine. Every plan shows its proven lower bound and gap.",
+  },
+  {
+    id: 'workspace',
+    to: '/workspace',
+    icon: 'cube',
+    name: 'Pune algorithm lab',
+    where: 'Bibwewadi and VIT, in 3D',
+    text: 'Real OpenStreetMap streets and buildings, bundled with the app. Compare five shortest-path algorithms on one trip, plan coverage for a fleet with shift limits, and close a road to see what changes.',
+    source: "SWEEP's own engine, on a bundled extract that lists its own gaps.",
+  },
+  {
+    id: 'lab',
+    to: '/lab',
+    icon: 'sigma',
+    name: 'Network lab',
+    where: 'The method, step by step',
+    text: 'Small networks and the exact Chinese Postman method: the odd intersections, the cheapest pairing, the Euler circuit and the proof that the route is optimal. Build or import your own.',
+    source: "SWEEP's own engine, on sample networks or yours.",
+  },
+];
 
 interface LedgerRow {
   id: string;
@@ -61,6 +113,21 @@ export default function Landing() {
       live = false;
     };
   }, []);
+  // A light hero: the static drawing is the hero. The 3D scene (about 1 MB of code, and a WebGL context) is added
+  // only on a wide screen with a fine pointer, without data saving or reduced motion, once the browser is idle.
+  // Once loaded it stays, and the motion toggle only pauses it.
+  const roomy = useMemo(() => {
+    const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
+    return !saveData && typeof matchMedia === 'function' && matchMedia('(min-width: 900px) and (pointer: fine)').matches;
+  }, []);
+  const [scene3d, setScene3d] = useState(false);
+  useEffect(() => {
+    if (scene3d || !gl || !roomy || reduced || !textSettled) return;
+    const idle = window.requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 200));
+    const cancel = window.cancelIdleCallback ?? window.clearTimeout;
+    const id = idle(() => setScene3d(true), { timeout: 1500 });
+    return () => cancel(id);
+  }, [scene3d, gl, roomy, reduced, textSettled]);
 
   useEffect(() => {
     const el = heroRef.current;
@@ -136,7 +203,7 @@ export default function Landing() {
       {/* ------------------------------------------------------------ hero */}
       <section className="hero" ref={heroRef} data-bloom-zone aria-labelledby="hero-title">
         <div className="hero__scene" aria-hidden="true">
-          {gl && textSettled ? (
+          {scene3d ? (
             <WebGLBoundary fallback={null}>
             <Suspense fallback={null}>
               <HeroScene theme={theme} paused={!heroVisible} reduced={reduced} />
@@ -151,20 +218,23 @@ export default function Landing() {
         <div className="hero__veil" />
         <div className="hero__content">
           <motion.div className="hero__copy" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 1, ease: EASE }}>
-            <p className="eyebrow">Urban route intelligence · Chinese Postman engine</p>
+            <p className="eyebrow">Street coverage and routing · real OpenStreetMap streets</p>
             <h1 id="hero-title" className="hero__title">
               Every street.
               <br />
               One <span className="serif">intelligent</span> <span className="spectral-text">route.</span>
             </h1>
             <p className="hero__lede">
-              Explore, optimise and verify street-service routes with graph theory. SWEEP turns a tangle of streets into the shortest route that covers every one, and shows you the proof.
+              SWEEP plans routes that drive every street of a zone, for one vehicle or a fleet, and shows how close each plan is to the best possible. Draw a zone over real streets anywhere, or explore Pune in 3D.
             </p>
             <div className="hero__actions">
-              <Link to="/workspace" className="btn btn--primary btn--lg btn--spectral" data-testid="cta-workspace">
-                Enter the workspace <Icon name="next" size={16} />
+              <Link to="/sweep" className="btn btn--primary btn--lg btn--spectral" data-testid="cta-sweep">
+                Plan a sweep <Icon name="next" size={16} />
               </Link>
-              <Link to="/mathematics" className="btn btn--quiet btn--lg">
+              <Link to="/workspace" className="btn btn--quiet btn--lg" data-testid="cta-workspace">
+                Open the Pune lab
+              </Link>
+              <Link to="/mathematics" className="btn btn--ghost btn--lg">
                 Explore the mathematics
               </Link>
             </div>
@@ -198,6 +268,9 @@ export default function Landing() {
                 </div>
               </dl>
             )}
+            <p className="hero__note small" data-testid="hero-note">
+              The district drawn here is a synthetic illustration, solved live in your browser. The Sweep planner and the Pune lab work on real OpenStreetMap streets.
+            </p>
             <div className="btn-row">
               <button type="button" className="btn btn--ghost btn--sm motion-toggle" onClick={() => setMotion(reduced ? 'full' : 'reduced')} aria-pressed={reduced} data-testid="motion-toggle">
                 {reduced ? 'Resume motion' : 'Pause motion'}
@@ -208,6 +281,40 @@ export default function Landing() {
             </div>
           </div>
         </div>
+      </section>
+
+      {/* ------------------------------------------------------ four tools */}
+      <section className="section paths" id="tools" aria-labelledby="tools-title">
+        <div className="section__label">
+          <span className="eyebrow">Start here</span>
+        </div>
+        <h2 id="tools-title" className="section__title">
+          Four tools, <span className="serif">one honest map.</span>
+        </h2>
+        <p className="section__lede" data-testid="tools-honesty">
+          Directions are computed by the public OSRM service. SWEEP's own algorithms run in the Sweep planner, the Pune lab and the Network lab, and each result there is either proven optimal or shown with a proven bound.
+        </p>
+        <ul className="paths__grid">
+          {TOOLS.map((t) => (
+            <li key={t.id} className="path" data-testid={`tool-${t.id}`}>
+              <span className="path__icon" aria-hidden="true">
+                <Icon name={t.icon} size={22} />
+              </span>
+              <h3 className="path__name">
+                <Link to={t.to} className="path__link" data-testid={`tool-link-${t.id}`}>
+                  {t.name}
+                </Link>
+              </h3>
+              <p className="path__where">{t.where}</p>
+              <p className="path__text">{t.text}</p>
+              {t.examples && <p className="path__text">{t.examples}</p>}
+              <p className="path__source">{t.source}</p>
+              <span className="path__go" aria-hidden="true">
+                Open <Icon name="next" size={14} />
+              </span>
+            </li>
+          ))}
+        </ul>
       </section>
 
       {/* ---------------------------------------------------- A · problem */}
@@ -339,7 +446,7 @@ export default function Landing() {
           <h2 id="d-title" className="section__title">
             Measured, <span className="serif">not promised.</span>
           </h2>
-          <p className="section__lede">Every figure below was computed a moment ago in your browser by the same engine the workspace uses. No savings are estimated and nothing is hard-coded.</p>
+          <p className="section__lede">Every figure below was computed a moment ago in your browser by the same engine the network lab uses, on its sample networks. No savings are estimated and nothing is hard-coded.</p>
         </motion.div>
         <div className="ledger" data-testid="ledger">
           <table className="table">
@@ -402,7 +509,7 @@ export default function Landing() {
           <motion.div {...reveal}>
             <div className="section__label">
               <span className="num mono">E</span>
-              <span className="eyebrow">The workspace</span>
+              <span className="eyebrow">The network lab</span>
             </div>
             <h2 id="e-title" className="section__title">
               Draw a district. <span className="serif">Watch it solve itself.</span>
@@ -421,8 +528,8 @@ export default function Landing() {
                 <Icon name="cube" /> Fly the route in 3D, then export JSON, CSV or a printable report.
               </li>
             </ul>
-            <Link to="/workspace" className="btn btn--primary btn--lg">
-              Open the workspace <Icon name="next" size={16} />
+            <Link to="/lab" className="btn btn--primary btn--lg">
+              Open the network lab <Icon name="next" size={16} />
             </Link>
           </motion.div>
           {meridian.record && (
@@ -451,11 +558,11 @@ export default function Landing() {
           <div>
             <h3>Algorithm</h3>
             <ul>
-              <li>Find the odd-degree vertices of the required streets exactly.</li>
-              <li>Run Dijkstra shortest paths over all streets, so unserviced streets can act as shortcuts.</li>
-              <li>Find a minimum-weight perfect matching with Edmonds' blossom algorithm, in O(k³).</li>
-              <li>Duplicate the matched paths, then build the Euler circuit with Hierholzer's algorithm.</li>
-              <li>Keep all arithmetic exact: lengths are stored internally as integer milli-units.</li>
+              <li>Two-way streets: find the odd intersections, pair them at least cost with Edmonds' blossom algorithm, duplicate the paired shortest paths and walk the Euler circuit with Hierholzer's algorithm.</li>
+              <li>One-way streets: an exact minimum-cost flow decides which streets to drive again.</li>
+              <li>Large zones that ignore one-way streets: a heuristic, reported with a proven lower bound and the gap, never as optimal.</li>
+              <li>Several vehicles: the fleet planner splits the work under shift limits and states lower bounds on distance and on when the last vehicle is back.</li>
+              <li>Point to point: Dijkstra, A*, bidirectional Dijkstra, ALT and contraction hierarchies answer the same query, and must agree.</li>
             </ul>
           </div>
           <div>
@@ -464,16 +571,17 @@ export default function Landing() {
               <li>An independent verifier re-checks every result for continuity, closure, coverage, distances and parity.</li>
               <li>An LP-duality certificate proves each matching optimal, and small cases are cross-checked by exhaustive subset DP.</li>
               <li>The test suite compares results with brute-force search on random multigraphs, and with networkx in Python.</li>
+              <li>The browser tests check that the numbers on screen equal an engine run on the same input.</li>
             </ul>
           </div>
           <div>
             <h3>Limitations</h3>
             <ul>
-              <li>Streets are undirected; one-way and mixed networks are not supported yet.</li>
-              <li>Only a single closed route: no fleets, capacities, time windows or turn penalties.</li>
-              <li>Required streets must be connected. When they are not, SWEEP explains the NP-hard case and suggests connecting streets.</li>
-              <li>Exact matching is supported up to 600 odd intersections in interactive use.</li>
-              <li>The bundled districts are synthetic. Real street networks can be imported as GeoJSON.</li>
+              <li>Directions come from public OSRM servers, not from SWEEP. Their times assume free-flowing traffic.</li>
+              <li>The Sweep planner downloads streets live from OpenStreetMap, up to 25 km² per zone. A busy server makes it slow, and it can fail.</li>
+              <li>The Pune lab's bundled extract is partial: some tile downloads failed, and its provenance dialog lists them. Most building heights are estimates, marked as such.</li>
+              <li>In the network lab, the required streets must be connected. When they are not, it explains why that case is NP-hard and suggests connecting streets.</li>
+              <li>In the network lab, exact matching is supported up to 600 odd intersections. Its sample districts are synthetic teaching networks, labelled as such; real networks can be imported as GeoJSON.</li>
             </ul>
           </div>
         </div>
@@ -488,16 +596,24 @@ export default function Landing() {
           <br />
           <span className="serif">Repeat as little as possible.</span>
         </h2>
-        <Link to="/workspace" className="btn btn--primary btn--lg btn--spectral">
-          Enter the workspace <Icon name="next" size={16} />
-        </Link>
+        <div className="hero__actions closing__actions">
+          <Link to="/sweep" className="btn btn--primary btn--lg btn--spectral">
+            Plan a sweep <Icon name="next" size={16} />
+          </Link>
+          <Link to="/workspace" className="btn btn--quiet btn--lg">
+            Open the Pune lab
+          </Link>
+        </div>
         <span className="faint small">Click any empty space here or in the hero to make a blossom unfold.</span>
       </section>
 
       <footer className="site-footer">
         <span>SWEEP · route intelligence built on graph theory</span>
         <nav aria-label="Footer">
-          <Link to="/workspace">Workspace</Link>
+          <Link to="/directions">Directions</Link>
+          <Link to="/sweep">Sweep planner</Link>
+          <Link to="/workspace">Pune lab</Link>
+          <Link to="/lab">Network lab</Link>
           <Link to="/mathematics">Mathematics</Link>
           <Link to="/account">Account</Link>
         </nav>

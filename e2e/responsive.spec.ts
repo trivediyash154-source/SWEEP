@@ -20,6 +20,26 @@ test('landing is readable on a phone without horizontal scroll', async ({ page }
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
+test('landing on a phone: a static hero without the 3D code, and the four tools in one column', async ({ page }) => {
+  const heroCode: string[] = [];
+  page.on('request', (r) => {
+    if (/HeroScene/.test(r.url())) heroCode.push(r.url());
+  });
+  await page.goto('/');
+  await expect(page.locator('.hero-fallback svg')).toBeVisible();
+  const cards = page.locator('.paths__grid > li');
+  await expect(cards).toHaveCount(4);
+  const lefts = await cards.evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)));
+  expect(new Set(lefts).size).toBe(1);
+  await page.getByTestId('tool-sweep').scrollIntoViewIfNeeded();
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(1500);
+  expect(heroCode).toEqual([]);
+  await expect(page.locator('.hero__scene canvas')).toHaveCount(0);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
 test('city workspace is usable on a phone', async ({ page }) => {
   await page.goto('/workspace');
   await expect(page.getByTestId('city-name')).toContainText('Pune');

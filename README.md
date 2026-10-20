@@ -154,10 +154,10 @@ Latest recorded run (2026-10-20, 59-tile Pune bundle): **all green**, locally an
 |---|---|
 | Engine | 178 tests |
 | Server | 38 tests |
-| Web | 46 tests |
+| Web | 50 tests |
 | Oracle, undirected | 661 graphs, checked against networkx and brute force |
 | Oracle, directed and mixed | 1,401 graphs, checked against networkx min-cost flow and a state-space search |
-| Browser | 65 end-to-end and accessibility tests, desktop and mobile, both themes, including 15 on the real Pune data checked against independent engine runs, and the Directions and Sweep planner pages |
+| Browser | 70 end-to-end and accessibility tests, desktop and mobile, both themes, including 19 on the real Pune data checked against independent engine runs, and the Directions and Sweep planner pages |
 
 Details are in [TEST_PLAN.md](TEST_PLAN.md).
 

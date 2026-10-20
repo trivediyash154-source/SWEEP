@@ -7,6 +7,7 @@ import { ALGO_COLOR } from '../overlays';
 import { segmentLabel } from '../Inspector';
 import { useScenarios } from '../scenario';
 import { fmtDist, fmtTime } from '../format';
+import { Term } from './Term';
 import { RouteReport } from './RouteReport';
 
 const ALGO_LABEL: Record<AlgorithmId, string> = { dijkstra: 'Dijkstra', astar: 'A*', bidirectional: 'Bidirectional', alt: 'ALT', ch: 'Contraction Hierarchies' };
@@ -206,6 +207,14 @@ export function RouteLab() {
           {error}
         </p>
       )}
+      {!runs && !running && (origin === null || destination === null) && (
+        <p className="cw-next small" data-testid="route-next">
+          <strong>Next:</strong>{' '}
+          {origin === null
+            ? 'choose where to start. Type a street in From and pick a result, or press Pick and click an intersection on the map.'
+            : 'choose the destination the same way, in To. The algorithms then run by themselves.'}
+        </p>
+      )}
 
       {runs && best && (
         <section className="rl-results" aria-label="Comparison" data-testid="route-results">
@@ -241,6 +250,9 @@ export function RouteLab() {
               <Icon name={agree.ok ? 'check' : 'cross'} size={13} /> {agree.text}
             </p>
           )}
+          <p className="faint small" data-testid="route-rows-help">
+            Each row is one algorithm: the work it did (<Term k="settled">arcs settled</Term>) and its time in this browser. Press a row to show its search on the map.
+          </p>
           <ul className="rl-rows" aria-label="Algorithms">
             {runs.map((x) => (
               <li key={x.result.algorithm} className={x.result.algorithm === active ? 'is-active' : ''} data-testid={`row-${x.result.algorithm}`}>

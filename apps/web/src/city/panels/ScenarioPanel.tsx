@@ -117,6 +117,12 @@ export function ScenarioPanel() {
         </p>
       )}
 
+      {changed === 0 && pickTarget !== 'close-road' && pickTarget !== 'make-oneway' && (
+        <p className="cw-next small" data-testid="scenario-next">
+          <strong>Next:</strong> press Close a road or Change direction, then click a street on the map. Routes and plans are then recomputed and compared with the unchanged map.
+        </p>
+      )}
+
       {changed > 0 && (
         <ul className="sc-changes" data-testid="scenario-changes">
           {active.closed.map((s) => (

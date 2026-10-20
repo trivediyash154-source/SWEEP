@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Wordmark } from '../components/Wordmark';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { Icon } from '../components/Icon';
@@ -16,6 +16,7 @@ import { useRoute } from './routeStore';
 import { useScenarios } from './scenario';
 import { useCoverage } from './coverageStore';
 import { sampleScene } from './debug';
+import { parseRouteLink } from './deepLink';
 import { CityPanels } from './panels/CityPanels';
 import { Timeline } from './panels/Timeline';
 import '../styles/city.css';
@@ -48,6 +49,25 @@ export default function CityWorkspace() {
   const debugRef = useRef<{ project: (x: number, y: number, h: number) => [number, number]; moving: () => boolean; appliedNonce: () => number } | null>(null);
   const webgl = webglAvailable();
   const overlays: SceneOverlays = useCityOverlays();
+  // A route-lab link (?from=lat,lng&to=lat,lng[&profile=…]) opens the Route lab on those points and runs it, once
+  // per link: a new link followed while the page is open applies too.
+  const [params] = useSearchParams();
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const linkApplied = useRef<string | null>(null);
+  useEffect(() => {
+    const key = params.toString();
+    if (!city || linkApplied.current === key) return;
+    linkApplied.current = key;
+    const res = parseRouteLink(params, city);
+    setLinkError(res && !res.ok ? res.message : null);
+    if (!res?.ok) return;
+    useCity.getState().setMode('route');
+    const r = useRoute.getState();
+    r.setDestination(null);
+    if (res.link.profile) r.setProfile(res.link.profile);
+    r.setOrigin(res.link.from);
+    r.setDestination(res.link.to);
+  }, [city, params]);
   // The 3D scene's code is fetched and compiled only once the panels' text has its fonts (see whenTextSettled).
   const [textSettled, setTextSettled] = useState(false);
   useEffect(() => {
@@ -123,6 +143,14 @@ export default function CityWorkspace() {
         {status === 'error' && (
           <div className="cw-error notice notice--warn" role="alert">
             {error} The city dataset is bundled with SWEEP; check that <code>cities/index.json</code> is served.
+          </div>
+        )}
+        {linkError && (
+          <div className="cw-link-error notice notice--warn small" role="alert" data-testid="route-link-error">
+            {linkError}
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setLinkError(null)}>
+              Dismiss
+            </button>
           </div>
         )}
         {city && webgl && !textSettled ? (

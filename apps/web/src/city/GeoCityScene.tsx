@@ -429,15 +429,20 @@ function CameraRig({ city, camera, debugRef, panelPx }: { city: CityModel; camer
   const applied = useRef(-1);
   const b = city.region;
   // A side panel covers the left of the canvas: render a wider virtual view and show its right part,
-  // so the scene's centre sits in the middle of the visible area.
+  // so the scene's centre sits in the middle of the visible area. On a phone the panel is a bottom sheet
+  // (about the lower 46 %) under a wrapped header: shift the view up so the centre sits in the band between them.
+  const phone = size.width <= 760;
   useEffect(() => {
     const pc = cam as THREE.PerspectiveCamera;
     const pad = size.width > 900 ? panelPx : 0;
     if (pad > 0) pc.setViewOffset(size.width + pad, size.height, 0, 0, size.width, size.height);
-    else pc.clearViewOffset();
+    else if (phone) {
+      const up = Math.round(size.height * 0.26);
+      pc.setViewOffset(size.width, size.height + up, 0, up, size.width, size.height);
+    } else pc.clearViewOffset();
     pc.updateProjectionMatrix();
     invalidate();
-  }, [cam, size.width, size.height, panelPx, invalidate]);
+  }, [cam, size.width, size.height, panelPx, phone, invalidate]);
   useEffect(() => {
     if (!debugRef) return;
     debugRef.current = {
@@ -463,6 +468,11 @@ function CameraRig({ city, camera, debugRef, panelPx }: { city: CityModel; camer
       const s = Math.max(250, span(f));
       target.set((f.minX + f.maxX) / 2, 0, (f.minY + f.maxY) / 2);
       pos.set(target.x - s * 0.25, s * 0.85, target.z + s * 0.75);
+    } else if (camera.cmd === 'top' && phone) {
+      // A narrow portrait screen cannot show the whole area legibly: frame about 1.4 km around the focus.
+      const f = city.focus?.xy ?? [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2];
+      target.set(f[0], 0, f[1]);
+      pos.set(f[0], (1.1 * 1400) / Math.max(0.3, aspect), f[1] + 0.01);
     } else if (camera.cmd === 'top') {
       const s = span(b);
       target.set((b.minX + b.maxX) / 2, 0, (b.minY + b.maxY) / 2);

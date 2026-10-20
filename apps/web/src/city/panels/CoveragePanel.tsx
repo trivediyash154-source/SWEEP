@@ -10,6 +10,7 @@ import { fmtDist, fmtTime, nodeLabel } from './RouteLab';
 import { estimateCost, type CostAssumptions } from '../costModel';
 import { CoverageReport } from './CoverageReport';
 import { describeZone, drawingPrompt, type ZoneShape } from '../zoneShape';
+import { Term } from './Term';
 import { plansToCsv, plansToGpx } from '../coverageExport';
 import { useShift } from '../shift';
 import { downloadText, safeFileName } from '../../lib/storage';
@@ -418,7 +419,15 @@ export function CoveragePanel() {
       <button type="button" className="btn btn--primary btn--spectral" disabled={!ready || drawing || cv.status === 'running'} onClick={() => void cv.run()} data-testid="cov-run">
         {cv.status === 'running' ? <span className="spinner" aria-hidden="true" /> : <Icon name="route" size={14} />} {cv.status === 'running' ? 'Planning…' : 'Plan coverage'}
       </button>
-      {!ready && <p className="faint small">Draw a zone (rectangle, circle or free outline) and pick a depot to plan. Every street whose midpoint lies inside the zone is serviced.</p>}
+      {!ready && (
+        <p className="cw-next small" data-testid="cov-next">
+          <strong>Next:</strong>{' '}
+          {cv.zone === null
+            ? 'draw the area to sweep. Under Zone, choose a shape, press Draw, then click on the map (two corners, or a centre and an edge, or the points of an outline).'
+            : 'choose where the vehicles start. Under Depot, press Pick and click an intersection on the map.'}{' '}
+          Every street whose midpoint lies inside the zone is serviced.
+        </p>
+      )}
       {ready && drawing && <p className="faint small">Finish or stop drawing the zone to plan.</p>}
       {cv.error && (
         <p className="notice notice--warn small" role="alert" data-testid="cov-error">
@@ -434,7 +443,9 @@ export function CoveragePanel() {
             </p>
           )}
           <p className="cv-method" data-testid="cov-method">
-            <strong>{METHOD_LABEL[r.method]}</strong>
+            <Term k="exact">
+              <strong>{METHOD_LABEL[r.method]}</strong>
+            </Term>
             <span className={`cv-badge${r.optimal ? ' is-exact' : ''}`} data-testid="cov-optimal">
               {r.optimal ? 'Proven optimal' : r.gap !== null ? `Within ${pct(r.gap)} of a lower bound` : 'No optimality guarantee'}
             </span>
@@ -452,7 +463,9 @@ export function CoveragePanel() {
               <strong>{fmtDist(sum!.serviceM)}</strong>
             </div>
             <div>
-              <span>Deadhead</span>
+              <span>
+                <Term k="deadhead">Transit</Term>
+              </span>
               <strong data-testid="cov-transit">{fmtDist(sum!.transitM)}</strong>
             </div>
           </div>
@@ -479,9 +492,13 @@ export function CoveragePanel() {
                 <dd data-testid="cov-single">{fmtDist(r.totals.distanceM)}, which the fleet plan splits into vehicle routes from the depot</dd>
               </>
             )}
-            <dt>Lower bound</dt>
+            <dt>
+              <Term k="lowerBound">Lower bound</Term>
+            </dt>
             <dd data-testid="cov-lb">{r.lowerBoundM !== null ? `${fmtDist(r.lowerBoundM)} (${r.lowerBoundMethod})` : 'none'}</dd>
-            <dt>{r.fleet ? 'Gap, single route' : 'Gap to bound'}</dt>
+            <dt>
+              <Term k="gap">{r.fleet ? 'Gap, single route' : 'Gap to the bound'}</Term>
+            </dt>
             <dd data-testid="cov-gap">{pct(r.gap)}</dd>
             {r.fleet && (
               <>
@@ -491,7 +508,9 @@ export function CoveragePanel() {
                 </dd>
               </>
             )}
-            <dt>Turns</dt>
+            <dt>
+              <Term k="turns">Turns</Term>
+            </dt>
             <dd data-testid="cov-turns">{turnSummary(r.turns)}</dd>
             {r.direction === 'undirected' && (
               <>
@@ -501,7 +520,9 @@ export function CoveragePanel() {
             )}
             {r.connectors.paths > 0 && (
               <>
-                <dt>Connectors</dt>
+                <dt>
+                  <Term k="connectors">Connectors</Term>
+                </dt>
                 <dd>
                   {r.connectors.paths} path{r.connectors.paths === 1 ? '' : 's'} ({fmtDist(r.connectors.distance)}) join {r.connectors.components} separate street groups
                 </dd>
@@ -537,7 +558,9 @@ export function CoveragePanel() {
                 </p>
               )}
               <dl className="cv-facts">
-                <dt>Finish (makespan)</dt>
+                <dt>
+                  <Term k="makespan">Last vehicle back</Term>
+                </dt>
                 <dd data-testid="cov-makespan">
                   {r.fleet.totals.vehiclesUsed > eff.fleet.vehicles
                     ? `${fmtTime(r.fleet.totals.makespanSeconds)} with ${r.fleet.totals.vehiclesUsed} routes · with ${eff.fleet.vehicles} vehicle${eff.fleet.vehicles === 1 ? '' : 's'}, no plan finishes before ${fmtTime(r.fleet.lowerBounds.makespanSeconds.value)} (lower bound)`

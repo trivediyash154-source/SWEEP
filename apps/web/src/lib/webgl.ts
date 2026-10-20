@@ -10,6 +10,29 @@
  * context instead, right after it is created.
  */
 
+/**
+ * Resolves once the page's text no longer needs new fonts: every Latin web-font face the app declares has loaded
+ * (or failed), and two frames have been laid out with them. Start a 3D scene's code after this, not before.
+ *
+ * Why: on Linux, Chromium lays out text in a web font that is still loading with a system fallback font, and asks
+ * for that font's settings through a synchronous font-service call. The call runs on the renderer's thread pool.
+ * While the large 3D chunks compile, every pool worker can be a V8 background compile waiting for the main thread
+ * to collect garbage, and the main thread is waiting for the font call: neither moves again (native stacks taken
+ * during a stall showed exactly this). Loading the fonts first means no such call coincides with the compile.
+ * The timeout keeps a font that never loads from holding the scene back.
+ */
+export function whenTextSettled(timeoutMs = 4000): Promise<void> {
+  if (typeof document === 'undefined' || !document.fonts) return Promise.resolve();
+  const frames = (): Promise<void> => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+  const settled = (async () => {
+    const latin = [...document.fonts].filter((f) => f.status === 'unloaded' && /U\+0000-00FF/i.test(f.unicodeRange));
+    await Promise.all(latin.map((f) => f.load().catch(() => undefined)));
+    await document.fonts.ready;
+    await frames();
+  })();
+  return Promise.race([settled, new Promise<void>((done) => setTimeout(done, timeoutMs))]);
+}
+
 /** Whether the WebGL API exists. Context creation can still fail; scenes are wrapped in `WebGLBoundary`. */
 export function webglAvailable(): boolean {
   try {

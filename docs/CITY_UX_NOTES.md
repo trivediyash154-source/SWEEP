@@ -19,23 +19,67 @@ Owner of this file: the **city-UX session**. Branch `claude/city-ux`; one draft 
 
 | Task | State |
 |---|---|
-| 1. Scene-start freeze on `/workspace` | in progress: reproduced (see below) |
-| 2. First-visit guide, plain labels, explained terms, empty states, top-down camera, phone layout | not started |
-| 3. Landing page: calls to action for Directions, Sweep planner, Pune lab, network lab; light hero | not started |
-| 4. Tests for the above, full `pnpm verify` | not started |
+| 1. Scene-start freeze on `/workspace` | **done**: root cause found in Chromium's native stacks; fixed in the app; 0 stalls in 120 loads (before: about 11 %) |
+| 2. First-visit guide, plain labels, explained terms, empty states, top-down camera, phone layout | next |
+| 3. `/workspace?from=&to=&profile=` deep link into the Route lab, with an e2e test | queued |
+| 4. Landing page: calls to action for Directions, Sweep planner, Pune lab, network lab; light hero | started: the hero now shows the static drawing until fonts settle |
+| 5. Tests for the above, full `pnpm verify` | ongoing |
 
-## 1. Freeze investigation
+## 1. The `/workspace` freeze: root cause and fix
 
-Reproducer: load `/workspace` in a fresh browser context each time (same Chromium flags as the e2e suite, SwiftShader), wait for `networkidle`, then for the city name and the built meshes. A load counts as a stall when the page no longer answers `page.evaluate`.
+**Harness.** Load `/workspace` in a fresh browser context each time, with the e2e suite's Chromium flags (SwiftShader). Wait for `networkidle`, then for the city name and the built meshes. A load counts as a stall when the page no longer answers `page.evaluate`.
 
-* **Baseline at `7e4e619`:** 4 stalls in 40 loads, then 5 in 40 with page-side instrumentation.
-* **Where it stops:** in every stall the last events the page logged are, in order:
-  * `pune-bibwewadi.json` loaded (about 0.45 s);
-  * the geometry worker created (about 0.48 s);
-  * the scene chunks requested (about 0.53 s).
+| Run (40–120 loads each) | Stalls |
+|---|---|
+| baseline at `7e4e619` | 4 of 40; 5 of 40 with page instrumentation |
+| `--disable-webgl --disable-3d-apis` | 3 of 40 |
+| every worker started 3 s late (wrapper injected into the page) | 12 of 40 |
+| web fonts blocked (all `.woff2` requests aborted) | 5 of 60 |
+| **after the fix** | **0 of 120** |
 
-  After that, nothing: no `<canvas>` was inserted, `getContext` was never called, and a 250 ms interval timer never fired again. The main thread blocks **before** the WebGL context exists. The scene chunks are compiled while the geometry worker starts.
+**Where it stops.** Page instrumentation showed the city JSON arriving (about 0.45 s), the scene chunks being requested (about 0.53 s), then nothing:
+* no `<canvas>` was inserted;
+* `getContext` was never called;
+* a 250 ms timer never fired again.
+
+WebGL is not involved.
+
+**Root cause.** `gdb` native stacks of the frozen renderer show a thread-pool starvation deadlock inside Chromium.
+
+* **Main thread:**
+  ```
+  font_service::internal::FontServiceThread::FontRenderStyleForStrike   (WaitableEvent::Wait)
+  content::WebSandboxSupportLinux::GetWebFontRenderStyleForStrike
+  blink::FontCache::GetLastResortFallbackFont
+  blink::RemoteFontFaceSource::CreateFontData      (a web font still loading, font-display: swap)
+  blink::InlineNode::PrepareLayout                 (laying out the panels' text)
+  ```
+  It is waiting for a synchronous font-service call, which runs as a task on the renderer's thread pool.
+* **Every thread-pool worker:**
+  ```
+  v8::internal::CollectionBarrier::AwaitCollectionBackground
+  ... v8::internal::BackgroundCompileTask::Run
+  blink::BackgroundResourceScriptStreamer::...::RunScriptStreamingTask   (the 3D scene chunks)
+  ```
+  One worker is in the baseline compiler instead. All are waiting for the main thread to collect garbage.
+* **The cycle:** the font task never gets a worker, and the main thread never collects. The browser process was idle; no thread was in fontconfig.
+* **What triggers it:** heavy background script compilation (the 3D scene chunks) at the same moment as the main thread's first fallback-font lookups (the panels first laid out while web fonts load). This explains why disabling WebGL or blocking web fonts did not help, why delaying workers made it worse (probably because more compilation then overlapped the first layout), and why a pause between loads helped.
+
+**Fix (app code; no Chromium flag, no test changed).**
+* `lib/webgl.ts` gains `whenTextSettled()`. It loads every Latin web-font face the app declares, waits for `document.fonts.ready` and two laid-out frames, and gives up after 4 s.
+* `CityWorkspace` fetches and compiles the 3D scene only after that, so no first-time font lookup coincides with the compile.
+* The landing hero shows its static network drawing until then, and then loads the 3D hero.
+
+**Checks after the fix:**
+* stress harness: 0 stalls in 120 loads;
+* `e2e/city`, `landing`, `a11y` and `responsive` specs: 36 of 36;
+* typecheck and lint clean; unit tests: engine 178, server 38, web 29.
 
 ## Requests for the other session
 
-None yet.
+1. **Lab 3D scene** (`apps/web/src/workspace/SimulationSection.tsx`, owned by neither of us; please take it). It lazy-loads `DistrictScene` straight away and is open to the same deadlock. Mount the scene only after `whenTextSettled()` from `lib/webgl.ts` resolves, as `CityWorkspace` and the landing hero now do:
+   ```tsx
+   const [textSettled, setTextSettled] = useState(false);
+   useEffect(() => { let live = true; void whenTextSettled().then(() => live && setTextSettled(true)); return () => { live = false; }; }, []);
+   // render <DistrictScene> only when textSettled
+   ```

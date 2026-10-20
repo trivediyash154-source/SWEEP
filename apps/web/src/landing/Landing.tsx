@@ -8,7 +8,7 @@ import { BotanicalCursorField } from '../components/botanical/BotanicalCursorFie
 import { Icon } from '../components/Icon';
 import { StaticNetwork } from './StaticNetwork';
 import { usePrefs, useReducedMotion } from '../state/prefs';
-import { webglAvailable } from '../lib/webgl';
+import { webglAvailable, whenTextSettled } from '../lib/webgl';
 import { WebGLBoundary } from '../components/WebGLBoundary';
 import { formatDistance, formatMs, formatNumber, formatPercent } from '../lib/format';
 import '../styles/landing.css';
@@ -51,6 +51,16 @@ export default function Landing() {
   const heroRef = useRef<HTMLElement>(null);
   const [heroVisible, setHeroVisible] = useState(true);
   const gl = useMemo(() => webglAvailable(), []);
+  // The static drawing shows until the page's text has its fonts; only then is the 3D hero's code loaded
+  // (see whenTextSettled in lib/webgl.ts).
+  const [textSettled, setTextSettled] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void whenTextSettled().then(() => live && setTextSettled(true));
+    return () => {
+      live = false;
+    };
+  }, []);
 
   useEffect(() => {
     const el = heroRef.current;
@@ -126,7 +136,7 @@ export default function Landing() {
       {/* ------------------------------------------------------------ hero */}
       <section className="hero" ref={heroRef} data-bloom-zone aria-labelledby="hero-title">
         <div className="hero__scene" aria-hidden="true">
-          {gl ? (
+          {gl && textSettled ? (
             <WebGLBoundary fallback={null}>
             <Suspense fallback={null}>
               <HeroScene theme={theme} paused={!heroVisible} reduced={reduced} />

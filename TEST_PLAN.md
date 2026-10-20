@@ -6,17 +6,17 @@
 
 ## Latest recorded run (2026-10-20)
 
-On the 59-tile Pune bundle, after the Directions page, the Sweep planner and the font-settle fix for the page-load freeze. The run used Linux 6.18, a 4-core Intel Xeon at 2.10 GHz, Node 22.22.0, Python 3.13 with networkx 3.5, and Chromium headless (Playwright 1.56.1, software WebGL via SwiftShader). `pnpm verify` passed in one run (typecheck, lint, unit tests, the oracle, the build and the browser suite). The same checks run on GitHub Actions in the `verify` job; the `docker` job builds and smoke-tests the image (see [DEPLOYMENT.md](DEPLOYMENT.md)).
+On the 59-tile Pune bundle, after the Directions page, the Sweep planner, the first-visit guide and route-lab links, and the font-settle fix for the page-load freeze. The run used Linux 6.18, a 4-core Intel Xeon at 2.10 GHz, Node 22.22.0, Python 3.13 with networkx 3.5, and Chromium headless (Playwright 1.56.1, software WebGL via SwiftShader). `pnpm verify` passed in one run (typecheck, lint, unit tests, the oracle, the build and the browser suite). The same checks run on GitHub Actions in the `verify` job; the `docker` job builds and smoke-tests the image (see [DEPLOYMENT.md](DEPLOYMENT.md)).
 
 | Typecheck (engine, server, web) | `pnpm typecheck` | passed |
 | Lint (ESLint, TypeScript rules, React hooks) | `pnpm lint` | passed, 0 warnings |
 | Engine unit + property tests | `pnpm --filter @sweep/engine test` | **178 / 178 passed** (17 files, including routing, coverage, several depots, turn order and the priority deadline on the real Pune bundle) |
 | Server integration tests | `pnpm --filter @sweep/server test` | **38 / 38 passed** |
-| Web unit tests | `pnpm --filter @sweep/web test` | **46 / 46 passed** (13 files, including place search, directions parsing, and the sweep planner on a real cached Overpass tile) |
+| Web unit tests | `pnpm --filter @sweep/web test` | **50 / 50 passed** (14 files, including place search, directions parsing, route-lab links, and the sweep planner on a real cached Overpass tile) |
 | Python oracle, undirected | `pnpm test:oracle` | **661 graphs; 537 compared with networkx, 439 with brute force; all agree**. The other 124 were rejected by SWEEP, and the oracle confirmed each has genuinely disconnected required streets. The real Zurich sample is included as its explicit undirected relaxation (one-way restrictions ignored). |
 | Python oracle, directed and mixed | `pnpm test:oracle` | **1,401 graphs; 490 compared with networkx min-cost flow, 681 with a state-space search; all agree**. The other 610 were rejected by SWEEP, and the oracle confirmed each has no legal covering closed walk or has disconnected required streets. |
 | Production build | `pnpm build` (and `pnpm build:static`) | passed |
-| End-to-end + accessibility | `pnpm test:e2e` | **65 / 65 passed** in 9.3 min, one worker (desktop 1440×900 and mobile 390×844, both themes): city 15 (real Pune data), workspace 17, a11y 12, landing 6, sweep planner 6, directions 4, responsive 3, auth 2. The Directions and Sweep planner tests replace the outside map services with local stand-ins; the Sweep stand-in answers Overpass with real cached Pune tiles. The `/workspace` page-load freeze (a Chromium renderer thread-pool deadlock between web-font loading and the 3D scene's script compile) was fixed by starting every 3D scene only after the fonts settle (`docs/CITY_UX_NOTES.md` §1) |
+| End-to-end + accessibility | `pnpm test:e2e` | **70 / 70 passed** in 9.5 min, one worker (desktop 1440×900 and mobile 390×844, both themes): city 19 (real Pune data), workspace 17, a11y 12, landing 6, sweep planner 6, directions 4, responsive 4, auth 2. The Directions and Sweep planner tests replace the outside map services with local stand-ins; the Sweep stand-in answers Overpass with real cached Pune tiles. The `/workspace` page-load freeze (a Chromium renderer thread-pool deadlock between web-font loading and the 3D scene's script compile) was fixed by starting every 3D scene only after the fonts settle (`docs/CITY_UX_NOTES.md` §1) |
 
 Bugs that the end-to-end suite found during the workspace redesign, and that were then fixed:
 

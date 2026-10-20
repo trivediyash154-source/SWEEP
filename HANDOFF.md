@@ -189,7 +189,7 @@ Run `pnpm dev`, or build and then run `node scripts/e2e-server.mjs 8790` to serv
 ### Changes elsewhere in the web app
 
 * The old abstract workspace moved from `/workspace` to `/lab`. Links were updated in Landing, Report, Auth, Account, SiteNav and ReportSections.
-* The Velvet materials in the landing `three/CityScene.tsx` and the lab `three/DistrictScene.tsx` were lifted so buildings are visible.
+* The landing hero now renders the lab's lit district (`three/districtParts.tsx`, shared by `three/HeroScene.tsx` and `three/DistrictScene.tsx`): lit windows, trees and the spectral route drawing itself in true order, visible in both themes (measured in `e2e/landing.spec.ts`; see `docs/CITY_UX_NOTES.md` §6). The old `three/CityScene.tsx` and `three/cityModel.ts` were removed.
 
 ### E2E tests
 
@@ -224,7 +224,7 @@ Four sessions have worked on this branch.
 * Unit tests: engine 178/178 (17 files), server 38/38, web 55/55 (15 files).
 * Both Python oracles: all comparisons agree.
 * `pnpm build` and `pnpm build:static` ✓.
-* E2E: **74 of 74 passed** in one full `pnpm verify` run (11.4 min, one worker): 19 on the real Pune data, 7 on the Sweep planner, 4 on Directions.
+* E2E: **75 of 75 passed** in one full `pnpm verify` run (11.1 min, one worker): 19 on the real Pune data, 7 on the Sweep planner, 4 on Directions.
 * The static build, served by a plain file server with no API, was checked in headless Chromium: landing page, lab, `/#/workspace` city load, the Route lab (all five algorithms agree) and a coverage plan, with no console errors or failed requests.
 
 ### Bundled dataset

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { getExample, solveChinesePostman } from './engine';
+import { contrastRatio, decodePng, luminanceAt } from './png';
 
 test.describe('landing page', () => {
   test('renders the hero, live engine figures and navigation', async ({ page }) => {
@@ -59,6 +60,42 @@ test.describe('landing page', () => {
         expect(heroCode).toEqual([]);
         await expect(page.locator('.hero__scene canvas')).toHaveCount(0);
       }
+      await ctx.close();
+    }
+  });
+
+  test('the 3D hero city is visible in both themes: lit buildings and a coloured route stand out from the ground', async ({ browser }) => {
+    test.setTimeout(120_000);
+    // Measured on the old hero, in the same region and the same way: Velvet spread 1.60 with 6.9 % coloured pixels;
+    // Porcelain 1.98 with 0.0 %. The district now has lit windows, shaded buildings and an ink or neon route.
+    const need = { velvet: { spread: 2.2, coloured: 0.09 }, porcelain: { spread: 2.15, coloured: 0.008 } };
+    for (const theme of ['velvet', 'porcelain'] as const) {
+      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      await ctx.addInitScript((t) => localStorage.setItem('sweep.theme', t), theme);
+      const page = await ctx.newPage();
+      await page.goto('/');
+      await expect(page.locator('.hero__scene canvas')).toBeVisible({ timeout: 30_000 });
+      await page.mouse.move(1380, 120);
+      // The route draws itself over 14 s; by 9 s most of it is drawn and the rest shows as a faint trace.
+      await page.waitForTimeout(9000);
+      const img = decodePng(await page.screenshot());
+      // The city sits right of the hero text.
+      const lum: number[] = [];
+      let coloured = 0;
+      for (let y = 200; y < 700; y += 4) {
+        for (let x = 760; x < 1300; x += 4) {
+          lum.push(luminanceAt(img, x, y));
+          const i = (y * img.width + x) * img.channels;
+          const [r, g, b] = [img.data[i]!, img.data[i + 1]!, img.data[i + 2]!];
+          if ((Math.max(r, g, b) - Math.min(r, g, b)) / 255 > 0.2) coloured++;
+        }
+      }
+      lum.sort((a, b) => a - b);
+      const spread = contrastRatio(lum[Math.floor(lum.length * 0.9)]!, lum[Math.floor(lum.length * 0.1)]!);
+      const share = coloured / lum.length;
+      test.info().annotations.push({ type: 'hero', description: `${theme}: luminance spread ${spread.toFixed(2)}:1, coloured ${(share * 100).toFixed(1)} %` });
+      expect(spread).toBeGreaterThan(need[theme].spread);
+      expect(share).toBeGreaterThan(need[theme].coloured);
       await ctx.close();
     }
   });

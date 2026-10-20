@@ -145,6 +145,15 @@
   margin: 2px 4px;
   background: var(--line);
 }
+/* The toolbar sits at the right edge: tooltips open to the left, as in the lab's camera tools. */
+.cw-camera [data-tip]:hover::after,
+.cw-camera [data-tip]:focus-visible::after {
+  right: calc(100% + 10px);
+  left: auto;
+  bottom: auto;
+  top: 50%;
+  transform: translateY(-50%);
+}
 .cw-camera .tool.is-on {
   background: color-mix(in srgb, var(--accent) 25%, transparent);
   color: var(--text);
@@ -353,7 +362,20 @@
 @media (max-width: 760px) {
   .cw-bar {
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px 8px;
+    padding: 8px 10px;
+  }
+  /* Name and tools share the first row; the city name shortens before anything wraps. */
+  .cw-bar__id {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .cw-bar__city strong {
+    font-size: 13px;
+  }
+  .cw-mode span {
+    font-size: 13px;
+    white-space: nowrap;
   }
   .cw-modes {
     order: 3;
@@ -362,7 +384,7 @@
   }
   .cw-mode {
     flex: 1;
-    padding: 6px 8px;
+    padding: 5px 6px;
   }
   .cw-bar__tools .btn {
     display: none;
@@ -388,13 +410,140 @@
   .cw-legend {
     display: none;
   }
+  /* Camera buttons sit just above the bottom sheet, clear of the header. */
   .cw-camera {
-    top: 150px;
+    top: auto;
+    bottom: calc(46vh + 10px);
+    right: 10px;
     transform: none;
+  }
+  .cw-panel {
+    padding: 14px;
+  }
+  .cw-guide {
+    padding: 10px;
   }
   .prov__grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---------------------------------------------------------------- getting-started guide and terms */
+.cw-guide {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.cw-guide__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cw-guide__head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-family: var(--font-display);
+}
+.cw-guide p {
+  margin: 0;
+}
+.cw-guide__tools {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.cw-guide__tools li {
+  display: grid;
+  gap: 2px;
+}
+.cw-guide__tool {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: 600 13.5px var(--font-display);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+.cw-guide__tool.is-on {
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}
+.cw-guide__try .eyebrow {
+  /* The guide card is lighter than the panel: the faint eyebrow grey would fall below 4.5:1 in Porcelain. */
+  color: var(--text-muted);
+}
+.cw-guide__try ol {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+.cw-guide-show {
+  margin: 0;
+}
+.cw-link-error {
+  position: absolute;
+  z-index: 18;
+  top: 92px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(560px, calc(100vw - 32px));
+}
+.cw-next {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--accent);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+.term {
+  display: inline;
+}
+.term__q {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-muted);
+  font: 600 10px/1 var(--font-ui);
+  vertical-align: 1px;
+  cursor: help;
+}
+.term__q[aria-expanded='true'] {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.term__def {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: normal;
+}
+.term__def[hidden] {
+  display: none;
 }
 
 /* ---------------------------------------------------------------- route lab */
@@ -416,6 +565,9 @@
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface) 55%, transparent);
 }
+.rl-end--plain {
+  grid-template-columns: minmax(0, 1fr);
+}
 .rl-end__dot {
   width: 12px;
   height: 12px;
@@ -435,7 +587,9 @@
 }
 .rl-end__row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: auto;
   align-items: center;
   gap: 8px;
 }
@@ -809,7 +963,8 @@
   background: color-mix(in srgb, #ffb347 25%, transparent);
   color: #c9851a;
 }
-.sc-compare {
+.sc-compare,
+.sc-ops {
   display: grid;
   gap: 8px;
   padding-top: 8px;
@@ -843,6 +998,19 @@
 .cv-inputs {
   display: grid;
   gap: 8px;
+}
+.cv-shapes {
+  justify-self: start;
+}
+.cv-zone-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cv-exports {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .cv-group {
   display: grid;
@@ -980,6 +1148,8 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px 16px;
+  max-height: 7.5em;
+  overflow-y: auto;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1072,4 +1242,16 @@
 }
 .cv-ops-input {
   width: 110px;
+}
+.cv-depots {
+  display: grid;
+  gap: 6px;
+}
+.cv-ops-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cv-depot-line {
+  display: block;
 }

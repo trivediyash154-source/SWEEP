@@ -6,7 +6,7 @@ import { DEFAULT_CITY, buildMeshesInWorker, fetchCity, fetchCityIndex, type City
 export type CityMode = 'route' | 'coverage' | 'scenarios';
 
 /** What the next click on the map selects. */
-export type PickTarget = null | 'origin' | 'destination' | 'depot' | 'dump' | 'scenario-depot' | 'close-road' | 'make-oneway' | 'zone-a' | 'zone-b';
+export type PickTarget = null | 'origin' | 'destination' | 'depot' | 'dump' | 'close-road' | 'make-oneway' | 'zone' | 'scenario-depot' | 'extra-depot';
 
 export interface LoadTimings {
   fetchMs: number;
@@ -29,6 +29,8 @@ interface CityState {
   selection: PickResult | null;
   pickTarget: PickTarget;
   showEstimates: boolean;
+  /** The getting-started guide at the top of the panel (hidden once the visitor closes it; remembered). */
+  guide: boolean;
   load: (id?: string) => Promise<void>;
   setMode: (m: CityMode) => void;
   cameraCmd: (cmd: CameraCommand, frame?: { minX: number; minY: number; maxX: number; maxY: number } | null) => void;
@@ -36,9 +38,19 @@ interface CityState {
   select: (p: PickResult | null) => void;
   setPickTarget: (t: PickTarget) => void;
   setShowEstimates: (on: boolean) => void;
+  setGuide: (open: boolean) => void;
 }
 
 let loadToken = 0;
+
+const GUIDE_KEY = 'sweep.cityGuide';
+function guideHidden(): boolean {
+  try {
+    return localStorage.getItem(GUIDE_KEY) === 'hidden';
+  } catch {
+    return false;
+  }
+}
 
 export const useCity = create<CityState>((set, get) => ({
   status: 'idle',
@@ -49,11 +61,13 @@ export const useCity = create<CityState>((set, get) => ({
   meshes: null,
   timings: null,
   mode: 'route',
-  camera: { cmd: 'overview', nonce: 0 },
+  // Top-down by default: the whole area, readable like a map; the 3D views are one click away.
+  camera: { cmd: 'top', nonce: 0 },
   hover: null,
   selection: null,
   pickTarget: 'origin',
   showEstimates: false,
+  guide: !guideHidden(),
   load: async (id) => {
     const token = ++loadToken;
     const cityId = id ?? get().cityId;
@@ -64,7 +78,7 @@ export const useCity = create<CityState>((set, get) => ({
       if (!entry) throw new Error(`No bundled city called "${cityId}".`);
       const { city, timings } = await fetchCity(entry);
       if (token !== loadToken) return;
-      set({ index, city, status: 'ready', camera: { cmd: 'overview', nonce: get().camera.nonce + 1 } });
+      set({ index, city, status: 'ready', camera: { cmd: 'top', nonce: get().camera.nonce + 1 } });
       const g0 = performance.now();
       const meshes = await buildMeshesInWorker(city);
       if (token !== loadToken) return;
@@ -85,4 +99,13 @@ export const useCity = create<CityState>((set, get) => ({
   select: (selection) => set({ selection }),
   setPickTarget: (pickTarget) => set({ pickTarget }),
   setShowEstimates: (showEstimates) => set({ showEstimates }),
+  setGuide: (guide) => {
+    try {
+      if (guide) localStorage.removeItem(GUIDE_KEY);
+      else localStorage.setItem(GUIDE_KEY, 'hidden');
+    } catch {
+      /* storage unavailable: the choice lasts for this visit */
+    }
+    set({ guide });
+  },
 }));

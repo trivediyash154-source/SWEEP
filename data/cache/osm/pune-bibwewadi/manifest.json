@@ -622,8 +622,8 @@
    ],
    "status": "failed",
    "file": "t2_4_buildings.json",
-   "attempts": 30,
-   "lastError": "HTTP 504"
+   "attempts": 42,
+   "lastError": "TimeoutError: The operation was aborted due to timeout"
   },
   "t2_5:streets": {
    "key": "t2_5",
@@ -873,10 +873,14 @@
     18.475,
     73.874
    ],
-   "status": "failed",
+   "status": "ok",
    "file": "t4_3_streets.json",
-   "attempts": 18,
-   "lastError": "TimeoutError: The operation was aborted due to timeout"
+   "bytes": 41950,
+   "osmBase": "2026-10-19T18:07:46Z",
+   "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+   "fetchedAt": "2026-10-19T18:11:17.818Z",
+   "attempts": 19,
+   "parts": 4
   },
   "t4_3:buildings": {
    "key": "t4_3",
@@ -927,6 +931,74 @@
    "osmBase": "2026-10-19T17:04:50Z",
    "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
    "fetchedAt": "2026-10-19T17:06:48.549Z",
+   "attempts": 1
+  },
+  "t4_4:streets": {
+   "key": "t4_4",
+   "kind": "streets",
+   "bbox": [
+    18.469,
+    73.874,
+    18.475,
+    73.88
+   ],
+   "status": "ok",
+   "file": "t4_4_streets.json",
+   "bytes": 50674,
+   "osmBase": "2026-07-28T02:16:18Z",
+   "endpoint": "https://overpass.kumi.systems/api/interpreter",
+   "fetchedAt": "2026-10-19T18:55:52.415Z",
+   "attempts": 1
+  },
+  "t4_4:buildings": {
+   "key": "t4_4",
+   "kind": "buildings",
+   "bbox": [
+    18.469,
+    73.874,
+    18.475,
+    73.88
+   ],
+   "status": "ok",
+   "file": "t4_4_buildings.json",
+   "bytes": 72998,
+   "osmBase": "2026-10-19T18:55:36Z",
+   "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+   "fetchedAt": "2026-10-19T18:56:17.204Z",
+   "attempts": 1
+  },
+  "t4_1:streets": {
+   "key": "t4_1",
+   "kind": "streets",
+   "bbox": [
+    18.469,
+    73.856,
+    18.475,
+    73.862
+   ],
+   "status": "ok",
+   "file": "t4_1_streets.json",
+   "bytes": 77813,
+   "osmBase": "2026-10-19T18:55:36Z",
+   "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+   "fetchedAt": "2026-10-19T18:56:44.929Z",
+   "attempts": 1
+  },
+  "t4_1:buildings": {
+   "key": "t4_1",
+   "kind": "buildings",
+   "bbox": [
+    18.469,
+    73.856,
+    18.475,
+    73.862
+   ],
+   "status": "ok",
+   "file": "t4_1_buildings.json",
+   "bytes": 212291,
+   "osmBase": "2026-10-19T18:55:36Z",
+   "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+   "fetchedAt": "2026-10-19T18:57:10.433Z",
    "attempts": 1
   }
  }

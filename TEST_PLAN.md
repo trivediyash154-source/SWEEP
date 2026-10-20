@@ -4,21 +4,19 @@
 
 **One command runs everything:** `pnpm verify`. It runs the typecheck, unit, property and integration tests, the Python oracle, the production build, and the Playwright end-to-end and accessibility suite.
 
-## Latest recorded run (2026-10-19)
+## Latest recorded run (2026-10-20)
 
-The run used Linux 6.18, a 4-core Intel Xeon at 2.10 GHz, Node 22.22.0, Python 3.13 with networkx 3.5, and Chromium 141 headless (Playwright 1.56.1, software WebGL via SwiftShader). `pnpm verify` **exited with status 0** (562 s, re-run after the city workspace was completed). The same checks run on GitHub Actions in the `verify` job; the `docker` job builds and smoke-tests the image (see [DEPLOYMENT.md](DEPLOYMENT.md)).
+On the 59-tile Pune bundle, after the Directions page, the Sweep planner, the first-visit guide, route-lab links and the new landing page, and the font-settle fix for the page-load freeze. The run used Linux 6.18, a 4-core Intel Xeon at 2.10 GHz, Node 22.22.0, Python 3.13 with networkx 3.5, and Chromium headless (Playwright 1.56.1, software WebGL via SwiftShader). `pnpm verify` passed in one run (typecheck, lint, unit tests, the oracle, the build and the browser suite). The same checks run on GitHub Actions in the `verify` job; the `docker` job builds and smoke-tests the image (see [DEPLOYMENT.md](DEPLOYMENT.md)).
 
-| Suite | Command | Result |
-|---|---|---|
 | Typecheck (engine, server, web) | `pnpm typecheck` | passed |
 | Lint (ESLint, TypeScript rules, React hooks) | `pnpm lint` | passed, 0 warnings |
-| Engine unit + property tests | `pnpm --filter @sweep/engine test` | **154 / 154 passed**: the original solver suites plus the city bundle (11), point-to-point routing on synthetic and real Pune networks (26) and zone coverage, lower bounds and fleet plans (21) |
+| Engine unit + property tests | `pnpm --filter @sweep/engine test` | **178 / 178 passed** (17 files, including routing, coverage, several depots, turn order and the priority deadline on the real Pune bundle) |
 | Server integration tests | `pnpm --filter @sweep/server test` | **38 / 38 passed** |
-| Web unit tests | `pnpm --filter @sweep/web test` | **16 / 16 passed**, including the city geometry (2), shift timeline (4) and cost model (3) |
+| Web unit tests | `pnpm --filter @sweep/web test` | **50 / 50 passed** (14 files, including place search, directions parsing, route-lab links, and the sweep planner on a real cached Overpass tile) |
 | Python oracle, undirected | `pnpm test:oracle` | **661 graphs; 537 compared with networkx, 439 with brute force; all agree**. The other 124 were rejected by SWEEP, and the oracle confirmed each has genuinely disconnected required streets. The real Zurich sample is included as its explicit undirected relaxation (one-way restrictions ignored). |
 | Python oracle, directed and mixed | `pnpm test:oracle` | **1,401 graphs; 490 compared with networkx min-cost flow, 681 with a state-space search; all agree**. The other 610 were rejected by SWEEP, and the oracle confirmed each has no legal covering closed walk or has disconnected required streets. |
 | Production build | `pnpm build` (and `pnpm build:static`) | passed |
-| End-to-end + accessibility | `pnpm test:e2e` | **50 / 50 passed** in 8.1 min with one worker (desktop 1440×900 and mobile 390×844, both themes). This includes 10 real-Pune city tests, each checking the UI against an independent engine run (see §3). |
+| End-to-end + accessibility | `pnpm test:e2e` | **73 / 73 passed** in 10.1 min, one worker (desktop 1440×900 and mobile 390×844, both themes): city 19 (real Pune data), workspace 17, a11y 12, landing 8, sweep planner 6, directions 4, responsive 5, auth 2. The Directions and Sweep planner tests replace the outside map services with local stand-ins; the Sweep stand-in answers Overpass with real cached Pune tiles. The `/workspace` page-load freeze (a Chromium renderer thread-pool deadlock between web-font loading and the 3D scene's script compile) was fixed by starting every 3D scene only after the fonts settle (`docs/CITY_UX_NOTES.md` §1) |
 
 Bugs that the end-to-end suite found during the workspace redesign, and that were then fixed:
 
@@ -97,31 +95,24 @@ The oracle re-walks every SWEEP route, including the legal direction of every st
 |---|---|
 | `landing.spec.ts` | The hero and the live instrument; the ledger row equals engine output; WebGL canvas or fallback; the cursor field has `pointer-events: none` and links under it stay clickable; under reduced motion there is no field and the toggle state is right; theme toggle and persistence; mathematics page figures; 404 |
 | `workspace.spec.ts` (17) | Opens straight into a solved city without signing in; bundled network: the total equals the engine total, and the exact route is compared with real baselines; 3D/2D stage switch; building and editing a network, where changes propagate, re-solve automatically and undo restores the result; playback play, pause and speed; the mathematical investigation (odd vertices, shortest paths, matching, verification) highlights the real record; every verification check is listed as passed; theme change; local save and reopen after reload; JSON and CSV exports equal the engine output; **the real Zurich sample solved in directed mode, with OSM attribution, compared with the two-way relaxation (wrong-way traversals) and its LP certificate**; a fleet where each vehicle animates its own route and the plan exports with validation; a GeoJSON import with a one-way dead end is explained and fixed; map acquisition through the dialog (provider response mocked); clearing local data only after confirmation; the blossom field never blocks controls; reduced motion (no field, playback jumps to the finished route) |
+| `city.spec.ts` (11) | The city workspace on the real Pune bundle, always compared with an engine run on the same data: provenance and attribution; five algorithms agree and validate, and the printable Route lab report shows the same figures and a route sheet that ends at the route distance; reachability nests 5 ⊆ 10 ⊆ 15 min; a closure clicked on the map equals the engine with that segment closed; roof/ground contrast > 1.3 in both themes (measured on screenshots); theme switch rebuilds the scene; building click shows the OSM feature and height source; coverage of a rectangle (directed and undirected; honest method labels; timeline; GPX and CSV exports; cost model; report; scenario comparison); circle and polygon zones (self-crossing point refused; undo); a 3-vehicle fleet with a shift limit equal to `planFleet`, over-shift flags, the over-fleet diagnosis when the makespan bound proves the shift infeasible, and a scenario with another depot, fleet size and fuel price compared with the baseline |
 | `auth.spec.ts` | Optional accounts. Register; save to account; stored run history; reload; sign out guards the account page; a second user cannot open the first user's scenario; generic sign-in error |
 | `responsive.spec.ts` (mobile) | The workspace optimises at 390 px; no horizontal overflow on the landing page or workspace |
 | `a11y.spec.ts` | axe-core on `/`, `/workspace`, `/mathematics`, `/signin` and `/register` in **both themes**: no serious or critical violations (canvas elements excluded) |
 
-### City workspace (`e2e/city.spec.ts`, real Pune data)
-
-Every test computes its expected values with the engine on the same bundled file, never with hard-coded numbers.
-
-* **Provenance.** The page opens without sign-in, shows OSM attribution, and its building and tile counts equal the bundle's.
-* **Routing.** All 5 algorithms equal the engine optimum (relative 1e-9) and every route validates. ALT and CH settle fewer arcs than Dijkstra. The distance objective is exact too, and the printable report carries the same rows.
-* **Reachability.** The 5, 10 and 15-minute lengths equal the engine's and nest.
-* **Closures.** Closing a street clicked on the map gives the engine's cost on the edited network, never faster than the baseline, with all algorithms agreeing.
-* **Contrast.** Measured roof/ground contrast is above 1.3:1 in both themes (measured 6.14 Velvet, 1.52 Porcelain).
-* **Theme switch.** Switching theme recolours the 3D scene itself (ground luminance ×3 or more).
-* **Building click.** Clicking a building shows the OSM feature, its link and its height source.
-* **Coverage, rectangle zone:**
-  * the directed plan equals `solveZoneCoverage` (exact min-cost flow label);
-  * the undirected relaxation is labelled as such, with wrong-way counts and a bound no higher than the route;
-  * the timeline ends at the engine route timed at the set speeds;
-  * the cost model shows nothing until rates are entered, then fuel and CO₂ follow from the distances;
-  * the report matches the plan;
-  * a scenario closure and a 2-vehicle variant both equal engine runs.
-* **Coverage, circle zone.** A 3-vehicle fleet with a 1 h shift equals `planFleet` (distance, makespan, vehicles used). The makespan bound does not exceed the makespan, and the timeline ends with the last vehicle.
-
 ## 4. Web unit tests (`apps/web/src/**/*.test.ts`)
+
+City workspace:
+
+* **Zone drawing** (`zoneShape.test.ts`): segment intersection (crossing, touching, collinear overlap, apart); refusing points that would make an outline cross itself, fold back or repeat a vertex; simple versus self-crossing closed outlines (including concave ones); zones the engine reads with the expected extent and area; minimum sizes; closed outline rings on the boundary; the readout text.
+* **Route sheet** (`routeSheet.test.ts`): on 60 real car routes, the per-junction turn classification equals the engine's `result.turns`, legs cover every arc, and leg distances add up to the route distance.
+* **Shift timeline** (`timeline.test.ts`): step times from length and speed plus unloading; deterministic, monotone positions.
+* **Cost model** (`costModel.test.ts`): only entered rates produce figures; the arithmetic.
+* **Exports** (`coverageExport.test.ts`): on a real route, the GPX parses as XML, has one track per vehicle that drives, escapes text, and starts and ends at the right intersections; the drawn length matches the route length within 1 %; the step CSV has one row per segment plus unloading stops, with the timeline's times.
+* **Formats** (`format.test.ts`): rounded seconds carry into the minute (no "51:60"); distance units.
+* **Building geometry** (`geometry.test.ts`): extruded real footprints have wall winding that agrees with outward normals and roofs that face up; road ribbons face up and keep their segment for every triangle.
+
+Network lab:
 
 * **Petal system:** emission is proportional to distance, not to the number of events (3 large moves and 300 small moves both give 30 petals); the pool is bounded; dead particles are recycled; nothing sprays on re-entry; intensity 0 and the bloom limit are respected.
 * **Route geometry:** progress maps onto true distance (0 → 0, end → total); distance is monotone; no spatial jumps over 2,000 samples (no teleporting).
@@ -165,37 +156,51 @@ Fleets (`solveFleet`, base solve + split + verification):
 
 Raw results are in `packages/engine/bench/results.json`.
 
-### Real Pune network (`npx tsx bench/p2p.ts`, `npx tsx bench/coverage.ts`, 2026-10-19)
+### City workspace engine (real Pune bundle, 59 of 85 tile files: 4,753 intersections, 5,691 segments, 327.39 km)
 
-The dataset is the bundled partial extract (50 of 85 tiles): 4,160 intersections, 5,000 segments, 290.97 km.
+Measured in the third session (2026-10-19) with `npx tsx packages/engine/bench/p2p.ts` and `npx tsx packages/engine/bench/coverage.ts`, on a 4-core Xeon at 2.10 GHz with Node 22.22.
 
-**Point-to-point routing.** Median per-query times over 200 seeded random origin–destination pairs. Every algorithm returns the same optimum (asserted in the tests).
+Point-to-point, median over 200 random queries (arcs settled in brackets):
 
-| Profile, objective | Directed arcs | ALT prep | CH prep (shortcuts) | Dijkstra | A* | Bidirectional | ALT | CH |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| car, time | 8,020 | 53 ms | 674 ms (27,418) | 0.453 ms (3,524 settled) | 0.468 ms (1,963) | 0.265 ms (1,562) | 0.120 ms (483) | 0.029 ms (102) |
-| car, distance | 8,020 | 21 ms | 585 ms | 0.419 ms (3,581) | 0.204 ms (891) | 0.289 ms (2,084) | 0.158 ms (724) | 0.023 ms (101) |
-| bicycle, time | 8,027 | 33 ms | 553 ms | 0.507 ms | 0.244 ms | 0.283 ms | 0.180 ms | 0.027 ms |
-| foot, time | 8,498 | 20 ms | 564 ms | 0.478 ms | 0.268 ms | 0.365 ms | 0.090 ms | 0.029 ms |
-| truck, time | 8,022 | 23 ms | 620 ms | 0.500 ms | 0.542 ms | 0.238 ms | 0.162 ms | 0.018 ms |
+| Profile, objective | Dijkstra | A* | Bidirectional | ALT | CH | Preprocessing (ALT / CH) |
+|---|---:|---:|---:|---:|---:|---|
+| car, time | 0.529 ms (3,880) | 0.511 ms (2,001) | 0.264 ms (1,461) | 0.266 ms (787) | 0.026 ms (107) | 48.3 ms / 736 ms |
+| car, distance | 0.528 ms (4,357) | 0.217 ms (927) | 0.396 ms (2,543) | 0.191 ms (806) | 0.033 ms (121) | 30.1 ms / 739 ms |
+| truck, time | 0.569 ms (3,923) | 0.632 ms (2,392) | 0.233 ms (1,600) | 0.273 ms (1,013) | 0.019 ms (106) | 17.0 ms / 630 ms |
+| foot, time | 0.736 ms (5,393) | 0.256 ms (1,055) | 0.435 ms (2,851) | 0.084 ms (311) | 0.037 ms (158) | 24.7 ms / 761 ms |
 
-On the time objective, A* is weak because its admissible heuristic divides the straight-line distance by the fastest speed in the graph. ALT and CH need preprocessing; the UI reports it.
+For the time objective, A* settles fewer arcs than Dijkstra but is not always faster here (truck). Its straight-line bound is divided by the fastest speed in the graph, so it is loose on slower streets, and each settled arc costs a heuristic evaluation; this explanation has not been profiled. The benchmark also prints the bicycle profile and the distance objective for truck and foot.
 
-**Coverage and fleets.** Circle zones around VIT; capacity case is 1.5 t at 150 kg/km.
+Coverage (zone, solve, bound and verification):
 
-| Zone | Mode | Method | Route | Lower bound | Gap | Solve |
+| Zone | Model | Method | Route | Lower bound | Gap | Time |
 |---|---|---|---:|---:|---:|---:|
-| r = 400 m (262 required segments, 13.33 km) | directed | exact min-cost flow; 6 connectors, so not proven optimal | 32.37 km | 26.65 km | 21.45 % | 597 ms |
-| r = 400 m | undirected | exact Edmonds–Johnson; 6 connectors | 24.54 km | 21.38 km | 14.76 % | 998 ms |
-| r = 800 m (1,121 segments, 54.47 km) | directed | exact min-cost flow; 10 connectors | 112.75 km | 108.16 km | 4.24 % | 144 ms |
-| r = 800 m | undirected | candidate heuristic | 87.02 km | 77.38 km (fractional dual) | 12.46 % | 831 ms |
-| whole network (5,000 segments, 290.98 km) | directed | exact min-cost flow; **proven optimal**; 28 segments unserviceable on a closed legal route, listed | 547.68 km | 547.68 km | 0 % | 197 ms |
-| whole network | undirected | candidate heuristic | 445.67 km | 419.08 km | 6.35 % | 12.3 s (9.8 s of it the bound) |
+| circle r = 400 m (16.5 km required) | directed | exact min-cost flow, 3 connectors | 36.69 km | 32.03 km | 14.56 % | 0.7 s |
+| circle r = 400 m | undirected | exact Edmonds–Johnson, 3 connectors | 28.03 km | 24.95 km | 12.36 % | 1.2 s |
+| circle r = 800 m (58.7 km required) | directed | exact min-cost flow, 16 connectors | 118.93 km | 114.47 km | 3.89 % | 0.2 s |
+| circle r = 800 m | undirected | candidate-matching heuristic | 92.07 km | 83.79 km | 9.87 % | 0.5 s |
+| whole network (327.39 km) | directed | exact min-cost flow (optimal; 24 one-way segments unserviceable) | 622.46 km | 622.46 km | 0 % | 0.23 s |
+| whole network | undirected | candidate-matching heuristic | 499.16 km | 467.20 km | 6.84 % | 5.8 s (2.1 s of it the lower bound) |
 
-Fleet examples:
+The lower bound does not include the cost of joining separate street groups (the connector paths in the circle zones), so there the gap is an upper limit on the distance from the optimum, not an estimate of it. Fleet plans for these zones take 0.3–3.4 s (distance table, split and local search); the benchmark prints each one.
 
-* **r = 800 m, directed, 4 vehicles, finish soonest:** total 121.07 km, makespan 3.47 h against a bound of 3.34 h, feasible, in 3.7 s.
-* **r = 800 m, directed, 6 vehicles, capacity 1.5 t, 6 h shift:** the split needs 12 routes, more than the 6 vehicles. The plan is reported **infeasible**. The makespan bound applies only to plans with at most 6 vehicles, so the infeasible plan's 1.38 h makespan does not contradict the 2.22 h bound.
+History of the whole-network undirected bound:
+
+* The sparse Jonker–Volgenant assignment (third session) took it from 6.0 s to 1.55 s on the 54-tile network (3,606 odd intersections), with a slightly stronger value.
+* The second session's heap and flow speed-up had taken the 47-tile network from 20.2 s to 9.4 s, with an identical route, bound and gap.
+
+Turn-aware order (truck turn penalties: left 4 s, right 10 s, U-turn 20 s), measured with `orderCoverageForTurns` on circles centred on VIT, with the depot at the nearest intersection. Distances are unchanged by construction.
+
+| Zone | Model | Turn penalties, engine order | After ordering | Lower bound for these traversals | U-turns before → after | Right turns before → after | Time |
+|---|---|---:|---:|---:|---:|---:|---:|
+| r = 300 m | directed | 80.6 min | 41.7 min | 37.8 min | 138 → 66 | 148 → 36 | 44 ms |
+| r = 300 m | undirected | 44.8 min | 37.7 min | 37.0 min | 62 → 50 | 99 → 78 | 30 ms |
+| r = 600 m | directed | 229.4 min | 142.8 min | 131.8 min | 403 → 250 | 401 → 102 | 24 ms |
+| r = 600 m | undirected | 157.6 min | 141.2 min | 136.2 min | 239 → 219 | 337 → 267 | 29 ms |
+| r = 1200 m | directed | 629.0 min | 438.7 min | 400.0 min | 1,107 → 820 | 1,055 → 218 | 122 ms |
+| r = 1200 m | undirected | 489.4 min | 436.0 min | 425.1 min | 757 → 684 | 1,020 → 768 | 74 ms |
+
+Most remaining U-turns are at dead ends, where they are unavoidable. After ordering, 600 m directed has 49 U-turns away from dead ends, down from 202. The bundle has no mapped turn restrictions yet, so banned-turn avoidance is tested only on synthetic instances (`turns.test.ts`).
 
 ### Frontend (headless Chromium, software WebGL via SwiftShader, local server)
 
@@ -213,7 +218,7 @@ Fleet examples:
 
 **Caveats.** Frame rates are not reported: in this container every frame is rasterised on the CPU (about 0.75 s per frame at 1440×900 with shadows and bloom), which says nothing about GPU hardware.
 
-SWEEP detects software rasterisers (SwiftShader, llvmpipe, Microsoft Basic Render), and the measurements above were taken with that detection active. On those rasterisers it starts the 3D scene in low-power mode: no shadows, bloom or motes, and frames are drawn only while playing or interacting. The `sweep.quality` preference (`full` / `low`) overrides the detection; the README screenshots use `full`. On GPUs, `PerformanceMonitor` still lowers resolution and drops post-processing when the frame rate declines.
+SWEEP detects software rasterisers (SwiftShader, llvmpipe, Microsoft Basic Render) from each scene's own WebGL context, and the measurements above were taken with that detection active. In low-power mode there are no shadows, bloom or motes, and frames are drawn only while playing or interacting. Every scene starts in low-power mode and leaves it once its context shows a hardware GPU. No throwaway probe context is created, because one caused the intermittent page-load freeze (HANDOFF §4.1). The `sweep.quality` preference (`full` / `low`) overrides the detection; the README screenshots use `full`. On GPUs, `PerformanceMonitor` still lowers resolution and drops post-processing when the frame rate declines.
 
 Load times were measured on localhost, without network latency.
 

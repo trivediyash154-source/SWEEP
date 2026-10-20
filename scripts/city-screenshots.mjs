@@ -13,9 +13,11 @@ async function settle(page) {
   await page.waitForTimeout(400);
 }
 
-async function open(theme) {
+// The theme pair shows a first visit, with the getting-started guide; the result shots hide it, as a returning user would.
+async function open(theme, { guide = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   await ctx.addInitScript((t) => localStorage.setItem('sweep.theme', t), theme);
+  if (!guide) await ctx.addInitScript(() => localStorage.setItem('sweep.cityGuide', 'hidden'));
   const page = await ctx.newPage();
   await page.goto(`${base}/workspace`);
   await page.getByTestId('city-name').filter({ hasText: 'Pune' }).waitFor({ timeout: 60_000 });
@@ -25,7 +27,7 @@ async function open(theme) {
 }
 
 for (const theme of ['velvet', 'porcelain']) {
-  const { ctx, page } = await open(theme);
+  const { ctx, page } = await open(theme, { guide: true });
   await page.getByTestId('cam-focus').click();
   await page.waitForTimeout(3000);
   await settle(page);

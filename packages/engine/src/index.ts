@@ -18,7 +18,7 @@ export { eulerCircuit } from './euler.js';
 export { sha256Hex, canonicalJson } from './sha256.js';
 export { geojsonToGraph, GeoJsonImportError, type GeoJsonImportReport } from './geojson.js';
 export { parseGraphJson, coerceGraph, GraphParseError, routeToCsv, edgesToCsv, fleetToCsv, toCsv } from './io.js';
-export { EARTH_RADIUS_M, haversine, polylineLength, localProjection, bboxAreaKm2, bboxSizeMetres, type BBox } from './geo.js';
+export { EARTH_RADIUS_M, haversine, polylineLength, localProjection, localUnprojection, bboxAreaKm2, bboxSizeMetres, type BBox } from './geo.js';
 export * from './osm.js';
 export * from './city/index.js';
 export * from './p2p/index.js';

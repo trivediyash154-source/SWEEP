@@ -1,30 +1,14 @@
 import { create } from 'zustand';
 import type { Zone } from '@sweep/engine';
-import { cityUrl } from './data';
+import { absoluteCityUrl } from './data';
 import { coverage } from './coverageClient';
 import type { CoveragePlanResult, CoverageResponse, FleetSettings } from './coverage.worker';
-import { specOf, useScenarios, type Scenario } from './scenario';
+import { BASELINE, specOf, useScenarios, type Scenario } from './scenario';
 import { useCity } from './store';
 import { DEFAULT_COSTS, type CostAssumptions } from './costModel';
+import { canExtend, circleZone, polygonZone, rectZone, zoneProblem, type XY, type ZoneShape } from './zoneShape';
 
-export type RectZone = Extract<Zone, { kind: 'rect' }>;
-export type CircleZone = Extract<Zone, { kind: 'circle' }>;
-export type DrawnZone = RectZone | CircleZone;
-
-/** Bounding box of a drawn zone (city metres). */
-export function zoneBox(z: DrawnZone): { minX: number; minY: number; maxX: number; maxY: number } {
-  return z.kind === 'rect' ? { minX: z.minX, minY: z.minY, maxX: z.maxX, maxY: z.maxY } : { minX: z.cx - z.r, minY: z.cy - z.r, maxX: z.cx + z.r, maxY: z.cy + z.r };
-}
-
-/** Human description of a drawn zone, with its area. */
-export function zoneLabel(z: DrawnZone, fmt: (m: number) => string): string {
-  if (z.kind === 'circle') return `radius ${fmt(z.r)} · ${((Math.PI * z.r * z.r) / 1e6).toFixed(2)} km²`;
-  const w = z.maxX - z.minX;
-  const h = z.maxY - z.minY;
-  return `${fmt(w)} × ${fmt(h)} · ${((w * h) / 1e6).toFixed(2)} km²`;
-}
-
-/** Headline numbers of a plan, for scenario comparison. */
+/** Headline numbers of a plan, summed over the vehicle routes actually driven (with a fleet, more than the single closed route it splits). */
 export interface PlanSummary {
   method: CoveragePlanResult['method'];
   optimal: boolean;
@@ -39,15 +23,34 @@ export interface PlanSummary {
 }
 
 export function summarise(r: CoveragePlanResult): PlanSummary {
+  const distanceM = r.routes.reduce((a, v) => a + v.distanceM, 0);
+  const serviceM = r.routes.reduce((a, v) => a + v.serviceM, 0);
   return {
     method: r.method,
     optimal: r.optimal,
-    distanceM: r.routes.reduce((a, v) => a + v.distanceM, 0),
-    serviceM: r.totals.serviceM,
-    transitM: r.routes.reduce((a, v) => a + v.distanceM, 0) - r.totals.serviceM,
+    distanceM,
+    serviceM,
+    transitM: distanceM - serviceM,
     makespanS: r.routes.reduce((a, v) => Math.max(a, v.seconds), 0),
     vehicleSeconds: r.routes.reduce((a, v) => a + v.seconds, 0),
     vehiclesUsed: r.routes.filter((v) => v.arcs.length > 0).length,
+  };
+}
+
+/** The active scenario (the baseline when none is selected). */
+export function activeScenario(): Scenario {
+  const sc = useScenarios.getState();
+  return sc.scenarios.find((x) => x.id === sc.activeId) ?? BASELINE;
+}
+
+/** Inputs a plan actually uses: the panel's values with the scenario's plan overrides applied. */
+export function effectiveInputs(s: { depot: number | null; fleet: FleetSettings; costs: CostAssumptions }, scenario: Scenario): { depot: number | null; fleet: FleetSettings; costs: CostAssumptions } {
+  const o = scenario.plan;
+  if (!o) return { depot: s.depot, fleet: s.fleet, costs: s.costs };
+  return {
+    depot: o.depot ?? s.depot,
+    fleet: { ...s.fleet, ...(o.vehicles !== undefined ? { vehicles: o.vehicles } : {}), ...(o.shiftSeconds !== undefined ? { shiftSeconds: o.shiftSeconds } : {}) },
+    costs: { ...s.costs, ...o.costs },
   };
 }
 
@@ -61,17 +64,26 @@ export const DEFAULT_FLEET: FleetSettings = {
   serviceSpeedKmh: 8,
   deadheadSpeedKmh: 20,
   dumpSeconds: 0,
+  priorityDeadlineSeconds: null,
 };
 
 interface CoverageState {
-  cornerA: [number, number] | null;
-  zoneShape: 'rect' | 'circle';
-  zone: DrawnZone | null;
+  /** Shape the next zone is drawn as. */
+  zoneShape: ZoneShape;
+  /** Points placed so far for the zone being drawn: first corner, centre, or outline vertices. */
+  draft: XY[];
+  /** Why the last point or the finished shape was refused while drawing. */
+  zoneHint: string | null;
+  zone: Zone | null;
   depot: number | null;
+  /** Further depots (city node and vehicles), planned together with the main depot. */
+  extraDepots: { node: number; vehicles: number }[];
   dump: number | null;
   /** OSM highway classes to service; null = every class present. */
   roadClasses: string[] | null;
   direction: 'directed' | 'undirected';
+  /** Reorder each route's turns (fewer U-turns and right turns; same streets and distance). */
+  turnAware: boolean;
   fleet: FleetSettings;
   /** Operating-cost assumptions (user inputs; never measured values). */
   costs: CostAssumptions;
@@ -80,16 +92,26 @@ interface CoverageState {
   result: CoveragePlanResult | null;
   /** Inputs the shown result was computed from (to flag stale results). */
   resultKey: string | null;
-  /** Same inputs planned on the baseline and on the active scenario. */
+  /** The panel's inputs planned on the baseline, and the active scenario (network and plan overrides) planned with the same zone. */
   comparison: { baseline: PlanSummary | { error: string }; scenario: PlanSummary | { error: string }; key: string } | null;
   comparing: boolean;
   compare: () => Promise<void>;
-  setCorner: (which: 'a' | 'b', x: number, y: number) => void;
-  setZoneShape: (s: 'rect' | 'circle') => void;
+  setZoneShape: (shape: ZoneShape) => void;
+  /** Places the next point of the zone being drawn; true when that click completed the zone. */
+  addZonePoint: (x: number, y: number) => boolean;
+  /** Closes the polygon being drawn; true when it was accepted. */
+  finishZone: () => boolean;
+  undoZonePoint: () => void;
+  /** Drops an unfinished drawing; the last completed zone stays until a new one is finished. */
+  cancelZone: () => void;
   setDepot: (n: number | null) => void;
+  addExtraDepot: (node: number) => void;
+  setExtraDepotVehicles: (i: number, vehicles: number) => void;
+  removeExtraDepot: (i: number) => void;
   setDump: (n: number | null) => void;
   setRoadClasses: (c: string[] | null) => void;
   setDirection: (d: 'directed' | 'undirected') => void;
+  setTurnAware: (on: boolean) => void;
   setFleet: (f: Partial<FleetSettings>) => void;
   setCosts: (c: Partial<CostAssumptions>) => void;
   clear: () => void;
@@ -97,27 +119,28 @@ interface CoverageState {
 }
 
 /** Stable description of every input of a coverage plan, including the active scenario. */
-export function coverageKey(s: Pick<CoverageState, 'zone' | 'depot' | 'dump' | 'roadClasses' | 'direction' | 'fleet'>): string {
-  const sc = useScenarios.getState();
-  const active = sc.scenarios.find((x) => x.id === sc.activeId);
-  return JSON.stringify([s.zone, s.depot, s.dump, s.roadClasses, s.direction, s.fleet, active ? specOf(active).key : 'baseline', active?.ops ?? null]);
-}
-
-/** Depot and fleet in effect under a scenario: its operational overrides on top of the plan's own inputs. */
-export function effectiveInputs(s: Pick<CoverageState, 'depot' | 'fleet'>, scenario: Scenario | undefined): { depot: number | null; fleet: FleetSettings } {
-  return { depot: scenario?.ops?.depot ?? s.depot, fleet: scenario?.ops?.vehicles ? { ...s.fleet, vehicles: scenario.ops.vehicles } : s.fleet };
+export function coverageKey(s: Pick<CoverageState, 'zone' | 'depot' | 'extraDepots' | 'dump' | 'roadClasses' | 'direction' | 'turnAware' | 'fleet'>): string {
+  const active = activeScenario();
+  const plan = active.plan ? { ...active.plan, costs: undefined } : null; // cost assumptions do not change the plan itself
+  return JSON.stringify([s.zone, s.depot, s.extraDepots, s.dump, s.roadClasses, s.direction, s.turnAware, s.fleet, specOf(active).key, plan]);
 }
 
 let runToken = 0;
 
+/** Two clicks this close (metres) finish a polygon: a double click on the last point. */
+const FINISH_SNAP_M = 0.5;
+
 export const useCoverage = create<CoverageState>((set, get) => ({
-  cornerA: null,
   zoneShape: 'rect',
+  draft: [],
+  zoneHint: null,
   zone: null,
   depot: null,
+  extraDepots: [],
   dump: null,
   roadClasses: null,
   direction: 'directed',
+  turnAware: true,
   fleet: DEFAULT_FLEET,
   costs: DEFAULT_COSTS,
   status: 'idle',
@@ -126,36 +149,74 @@ export const useCoverage = create<CoverageState>((set, get) => ({
   resultKey: null,
   comparison: null,
   comparing: false,
-  setCorner: (which, x, y) => {
-    if (which === 'a') set({ cornerA: [x, y], zone: null });
-    else {
-      const a = get().cornerA;
-      if (!a) return;
-      if (get().zoneShape === 'circle') set({ zone: { kind: 'circle', cx: a[0], cy: a[1], r: Math.max(1, Math.hypot(x - a[0], y - a[1])) } });
-      else set({ zone: { kind: 'rect', minX: Math.min(a[0], x), minY: Math.min(a[1], y), maxX: Math.max(a[0], x), maxY: Math.max(a[1], y) } });
+  setZoneShape: (zoneShape) => set({ zoneShape, draft: [], zoneHint: null }),
+  addZonePoint: (x, y) => {
+    const { zoneShape, draft } = get();
+    const p: XY = [x, y];
+    if (zoneShape === 'polygon') {
+      const last = draft[draft.length - 1];
+      if (last && Math.hypot(last[0] - x, last[1] - y) < FINISH_SNAP_M) return get().finishZone();
+      if (!canExtend(draft, p)) {
+        set({ zoneHint: 'That point would make the outline cross itself. Click somewhere else.' });
+        return false;
+      }
+      set({ draft: [...draft, p], zoneHint: null });
+      return false;
     }
+    if (draft.length === 0) {
+      set({ draft: [p], zoneHint: null });
+      return false;
+    }
+    const z = zoneShape === 'rect' ? rectZone(draft[0]!, p) : circleZone(draft[0]!, p);
+    const problem = zoneProblem(z);
+    if (problem) {
+      set({ zoneHint: problem });
+      return false;
+    }
+    set({ zone: z, draft: [], zoneHint: null });
+    return true;
   },
-  setZoneShape: (zoneShape) => set({ zoneShape, cornerA: null, zone: null }),
+  finishZone: () => {
+    const { zoneShape, draft } = get();
+    if (zoneShape !== 'polygon') return false;
+    const z = polygonZone(draft);
+    const problem = zoneProblem(z);
+    if (problem) {
+      set({ zoneHint: problem });
+      return false;
+    }
+    set({ zone: z, draft: [], zoneHint: null });
+    return true;
+  },
+  undoZonePoint: () => set({ draft: get().draft.slice(0, -1), zoneHint: null }),
+  cancelZone: () => set({ draft: [], zoneHint: null }),
   setDepot: (depot) => set({ depot }),
+  addExtraDepot: (node) => {
+    const s = get();
+    if (node === s.depot || s.extraDepots.some((d) => d.node === node)) return;
+    set({ extraDepots: [...s.extraDepots, { node, vehicles: 1 }] });
+  },
+  setExtraDepotVehicles: (i, vehicles) => set({ extraDepots: get().extraDepots.map((d, k) => (k === i ? { ...d, vehicles: Math.max(1, Math.min(20, Math.round(vehicles))) } : d)) }),
+  removeExtraDepot: (i) => set({ extraDepots: get().extraDepots.filter((_, k) => k !== i) }),
   setDump: (dump) => set({ dump }),
   setRoadClasses: (roadClasses) => set({ roadClasses }),
   setDirection: (direction) => set({ direction }),
+  setTurnAware: (turnAware) => set({ turnAware }),
   setFleet: (f) => set({ fleet: { ...get().fleet, ...f } }),
   setCosts: (c) => set({ costs: { ...get().costs, ...c } }),
-  clear: () => set({ cornerA: null, zone: null, depot: null, dump: null, result: null, resultKey: null, status: 'idle', error: null }),
+  clear: () => set({ draft: [], zoneHint: null, zone: null, depot: null, extraDepots: [], dump: null, result: null, resultKey: null, status: 'idle', error: null }),
   compare: async () => {
     const s = get();
-    if (!s.zone || s.depot === null) return;
+    const active = activeScenario();
+    const eff = effectiveInputs(s, active);
+    if (!s.zone || s.depot === null || eff.depot === null) return;
     set({ comparing: true });
     const st = useCity.getState();
     const entry = st.index.find((c) => c.id === st.cityId);
-    const sc = useScenarios.getState();
-    const active = sc.scenarios.find((x) => x.id === sc.activeId);
     const key = coverageKey(s);
-    const ask = async (scenario: ReturnType<typeof specOf>, inputs: { depot: number | null; fleet: FleetSettings }): Promise<PlanSummary | { error: string }> => {
+    const ask = async (scenario: ReturnType<typeof specOf>, depotNode: number, fleet: FleetSettings): Promise<PlanSummary | { error: string }> => {
       try {
-        if (inputs.depot === null) throw new Error('No depot.');
-        const res = await coverage.send<Extract<CoverageResponse, { op: 'plan' }>>({ op: 'plan', zone: s.zone!, roadClasses: s.roadClasses, direction: s.direction, scenario, depotNode: inputs.depot, dumpNode: s.dump, fleet: inputs.fleet });
+        const res = await coverage.send<Extract<CoverageResponse, { op: 'plan' }>>({ op: 'plan', zone: s.zone!, roadClasses: s.roadClasses, direction: s.direction, scenario, depotNode, dumpNode: s.dump, fleet, extraDepots: s.extraDepots, turnAware: s.turnAware });
         return summarise(res.result);
       } catch (e) {
         return { error: e instanceof Error ? e.message : String(e) };
@@ -163,9 +224,9 @@ export const useCoverage = create<CoverageState>((set, get) => ({
     };
     try {
       if (!entry) throw new Error('City not loaded.');
-      await coverage.init(cityUrl(entry.file));
-      const baseline = await ask({ key: 'baseline', closed: [], oneway: [] }, { depot: s.depot, fleet: s.fleet });
-      const scenario = await ask(active ? specOf(active) : { key: 'baseline', closed: [], oneway: [] }, effectiveInputs(s, active));
+      await coverage.init(absoluteCityUrl(entry.file));
+      const baseline = await ask(specOf(BASELINE), s.depot, s.fleet);
+      const scenario = await ask(specOf(active), eff.depot, eff.fleet);
       set({ comparison: { baseline, scenario, key }, comparing: false });
     } catch (e) {
       set({ comparison: { baseline: { error: String(e) }, scenario: { error: String(e) }, key }, comparing: false });
@@ -173,27 +234,28 @@ export const useCoverage = create<CoverageState>((set, get) => ({
   },
   run: async () => {
     const s = get();
-    if (!s.zone || s.depot === null) return;
+    const active = activeScenario();
+    const eff = effectiveInputs(s, active);
+    if (!s.zone || eff.depot === null) return;
     const token = ++runToken;
     set({ status: 'running', error: null });
     try {
       const st = useCity.getState();
       const entry = st.index.find((c) => c.id === st.cityId);
       if (!entry) throw new Error('City not loaded.');
-      await coverage.init(cityUrl(entry.file));
-      const sc = useScenarios.getState();
-      const active = sc.scenarios.find((x) => x.id === sc.activeId);
+      await coverage.init(absoluteCityUrl(entry.file));
       const key = coverageKey(s);
-      const eff = effectiveInputs(s, active);
       const res = await coverage.send<Extract<CoverageResponse, { op: 'plan' }>>({
         op: 'plan',
         zone: s.zone,
         roadClasses: s.roadClasses,
         direction: s.direction,
-        scenario: active ? specOf(active) : { key: 'baseline', closed: [], oneway: [] },
-        depotNode: eff.depot!,
+        scenario: specOf(active),
+        depotNode: eff.depot,
         dumpNode: s.dump,
         fleet: eff.fleet,
+        extraDepots: s.extraDepots,
+        turnAware: s.turnAware,
       });
       if (token !== runToken) return;
       set({ status: 'done', result: res.result, resultKey: key });

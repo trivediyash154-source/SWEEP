@@ -104,57 +104,78 @@ export function buildArcGraph(graph: Graph, directed: boolean): ArcGraph {
   };
 }
 
-/** Binary heap of (key, value) with deterministic tie-breaking on value. */
+/**
+ * Binary heap of (key, value) with deterministic tie-breaking on value. Typed
+ * arrays; `popMin` removes the top without allocating (read `topKey`/`topVal`).
+ */
 export class MinHeap {
-  private k: number[] = [];
-  private v: number[] = [];
+  private k = new Float64Array(64);
+  private v = new Int32Array(64);
+  private n = 0;
+  /** Key and value removed by the last `popMin`. */
+  topKey = 0;
+  topVal = 0;
   get size(): number {
-    return this.k.length;
+    return this.n;
   }
   clear(): void {
-    this.k.length = 0;
-    this.v.length = 0;
+    this.n = 0;
   }
   private lt(i: number, j: number): boolean {
-    return this.k[i]! < this.k[j]! || (this.k[i] === this.k[j] && this.v[i]! < this.v[j]!);
+    const ki = this.k[i]!;
+    const kj = this.k[j]!;
+    return ki < kj || (ki === kj && this.v[i]! < this.v[j]!);
+  }
+  private sw(i: number, j: number): void {
+    const tk = this.k[i]!;
+    this.k[i] = this.k[j]!;
+    this.k[j] = tk;
+    const tv = this.v[i]!;
+    this.v[i] = this.v[j]!;
+    this.v[j] = tv;
   }
   push(key: number, val: number): void {
-    const k = this.k;
-    const v = this.v;
-    k.push(key);
-    v.push(val);
-    let i = k.length - 1;
+    if (this.n === this.k.length) {
+      const k = new Float64Array(this.n * 2);
+      k.set(this.k);
+      this.k = k;
+      const v = new Int32Array(this.n * 2);
+      v.set(this.v);
+      this.v = v;
+    }
+    let i = this.n++;
+    this.k[i] = key;
+    this.v[i] = val;
     while (i > 0) {
       const p = (i - 1) >> 1;
       if (!this.lt(i, p)) break;
-      [k[i], k[p]] = [k[p]!, k[i]!];
-      [v[i], v[p]] = [v[p]!, v[i]!];
+      this.sw(i, p);
       i = p;
     }
   }
-  pop(): [number, number] {
-    const k = this.k;
-    const v = this.v;
-    const top: [number, number] = [k[0]!, v[0]!];
-    const lk = k.pop()!;
-    const lv = v.pop()!;
-    if (k.length > 0) {
-      k[0] = lk;
-      v[0] = lv;
+  popMin(): void {
+    this.topKey = this.k[0]!;
+    this.topVal = this.v[0]!;
+    const last = --this.n;
+    if (last > 0) {
+      this.k[0] = this.k[last]!;
+      this.v[0] = this.v[last]!;
       let i = 0;
       for (;;) {
         const l = 2 * i + 1;
         const r = l + 1;
         let s = i;
-        if (l < k.length && this.lt(l, s)) s = l;
-        if (r < k.length && this.lt(r, s)) s = r;
+        if (l < last && this.lt(l, s)) s = l;
+        if (r < last && this.lt(r, s)) s = r;
         if (s === i) break;
-        [k[i], k[s]] = [k[s]!, k[i]!];
-        [v[i], v[s]] = [v[s]!, v[i]!];
+        this.sw(i, s);
         i = s;
       }
     }
-    return top;
+  }
+  pop(): [number, number] {
+    this.popMin();
+    return [this.topKey, this.topVal];
   }
 }
 
@@ -183,7 +204,9 @@ export function arcDijkstra(ag: ArcGraph, sources: readonly number[], opts: { re
   const list = opts.reverse ? ag.inArcs : ag.outArcs;
   const next = opts.reverse ? ag.arcTail : ag.arcHead;
   while (heap.size > 0) {
-    const [d, u] = heap.pop();
+    heap.popMin();
+    const d = heap.topKey;
+    const u = heap.topVal;
     if (done[u]) continue;
     done[u] = 1;
     if (opts.stop && opts.stop(u, d)) break;

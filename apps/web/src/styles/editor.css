@@ -272,7 +272,7 @@
   border: 1px solid currentColor;
 }
 .kind-tag--service {
-  color: var(--route);
+  color: var(--route-ink);
 }
 .kind-tag--repeat {
   color: var(--repeat);

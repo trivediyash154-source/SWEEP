@@ -1,41 +1,63 @@
 import { readFileSync } from 'node:fs';
-import { expect, test, type Page } from '@playwright/test';
-import { decodeCityBundle, planFleet, RoutingEngine, reachability, solveZoneCoverage, zoneCoverageGraph } from './engine';
+import { expect, test, type CDPSession, type Page } from '@playwright/test';
+import { planMultiDepotFleet, decodeCityBundle, planFleet, RoutingEngine, reachability, solveZoneCoverage, zoneCoverageGraph, orderCoverageForTurns, cityTurnOptions, TurnModel } from './engine';
 import { contrastRatio, decodePng, luminanceAt } from './png';
 
 // The bundled real dataset; the UI must show exactly what the engine computes on it.
 const city = decodeCityBundle(JSON.parse(readFileSync(new URL('../apps/web/public/cities/pune-bibwewadi.json', import.meta.url), 'utf8')));
 
 /**
- * Diagnostic for a page that stops responding while loading: what the renderer's main thread is doing.
- * It only explains a failure; it never turns one into a pass.
+ * Diagnostic for the rare page-load freeze (HANDOFF §4.1): pause the page's JavaScript through the DevTools
+ * protocol and attach where it stopped. If it never pauses, the main thread is inside native code (for example
+ * a synchronous call into the software GPU process). The session is opened and the debugger enabled before
+ * navigation: attaching to, or enabling the debugger on, an already-stuck page never answers, while a pause
+ * request interrupts running JavaScript. With no breakpoints the enabled debugger does not stop the page.
+ * Every call here is time-bounded; the original failure is kept.
  */
-async function mainThreadState(page: Page, crashed: boolean): Promise<string> {
-  if (crashed) return 'the renderer process crashed';
-  const cdp = await page.context().newCDPSession(page);
-  const within = <T,>(p: Promise<T>, ms: number) => Promise.race([p, new Promise<null>((r) => setTimeout(() => r(null), ms))]);
-  if ((await within(cdp.send('Debugger.enable'), 5000)) === null) return 'the renderer did not answer the debugger within 5 s (blocked outside JavaScript, for example in a synchronous WebGL call)';
-  const paused = new Promise<{ callFrames: { functionName: string; url: string; location: { lineNumber: number; columnNumber: number } }[] }>((r) => cdp.on('Debugger.paused', r));
-  void cdp.send('Debugger.pause').catch(() => undefined);
-  const ev = await within(paused, 5000);
-  if (!ev) return 'the debugger attached but JavaScript did not pause within 5 s (idle, or blocked in native code)';
-  return `paused in: ${ev.callFrames
-    .slice(0, 12)
-    .map((f) => `${f.functionName || '(anonymous)'} ${f.url.split('/').pop()}:${f.location.lineNumber + 1}:${f.location.columnNumber + 1}`)
-    .join(' <- ')}`;
+async function attachFreezeDiagnosis(cdp: CDPSession, crashed: boolean): Promise<void> {
+  const within = <T,>(p: Promise<T>, ms: number) => Promise.race([p, new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), ms))]);
+  let report: string;
+  if (crashed) {
+    await test.info().attach('freeze-diagnosis', { body: 'The renderer process crashed.', contentType: 'text/plain' });
+    return;
+  }
+  try {
+    const paused = new Promise<string>((resolve) =>
+      cdp.on('Debugger.paused', (e) => resolve(e.callFrames.slice(0, 15).map((f) => `${f.functionName || '(anonymous)'} ${f.url.split('/').pop() || '(eval)'}:${f.location.lineNumber + 1}:${(f.location.columnNumber ?? 0) + 1}`).join('\n'))),
+    );
+    void cdp.send('Debugger.pause').catch(() => undefined);
+    const stack = await within(paused, 10_000);
+    report = stack === 'timeout' ? 'Debugger.pause did not take effect in 10 s: the main thread is stuck outside JavaScript (native or GPU call).' : `JavaScript stack when paused:\n${stack}`;
+  } catch (e) {
+    report = `Could not attach the debugger: ${String(e)}`;
+  }
+  await test.info().attach('freeze-diagnosis', { body: report, contentType: 'text/plain' });
 }
 
-async function openCity(page: Page, theme: 'velvet' | 'porcelain' = 'velvet'): Promise<void> {
+async function openCity(page: Page, theme: 'velvet' | 'porcelain' = 'velvet', path = '/workspace'): Promise<void> {
   let crashed = false;
   page.on('crash', () => (crashed = true));
   await page.addInitScript((t) => localStorage.setItem('sweep.theme', t), theme);
-  await page.goto('/workspace');
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Debugger.enable');
+  await page.goto(path);
   try {
     await expect(page.getByTestId('city-name')).toContainText('Pune', { timeout: 60_000 });
   } catch (e) {
-    throw new Error(`${e instanceof Error ? e.message : String(e)}\nMain-thread diagnostic: ${await mainThreadState(page, crashed)}`);
+    await attachFreezeDiagnosis(cdp, crashed);
+    throw e;
   }
+  await cdp.detach();
   await page.waitForFunction(() => (window as unknown as { __sweepCity?: { state: () => { meshes: unknown } } }).__sweepCity?.state().meshes, null, { timeout: 60_000 });
+}
+
+// The workspace's display formats (apps/web/src/city/panels/RouteLab.tsx, CoveragePanel.tsx).
+const fmtDist = (m: number): string => (m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`);
+const inr = (x: number): string => `₹${Math.round(x).toLocaleString('en-IN')}`;
+
+/** Waits until no camera transition is running, so projected screen positions stay valid for clicks. */
+async function waitForCamera(page: Page): Promise<void> {
+  await page.waitForFunction(() => (window as unknown as { __sweepCity?: { cameraMoving: () => boolean } }).__sweepCity?.cameraMoving() === false, null, { timeout: 30_000, polling: 100 });
 }
 
 async function routeBetween(page: Page, from: string, to: string): Promise<void> {
@@ -68,6 +90,50 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     expect(errors).toEqual([]);
   });
 
+  test('first visit: a guide explains the three tools, follows the chosen tool, and stays hidden once closed', async ({ page }) => {
+    await openCity(page);
+    const guide = page.getByTestId('city-guide');
+    await expect(guide).toBeVisible();
+    for (const name of ['Route lab', 'Coverage & fleet', 'Scenarios']) await expect(guide).toContainText(name);
+    await expect(page.getByTestId('city-guide-steps')).toContainText('In From, type a street name');
+    // The guide's tool names switch the workspace mode, and its steps follow.
+    await page.getByTestId('guide-coverage').click();
+    await expect(page.getByTestId('panel-coverage')).toBeVisible();
+    await expect(page.getByTestId('city-guide-steps')).toContainText('Under Zone, choose Circle and press Draw');
+    await page.getByTestId('guide-scenarios').click();
+    await expect(page.getByTestId('panel-scenarios')).toBeVisible();
+    await expect(page.getByTestId('city-guide-steps')).toContainText('Press Close a road');
+    // Hidden once closed, remembered across a reload, and one click away.
+    await page.getByTestId('city-guide-hide').click();
+    await expect(guide).toHaveCount(0);
+    expect(await page.evaluate(() => localStorage.getItem('sweep.cityGuide'))).toBe('hidden');
+    await page.reload();
+    await expect(page.getByTestId('city-name')).toContainText('Pune', { timeout: 60_000 });
+    await expect(page.getByTestId('city-guide-show')).toBeVisible();
+    await expect(page.getByTestId('city-guide')).toHaveCount(0);
+    await page.getByTestId('city-guide-show').click();
+    await expect(page.getByTestId('city-guide')).toBeVisible();
+  });
+
+  test('empty panels say what to click next, technical terms are explained, and the first view is top-down', async ({ page }) => {
+    await openCity(page);
+    expect(await page.evaluate(() => (window as unknown as { __sweepCity: { state: () => { camera: { cmd: string } } } }).__sweepCity.state().camera.cmd)).toBe('top');
+    await expect(page.getByTestId('route-next')).toContainText('choose where to start');
+    await page.getByTestId('mode-coverage').click();
+    await expect(page.getByTestId('cov-next')).toContainText('draw the area to sweep');
+    await page.getByTestId('mode-scenarios').click();
+    await expect(page.getByTestId('scenario-next')).toContainText('press Close a road or Change direction');
+    await page.getByTestId('mode-route').click();
+    await routeBetween(page, 'Swami Vivek', 'Kamate');
+    await expect(page.getByTestId('route-next')).toHaveCount(0);
+    // "Arcs settled" is explained in place: the definition is hidden until asked for, then announced as expanded.
+    const q = page.getByTestId('term-settled');
+    await expect(page.getByTestId('term-def-settled')).toBeHidden();
+    await q.click();
+    await expect(q).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByTestId('term-def-settled')).toContainText('the same best route');
+  });
+
   test('every algorithm returns the engine optimum on the real network, and each route validates', async ({ page }) => {
     await openCity(page);
     await routeBetween(page, 'Swami Vivek', 'Kamate');
@@ -82,17 +148,72 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     const settled = async (a: string) => Number((await page.getByTestId(`settled-${a}`).innerText()).replace(/,/g, ''));
     expect(await settled('alt')).toBeLessThan(await settled('dijkstra'));
     expect(await settled('ch')).toBeLessThan(await settled('dijkstra'));
-    // The printable report carries the same rows.
+    // The printable report reads the same comparison: same time and distance, one row per algorithm with the same
+    // search work, and a route sheet whose legs add up to the route distance.
     await page.getByTestId('route-open-report').click();
-    await expect(page.getByTestId('rep-route')).toContainText('All 5 algorithms return the same optimal travel time');
-    for (const a of ['dijkstra', 'astar', 'bidirectional', 'alt', 'ch']) await expect(page.getByTestId(`rep-row-${a}`)).toContainText((await page.getByTestId(`settled-${a}`).innerText()).trim());
+    await expect(page.getByTestId('rrep-time')).toHaveText(await page.getByTestId('route-time').innerText());
+    await expect(page.getByTestId('rrep-distance')).toHaveText(await page.getByTestId('route-distance').innerText());
+    await expect(page.getByTestId('rrep-agreement')).toContainText('All 5 algorithms return the same optimal travel time');
+    await expect(page.getByTestId('rrep-tiles')).toContainText(`${city.provenance.tiles.ok} of ${city.provenance.tiles.total}`);
+    for (const a of ['dijkstra', 'astar', 'bidirectional', 'alt', 'ch']) await expect(page.getByTestId(`rrep-settled-${a}`)).toHaveText(await page.getByTestId(`settled-${a}`).innerText());
+    await expect(page.getByTestId('rrep-from')).toContainText(`OSM node ${city.nodeOsm[s.origin]}`);
+    const lastLeg = page.getByTestId('rrep-sheet').locator('tbody tr').last().locator('td').last();
+    await expect(lastLeg).toHaveText(await page.getByTestId('route-distance').innerText());
     await page.getByTestId('route-report-close').click();
+    await expect(page.getByTestId('route-report')).toHaveCount(0);
     // Shortest-distance objective is a different, equally exact query.
     await page.getByTestId('objective-distance').click();
     await expect(page.getByTestId('route-agreement')).toContainText('same optimal distance');
     const d = await routeState(page);
     const expD = engine.query('dijkstra', { origin: d.origin, destination: d.destination, objective: 'distance' }).result;
     expect(Math.abs(d.runs[0]!.distanceM - expD.distanceM)).toBeLessThan(1e-6);
+  });
+
+  test('a route-lab link opens the Route lab on the nearest intersections and runs the comparison for its profile', async ({ page }) => {
+    // Two real intersections with a truck route between them; the link names them by latitude,longitude, the
+    // origin about 20 m off its intersection, as a point picked on another map would be.
+    const engine = new RoutingEngine(city, 'truck');
+    const a = 10;
+    let b = Math.floor(city.nodeCount / 2);
+    while (!engine.query('dijkstra', { origin: a, destination: b, objective: 'time' }).result.found) b++;
+    const [lat, lng] = [Number((city.nodeLat[a]! + 0.00013).toFixed(6)), Number((city.nodeLon[a]! + 0.00013).toFixed(6))];
+    const from = `${lat},${lng}`;
+    const to = `${city.nodeLat[b]},${city.nodeLon[b]}`;
+    await openCity(page, 'velvet', `/workspace?from=${from}&to=${to}&profile=truck`);
+    await expect(page.getByTestId('panel-route')).toBeVisible();
+    await expect(page.getByTestId('route-results')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId('profile-truck')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('route-agreement')).toContainText('All 5 algorithms return the same optimal travel time');
+    const s = await routeState(page);
+    expect(s.destination).toBe(b);
+    // The origin is the intersection nearest the linked point: checked by great-circle distance over every node.
+    const metres = (n: number): number => {
+      const R = 6_371_008.8;
+      const rad = Math.PI / 180;
+      const dLat = (city.nodeLat[n]! - lat) * rad;
+      const dLng = (city.nodeLon[n]! - lng) * rad;
+      const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat * rad) * Math.cos(city.nodeLat[n]! * rad) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(h));
+    };
+    let nearest = Infinity;
+    for (let n = 0; n < city.nodeCount; n++) nearest = Math.min(nearest, metres(n));
+    expect(metres(s.origin)).toBeLessThan(nearest + 0.5);
+    expect(nearest).toBeLessThan(30);
+    const expected = engine.query('dijkstra', { origin: s.origin, destination: b, objective: 'time' }).result;
+    expect(expected.found).toBe(true);
+    for (const r of s.runs) expect(Math.abs(r.cost - expected.cost) / expected.cost).toBeLessThan(1e-9);
+    await expect(page.getByTestId('route-link-error')).toHaveCount(0);
+  });
+
+  test('a route-lab link to a place outside the Pune extract says so instead of snapping somewhere else', async ({ page }) => {
+    const inside = `${city.nodeLat[10]},${city.nodeLon[10]}`;
+    await openCity(page, 'velvet', `/workspace?from=19.0760,72.8777&to=${inside}`);
+    await expect(page.getByTestId('route-link-error')).toContainText('outside the bundled');
+    await expect(page.getByTestId('route-link-error')).toContainText('Directions page');
+    expect(await page.evaluate(() => (window as unknown as { __sweepCity: { route: () => { origin: number | null; destination: number | null } } }).__sweepCity.route().origin)).toBeNull();
+    await page.getByTestId('route-link-error').getByRole('button', { name: 'Dismiss' }).click();
+    await expect(page.getByTestId('route-link-error')).toHaveCount(0);
+    await expect(page.getByTestId('route-next')).toContainText('choose where to start');
   });
 
   test('reachability uses real travel times and nests 5 ⊆ 10 ⊆ 15 minutes', async ({ page }) => {
@@ -111,20 +232,8 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
   test('closing a road clicked on the map recalculates the route against the baseline', async ({ page }) => {
     await openCity(page);
     await routeBetween(page, 'Swami Vivek', 'Kamate');
-    // The camera glides to frame the route; click only once the view has settled.
-    await page.waitForFunction(
-      () =>
-        new Promise<boolean>((resolve) => {
-          const w = window as unknown as { __sweepCity: { project: (x: number, y: number, h: number) => [number, number] | null } };
-          const a = w.__sweepCity.project(0, 0, 0);
-          setTimeout(() => {
-            const b = w.__sweepCity.project(0, 0, 0);
-            resolve(!!a && !!b && Math.abs(a[0] - b[0]) < 1e-4 && Math.abs(a[1] - b[1]) < 1e-4);
-          }, 400);
-        }),
-      null,
-      { timeout: 30_000, polling: 500 },
-    );
+    // The camera glides to frame the route; click only once the transition has finished.
+    await waitForCamera(page);
     const before = await routeState(page);
     await page.getByTestId('mode-scenarios').click();
     await page.getByTestId('tool-close-road').click();
@@ -177,7 +286,7 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     test(`buildings stand out from the ground in the ${theme} theme (3D scene contrast)`, async ({ page }) => {
       await openCity(page, theme);
       await page.getByTestId('cam-focus').click();
-      await page.waitForTimeout(2500);
+      await waitForCamera(page);
       const samples = await page.evaluate(() => (window as unknown as { __sweepCity: { sample: (n: number) => { buildings: [number, number][]; ground: [number, number][] } } }).__sweepCity.sample(30));
       expect(samples.buildings.length).toBeGreaterThan(10);
       expect(samples.ground.length).toBeGreaterThan(3);
@@ -196,7 +305,7 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
   test('switching theme rebuilds the 3D scene, not only the page chrome', async ({ page }) => {
     await openCity(page, 'velvet');
     await page.getByTestId('cam-focus').click();
-    await page.waitForTimeout(2500);
+    await waitForCamera(page);
     const ground = await page.evaluate(() => (window as unknown as { __sweepCity: { sample: (n: number) => { ground: [number, number][] } } }).__sweepCity.sample(10).ground[0]!);
     const box = (await page.getByTestId('city-stage').boundingBox())!;
     const lum = async () => luminanceAt(decodePng(await page.screenshot()), box.x + ((ground[0] + 1) / 2) * box.width, box.y + ((1 - ground[1]) / 2) * box.height);
@@ -213,7 +322,7 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('pick-origin')).toHaveAttribute('aria-pressed', 'false');
     await page.getByTestId('cam-focus').click();
-    await page.waitForTimeout(2500);
+    await waitForCamera(page);
     const p = await page.evaluate(() => (window as unknown as { __sweepCity: { sample: (n: number) => { buildings: [number, number][] } } }).__sweepCity.sample(5).buildings[0]!);
     const box = (await page.getByTestId('city-stage').boundingBox())!;
     await page.mouse.click(box.x + ((p[0] + 1) / 2) * box.width, box.y + ((1 - p[1]) / 2) * box.height);
@@ -222,11 +331,270 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     await expect(page.getByTestId('feature-building').getByRole('link')).toHaveAttribute('href', /openstreetmap\.org\/way\/\d+/);
   });
 
+  test('circle and free-outline zones plan exactly what the engine plans for the same shape', async ({ page }) => {
+    type Z = { kind: 'circle'; cx: number; cy: number; r: number } | { kind: 'polygon'; points: [number, number][] };
+    type W = {
+      __sweepCity: {
+        project: (x: number, y: number, h: number) => [number, number] | null;
+        state: () => { city: { focus: { xy: [number, number] } | null; nodeX: Float64Array; nodeY: Float64Array; nodeCount: number } };
+        coverage: () => { zone: Z | null; draft: [number, number][]; depot: number | null; result: { method: string; direction: string; totals: { distanceM: number } } | null };
+      };
+    };
+    await openCity(page);
+    await page.getByTestId('mode-coverage').click();
+    await page.getByTestId('cam-top').click();
+    await waitForCamera(page);
+    const box = (await page.getByTestId('city-stage').boundingBox())!;
+    const [cx, cy] = await page.evaluate(() => (window as unknown as W).__sweepCity.state().city.focus?.xy ?? [0, 0]);
+    const click = async (x: number, y: number) => {
+      const p = (await page.evaluate(([a, b]) => (window as unknown as W).__sweepCity.project(a!, b!, 0), [x, y]))!;
+      await page.mouse.click(box.x + ((p[0] + 1) / 2) * box.width, box.y + ((1 - p[1]) / 2) * box.height);
+    };
+    const cov = () => page.evaluate(() => (window as unknown as W).__sweepCity.coverage());
+    const engineTotal = (zone: Z, direction: 'directed' | 'undirected', depot: number) => {
+      const depotId = `n${city.nodeOsm[depot]}`;
+      const zg = zoneCoverageGraph(city, { zone, direction, depotId });
+      const exp = solveZoneCoverage(zg.graph, { direction, depotId });
+      if (!exp.ok) throw new Error(exp.message);
+      return exp;
+    };
+
+    // Circle: centre on the VIT focus point, rim about 300 m east.
+    await page.getByTestId('cov-shape-circle').click();
+    await page.getByTestId('cov-draw-zone').click();
+    await expect(page.getByTestId('cov-zone')).toHaveText('Click the centre');
+    await click(cx, cy);
+    await expect(page.getByTestId('cov-zone')).toHaveText('Click a point on the edge');
+    await click(cx + 300, cy);
+    await expect(page.getByTestId('cov-zone')).toContainText('Radius');
+    await expect(page.getByTestId('cov-draw-zone')).toHaveAttribute('aria-pressed', 'false');
+    const circle = (await cov()).zone!;
+    expect(circle.kind).toBe('circle');
+    if (circle.kind === 'circle') expect(Math.abs(circle.r - 300)).toBeLessThan(20); // one screen pixel is a few metres from above
+
+    // Depot: the intersection nearest the centre.
+    const node = await page.evaluate(([x, y]) => {
+      const c = (window as unknown as W).__sweepCity.state().city;
+      let best = 0;
+      let bd = Infinity;
+      for (let i = 0; i < c.nodeCount; i++) {
+        const d = (c.nodeX[i]! - x!) ** 2 + (c.nodeY[i]! - y!) ** 2;
+        if (d < bd) [best, bd] = [i, d];
+      }
+      return { x: c.nodeX[best]!, y: c.nodeY[best]! };
+    }, [cx, cy]);
+    await page.getByTestId('pick-depot').click();
+    await click(node.x, node.y);
+    await expect(page.getByTestId('cov-depot')).not.toHaveText(/Not set|Click/);
+    await page.getByTestId('cov-run').click();
+    await expect(page.getByTestId('cov-results')).toBeVisible({ timeout: 90_000 });
+    let st = await cov();
+    const expCircle = engineTotal(st.zone!, 'directed', st.depot!);
+    expect(st.result!.method).toBe(expCircle.method);
+    expect(Math.abs(st.result!.totals.distanceM - expCircle.route.totalDistance)).toBeLessThan(1e-6);
+
+    // Free outline: points that would cross the outline are refused; undo removes the last point.
+    await page.getByTestId('cov-shape-polygon').click();
+    await page.getByTestId('cov-draw-zone').click();
+    await click(cx - 300, cy - 200);
+    await click(cx + 250, cy - 250);
+    await click(cx + 350, cy + 150);
+    await expect(page.getByTestId('cov-zone-finish')).toBeEnabled();
+    await click(cx - 100, cy - 500); // this edge would cut through the first edge
+    await expect(page.getByTestId('cov-zone-hint')).toContainText('cross');
+    expect((await cov()).draft).toHaveLength(3);
+    await click(cx + 600, cy + 600);
+    await page.getByTestId('cov-zone-undo').click();
+    expect((await cov()).draft).toHaveLength(3);
+    await click(cx, cy + 300);
+    await click(cx - 280, cy + 180);
+    await expect(page.getByTestId('cov-zone')).toContainText('5 points');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('cov-zone')).toContainText('5-point outline');
+    await expect(page.getByTestId('cov-stale')).toBeVisible();
+    await page.getByTestId('cov-dir-undirected').click();
+    await page.getByTestId('cov-run').click();
+    await expect(page.getByTestId('cov-stale')).toHaveCount(0, { timeout: 90_000 });
+    st = await cov();
+    expect(st.zone!.kind).toBe('polygon');
+    const expPoly = engineTotal(st.zone!, 'undirected', st.depot!);
+    expect(st.result!.direction).toBe('undirected');
+    expect(st.result!.method).toBe(expPoly.method);
+    expect(Math.abs(st.result!.totals.distanceM - expPoly.route.totalDistance)).toBeLessThan(1e-6);
+    await page.getByTestId('cov-open-report').click();
+    await expect(page.getByTestId('rep-zone')).toHaveText(await page.getByTestId('cov-zone').innerText());
+  });
+
+  test('a multi-vehicle fleet with a shift limit shows the engine plan, its bounds and every over-shift vehicle', async ({ page }) => {
+    type R = { seconds: number; distanceM: number; arcs: Int32Array; feasible: { shift: boolean } };
+    type W = {
+      __sweepCity: {
+        project: (x: number, y: number, h: number) => [number, number] | null;
+        state: () => { city: { focus: { xy: [number, number] } | null; nodeX: Float64Array; nodeY: Float64Array; nodeCount: number } };
+        coverage: () => {
+          zone: { kind: 'rect'; minX: number; minY: number; maxX: number; maxY: number } | null;
+          depot: number | null;
+          result: { routes: R[]; fleet: { totals: { makespanSeconds: number; distance: number; vehiclesUsed: number }; lowerBounds: { makespanSeconds: { value: number }; vehiclesByShift: number | null; totalDistance: { value: number } }; feasibility: { ok: boolean } } | null } | null;
+        };
+      };
+    };
+    await openCity(page);
+    await page.getByTestId('mode-coverage').click();
+    await page.getByTestId('cam-top').click();
+    await waitForCamera(page);
+    const box = (await page.getByTestId('city-stage').boundingBox())!;
+    const [cx, cy] = await page.evaluate(() => (window as unknown as W).__sweepCity.state().city.focus?.xy ?? [0, 0]);
+    const click = async (x: number, y: number) => {
+      const p = (await page.evaluate(([a, b]) => (window as unknown as W).__sweepCity.project(a!, b!, 0), [x, y]))!;
+      await page.mouse.click(box.x + ((p[0] + 1) / 2) * box.width, box.y + ((1 - p[1]) / 2) * box.height);
+    };
+    await page.getByTestId('cov-draw-zone').click();
+    await click(cx - 250, cy - 200);
+    await click(cx + 250, cy + 200);
+    const node = await page.evaluate(([x, y]) => {
+      const c = (window as unknown as W).__sweepCity.state().city;
+      let best = 0;
+      let bd = Infinity;
+      for (let i = 0; i < c.nodeCount; i++) {
+        const d = (c.nodeX[i]! - x!) ** 2 + (c.nodeY[i]! - y!) ** 2;
+        if (d < bd) [best, bd] = [i, d];
+      }
+      return { x: c.nodeX[best]!, y: c.nodeY[best]! };
+    }, [cx, cy]);
+    await page.getByTestId('pick-depot').click();
+    await click(node.x, node.y);
+    await expect(page.getByTestId('cov-depot')).not.toHaveText(/Not set|Click/);
+    await page.getByTestId('cov-vehicles').fill('3');
+
+    const plan = async (shiftHours: number) => {
+      await page.getByTestId('cov-shift').fill(String(shiftHours));
+      await page.getByTestId('cov-run').click();
+      await expect(page.getByTestId('cov-fleet-guarantee')).toBeVisible({ timeout: 90_000 });
+      await expect(page.getByTestId('cov-stale')).toHaveCount(0, { timeout: 90_000 });
+      const st = await page.evaluate(() => (window as unknown as W).__sweepCity.coverage());
+      const depotId = `n${city.nodeOsm[st.depot!]}`;
+      const zg = zoneCoverageGraph(city, { zone: st.zone!, direction: 'directed', depotId });
+      const cov = solveZoneCoverage(zg.graph, { direction: 'directed', depotId });
+      if (!cov.ok) throw new Error(cov.message);
+      const fp = planFleet(cov.graph, { vehicles: 3, depotId, dumpId: null, direction: 'directed', objective: 'min-makespan', capacity: null, demandPerKm: 0, shiftSeconds: shiftHours * 3600, serviceSpeedKmh: 8, deadheadSpeedKmh: 20, dumpSeconds: 0, coverage: cov });
+      if (!fp.ok) throw new Error(fp.message);
+      const r = st.result!;
+      // The UI shows the engine's own plan: same routes, totals and valid lower bounds.
+      expect(r.routes).toHaveLength(fp.routes.length);
+      fp.routes.forEach((v, i) => {
+        expect(Math.abs(r.routes[i]!.distanceM - v.distance)).toBeLessThan(1e-6);
+        expect(Math.abs(r.routes[i]!.seconds - v.seconds)).toBeLessThan(1e-6);
+        expect(r.routes[i]!.feasible.shift).toBe(v.feasible.shift);
+      });
+      expect(Math.abs(r.fleet!.totals.makespanSeconds - fp.totals.makespanSeconds)).toBeLessThan(1e-6);
+      expect(r.fleet!.totals.vehiclesUsed).toBe(fp.totals.vehiclesUsed);
+      expect(Math.abs(r.fleet!.lowerBounds.makespanSeconds.value - fp.lowerBounds.makespanSeconds.value)).toBeLessThan(1e-6);
+      // The makespan bound holds for plans with at most 3 vehicles. When the limits force more routes, the plan is a
+      // diagnosis: it gets no makespan gap, and the UI must say how many routes it needs instead of showing a gap.
+      if (fp.routes.length <= 3) {
+        expect(r.fleet!.lowerBounds.makespanSeconds.value).toBeLessThanOrEqual(r.fleet!.totals.makespanSeconds + 1e-6);
+        await expect(page.getByTestId('cov-overfleet')).toHaveCount(0);
+      } else {
+        expect(fp.gaps.makespan).toBeNull();
+        await expect(page.getByTestId('cov-overfleet')).toContainText(`uses ${fp.routes.length} routes`);
+        await expect(page.getByTestId('cov-vehicles-used')).toContainText(`${fp.routes.length} routes needed, 3 available`);
+        await expect(page.getByTestId('cov-makespan')).not.toContainText('gap');
+      }
+      expect(r.fleet!.lowerBounds.totalDistance.value).toBeLessThanOrEqual(fp.totals.distance + 1e-6);
+      expect(r.fleet!.lowerBounds.vehiclesByShift).toBe(fp.lowerBounds.vehiclesByShift);
+      // The headline is what the vehicles drive, which includes their trips from and back to the depot.
+      expect(fp.totals.distance).toBeGreaterThanOrEqual(cov.route.totalDistance - 1e-6);
+      await expect(page.getByTestId('cov-total')).toHaveText(fmtDist(fp.totals.distance));
+      await expect(page.getByTestId('cov-single')).toContainText(fmtDist(cov.route.totalDistance));
+      await expect(page.getByTestId('cov-feasible')).toHaveText(fp.feasibility.ok ? 'yes' : /^no: /);
+      // Timeline: one row per vehicle; at the end of the shift every used vehicle is back, and exactly the vehicles over the limit are flagged.
+      await expect(page.locator('[data-testid^="tl-vehicle-"]')).toHaveCount(fp.routes.length);
+      const max = Number(await page.getByTestId('tl-scrub').getAttribute('max'));
+      expect(Math.abs(max - Math.ceil(fp.totals.makespanSeconds))).toBeLessThanOrEqual(1);
+      await page.getByTestId('tl-scrub').fill(String(max));
+      for (const [i, v] of fp.routes.entries()) {
+        if (v.steps.length) await expect(page.getByTestId(`tl-progress-${i}`)).toHaveText('100 %');
+        await expect(page.getByTestId(`tl-vehicle-${i}`).getByText(/over shift by/)).toHaveCount(v.seconds > shiftHours * 3600 ? 1 : 0);
+      }
+      return fp;
+    };
+
+    // A full-day limit: nothing is flagged.
+    const loose = await plan(24);
+    expect(loose.feasibility.ok).toBe(true);
+    await expect(page.getByText(/over shift by/)).toHaveCount(0);
+    // A quarter-hour limit: the engine's makespan bound already exceeds it, so no 3-route plan can meet the shift; the engine
+    // diagnoses with more routes, and the UI must say the fleet is too small rather than show a gap.
+    const tight = await plan(0.25);
+    expect(tight.lowerBounds.makespanSeconds.value).toBeGreaterThan(0.25 * 3600);
+    expect(tight.feasibility.ok).toBe(false);
+    expect(tight.routes.length).toBeGreaterThan(3);
+    await expect(page.getByTestId('cov-makespan')).toContainText('lower bound');
+
+    // Scenario with a different operation: 2 vehicles from another depot and a higher fuel price, on the same streets.
+    const base = await plan(24);
+    await page.getByTestId('cost-fuel-service').fill('40');
+    await page.getByTestId('cost-fuel-transit').fill('25');
+    await page.getByTestId('cost-fuel-price').fill('100');
+    await page.getByTestId('cost-crew').fill('2');
+    await page.getByTestId('cost-wage').fill('150');
+    const other = await page.evaluate(([x, y]) => {
+      const c = (window as unknown as W).__sweepCity.state().city;
+      let best = 0;
+      let bd = Infinity;
+      for (let i = 0; i < c.nodeCount; i++) {
+        const d = (c.nodeX[i]! - x!) ** 2 + (c.nodeY[i]! - y!) ** 2;
+        if (d < bd) [best, bd] = [i, d];
+      }
+      return { x: c.nodeX[best]!, y: c.nodeY[best]! };
+    }, [cx + 180, cy + 140]);
+    await page.getByTestId('mode-scenarios').click();
+    await page.getByTestId('scenario-vehicles').fill('2');
+    await expect(page.getByTestId('scenario-custom')).toContainText('Operations change');
+    await page.getByTestId('scenario-fuel-price').fill('120');
+    await page.getByTestId('pick-scenario-depot').click();
+    await click(other.x, other.y);
+    await expect(page.getByTestId('scenario-depot')).not.toHaveText(/as panel|Click/);
+    await expect(page.getByTestId('scenario-custom')).toContainText('3 operation changes');
+    await page.getByTestId('mode-coverage').click();
+    await expect(page.getByTestId('cov-overrides')).toContainText('2 vehicles');
+    await expect(page.getByTestId('cov-stale')).toBeVisible();
+    await page.getByTestId('cov-compare').click();
+    await expect(page.getByTestId('cov-comparison')).toBeVisible({ timeout: 90_000 });
+    type S = { distanceM: number; serviceM: number; transitM: number; vehicleSeconds: number; vehiclesUsed: number };
+    const { cmp, sd, bd } = await page.evaluate(() => {
+      const w = window as unknown as { __sweepCity: { coverage: () => { depot: number; comparison: { baseline: S; scenario: S } }; scenarios: () => { active: () => { plan?: { depot?: number } } } } };
+      return { cmp: w.__sweepCity.coverage().comparison, sd: w.__sweepCity.scenarios().active().plan!.depot!, bd: w.__sweepCity.coverage().depot };
+    });
+    expect(sd).not.toBe(bd);
+    const zone = (await page.evaluate(() => (window as unknown as W).__sweepCity.coverage().zone))!;
+    const fleetFrom = (depot: number, vehicles: number) => {
+      const depotId = `n${city.nodeOsm[depot]}`;
+      const zg = zoneCoverageGraph(city, { zone, direction: 'directed', depotId });
+      const cv = solveZoneCoverage(zg.graph, { direction: 'directed', depotId });
+      if (!cv.ok) throw new Error(cv.message);
+      const fp = planFleet(cv.graph, { vehicles, depotId, dumpId: null, direction: 'directed', objective: 'min-makespan', capacity: null, demandPerKm: 0, shiftSeconds: 24 * 3600, serviceSpeedKmh: 8, deadheadSpeedKmh: 20, dumpSeconds: 0, coverage: cv });
+      if (!fp.ok) throw new Error(fp.message);
+      return fp;
+    };
+    const expScenario = fleetFrom(sd, 2);
+    expect(Math.abs(cmp.baseline.distanceM - base.totals.distance)).toBeLessThan(1e-6);
+    expect(cmp.baseline.vehiclesUsed).toBe(base.totals.vehiclesUsed);
+    expect(Math.abs(cmp.scenario.distanceM - expScenario.totals.distance)).toBeLessThan(1e-6);
+    expect(cmp.scenario.vehiclesUsed).toBe(expScenario.totals.vehiclesUsed);
+    await expect(page.getByTestId('cmp-vehicles').locator('td').nth(1)).toHaveText(String(expScenario.totals.vehiclesUsed));
+    // Cost from each side's own assumptions: fuel at ₹100/L for the baseline, ₹120/L for the scenario; 2 crew at ₹150/h.
+    const cost = (p: S, price: number) => ((p.serviceM / 1000) * 0.4 + (p.transitM / 1000) * 0.25) * price + (p.vehicleSeconds / 3600) * 2 * 150;
+    await expect(page.getByTestId('cmp-cost').locator('td').nth(0)).toHaveText(inr(cost(cmp.baseline, 100)));
+    await expect(page.getByTestId('cmp-cost').locator('td').nth(1)).toHaveText(inr(cost(cmp.scenario, 120)));
+    await expect(page.getByTestId('cmp-fuel').locator('td').nth(2)).toHaveText(/^[+−]\d/);
+  });
+
   test('coverage plan of a drawn zone matches the engine, with honest method and guarantee labels', async ({ page }) => {
     await openCity(page);
     await page.getByTestId('mode-coverage').click();
     await page.getByTestId('cam-top').click();
-    await page.waitForTimeout(2500);
+    await waitForCamera(page);
     const box = (await page.getByTestId('city-stage').boundingBox())!;
     type W = { __sweepCity: { project: (x: number, y: number, h: number) => [number, number] | null; state: () => { city: { focus: { xy: [number, number] } | null; nodeX: Float64Array; nodeY: Float64Array; nodeCount: number } }; coverage: () => { zone: { minX: number; minY: number; maxX: number; maxY: number } | null; depot: number | null; result: { method: string; optimal: boolean; gap: number | null; lowerBoundM: number | null; totals: { distanceM: number } } | null } } };
     const screen = async (x: number, y: number) => {
@@ -287,6 +655,17 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     await expect(page.getByTestId('tl-progress-0')).toHaveText('100 %');
     await expect(page.getByTestId('tl-vehicle-0')).toContainText('back at depot');
 
+    // Exports follow the same plan: one CSV row per engine route step, ending at the engine's total, and one GPX track.
+    const [csvFile] = await Promise.all([page.waitForEvent('download'), page.getByTestId('cov-export-csv').click()]);
+    const csv = readFileSync((await csvFile.path())!, 'utf8').trim().split('\r\n');
+    expect(csv).toHaveLength(1 + exp.route.steps.length);
+    expect(csv[1]!.split(',')[9]).toBe('06:00:00');
+    expect(Math.abs(Number(csv[csv.length - 1]!.split(',').at(-1)) - exp.route.totalDistance / 1000)).toBeLessThan(0.0015);
+    const [gpxFile] = await Promise.all([page.waitForEvent('download'), page.getByTestId('cov-export-gpx').click()]);
+    const gpx = readFileSync((await gpxFile.path())!, 'utf8');
+    expect(gpx.match(/<trk>/g)).toHaveLength(1);
+    expect(gpx).toContain('OpenStreetMap contributors');
+
     // Cost model: nothing is shown until assumptions are entered; then fuel and CO₂ follow from the plan's distances.
     await expect(page.getByTestId('cost-fuel')).toHaveText('enter both fuel rates');
     await page.getByTestId('cost-fuel-service').fill('40');
@@ -334,7 +713,9 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     expect(Math.abs(cmp.scenario.distanceM - exp3.route.totalDistance)).toBeLessThan(1e-6);
 
     // Operational change in the same scenario: two vehicles instead of one; both sides re-planned.
-    await page.getByTestId('cov-scenario-vehicles').fill('2');
+    await page.getByTestId('mode-scenarios').click();
+    await page.getByTestId('scenario-vehicles').fill('2');
+    await page.getByTestId('mode-coverage').click();
     await page.getByTestId('cov-compare').click();
     await expect(page.getByTestId('cov-comparison')).toContainText('Vehicles used', { timeout: 90_000 });
     const cmp2 = await page.evaluate(() => (window as unknown as { __sweepCity: { coverage: () => { comparison: { baseline: { distanceM: number; vehiclesUsed: number }; scenario: { distanceM: number; makespanS: number; vehiclesUsed: number } } } } }).__sweepCity.coverage().comparison);
@@ -350,7 +731,7 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     await openCity(page);
     await page.getByTestId('mode-coverage').click();
     await page.getByTestId('cam-top').click();
-    await page.waitForTimeout(2500);
+    await waitForCamera(page);
     const box = (await page.getByTestId('city-stage').boundingBox())!;
     type W = { __sweepCity: { project: (x: number, y: number, h: number) => [number, number] | null; state: () => { city: { focus: { xy: [number, number] } | null; nodeX: Float64Array; nodeY: Float64Array; nodeCount: number } }; coverage: () => { zone: { kind: 'circle'; cx: number; cy: number; r: number } | null; depot: number | null; result: { method: string; fleet: { totals: { distance: number; makespanSeconds: number; vehiclesUsed: number }; lowerBounds: { makespanSeconds: { value: number } } } | null; routes: unknown[] } | null } } };
     const screen = async (x: number, y: number) => {
@@ -364,7 +745,7 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     await page.mouse.click(sx, sy);
     [sx, sy] = await screen(centre[0] + 300, centre[1]);
     await page.mouse.click(sx, sy);
-    await expect(page.getByTestId('cov-zone')).toContainText('radius');
+    await expect(page.getByTestId('cov-zone')).toContainText('Radius');
     const node = await page.evaluate(([cx, cy]) => {
       const c = (window as unknown as W).__sweepCity.state().city;
       let best = 0;
@@ -396,11 +777,229 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     expect(Math.abs(f.totals.distance - fp.totals.distance)).toBeLessThan(1e-6);
     expect(Math.abs(f.totals.makespanSeconds - fp.totals.makespanSeconds)).toBeLessThan(1e-6);
     expect(f.totals.vehiclesUsed).toBe(fp.totals.vehiclesUsed);
-    // A valid lower bound never exceeds the achieved makespan.
-    expect(f.lowerBounds.makespanSeconds.value).toBeLessThanOrEqual(f.totals.makespanSeconds + 1e-6);
+    // The makespan bound holds for plans with at most 3 routes (more routes means the limits need a larger fleet).
+    if (fp.routes.length <= 3) expect(f.lowerBounds.makespanSeconds.value).toBeLessThanOrEqual(f.totals.makespanSeconds + 1e-6);
     await expect(page.getByTestId('cov-vehicles-table').locator('tbody tr')).toHaveCount(fp.routes.length);
     // The timeline ends when the last vehicle is back.
     const max = Number(await page.getByTestId('tl-scrub').getAttribute('max'));
     expect(Math.abs(max - Math.ceil(fp.totals.makespanSeconds))).toBeLessThanOrEqual(1);
+  });
+
+  test('main roads within a deadline: the UI shows the engine plan, its finish times and bounds', async ({ page }) => {
+    await openCity(page);
+    await page.getByTestId('mode-coverage').click();
+    await page.getByTestId('cam-top').click();
+    await waitForCamera(page);
+    const box = (await page.getByTestId('city-stage').boundingBox())!;
+    type W = { __sweepCity: { project: (x: number, y: number, h: number) => [number, number] | null; state: () => { city: { focus: { xy: [number, number] } | null; nodeX: Float64Array; nodeY: Float64Array; nodeCount: number } }; coverage: () => { zone: { kind: 'circle'; cx: number; cy: number; r: number } | null; depot: number | null; result: { priority: { finishSeconds: number; met: boolean; lateVehicles: number[]; obligations: number; lowerBounds: { finishSeconds: number; vehicles: number | null } } | null; routes: { priorityFinishSeconds: number | null }[] } | null } } };
+    const screen = async (x: number, y: number) => {
+      const p = (await page.evaluate(([a, b]) => (window as unknown as W).__sweepCity.project(a!, b!, 0), [x, y]))!;
+      return [box.x + ((p[0] + 1) / 2) * box.width, box.y + ((1 - p[1]) / 2) * box.height] as const;
+    };
+    const centre = await page.evaluate(() => (window as unknown as W).__sweepCity.state().city.focus?.xy ?? [0, 0]);
+    await page.getByTestId('cov-shape-circle').click();
+    await page.getByTestId('cov-draw-zone').click();
+    let [sx, sy] = await screen(centre[0], centre[1]);
+    await page.mouse.click(sx, sy);
+    [sx, sy] = await screen(centre[0] + 400, centre[1]);
+    await page.mouse.click(sx, sy);
+    await expect(page.getByTestId('cov-zone')).toContainText('Radius');
+    const node = await page.evaluate(([cx, cy]) => {
+      const c = (window as unknown as W).__sweepCity.state().city;
+      let best = 0;
+      let bd = Infinity;
+      for (let i = 0; i < c.nodeCount; i++) {
+        const d = (c.nodeX[i]! - cx!) ** 2 + (c.nodeY[i]! - cy!) ** 2;
+        if (d < bd) [best, bd] = [i, d];
+      }
+      return { x: c.nodeX[best]!, y: c.nodeY[best]! };
+    }, centre);
+    await page.getByTestId('pick-depot').click();
+    [sx, sy] = await screen(node.x, node.y);
+    await page.mouse.click(sx, sy);
+    await expect(page.getByTestId('cov-depot')).not.toHaveText(/Not set|Click/);
+    await page.getByTestId('cov-vehicles').fill('2');
+    await page.getByTestId('cov-priority-deadline').fill('0.25');
+    await expect(page.getByTestId('cov-priority-note')).toContainText('15:00 min');
+    await page.getByTestId('cov-run').click();
+    await expect(page.getByTestId('cov-priority')).toBeVisible({ timeout: 90_000 });
+
+    const st = await page.evaluate(() => (window as unknown as W).__sweepCity.coverage());
+    const depotId = `n${city.nodeOsm[st.depot!]}`;
+    const zg = zoneCoverageGraph(city, { zone: st.zone!, direction: 'directed', depotId });
+    const cov = solveZoneCoverage(zg.graph, { direction: 'directed', depotId });
+    if (!cov.ok) throw new Error(cov.message);
+    const MAIN = ['trunk', 'trunk_link', 'primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link'];
+    const pri = cov.graph.edges.filter((e) => e.required && MAIN.includes(e.roadClass ?? '')).map((e) => e.id);
+    expect(pri.length).toBeGreaterThan(0);
+    const fp = planFleet(cov.graph, { vehicles: 2, depotId, direction: 'directed', objective: 'min-makespan', capacity: null, demandPerKm: 0, shiftSeconds: null, serviceSpeedKmh: 8, deadheadSpeedKmh: 20, dumpSeconds: 0, coverage: cov, turns: cityTurnOptions(city, 'truck'), priority: { edgeIds: pri, deadlineSeconds: 900 } });
+    if (!fp.ok) throw new Error(fp.message);
+    const ui = st.result!.priority!;
+    const eng = fp.priority!;
+    expect(ui.obligations).toBe(eng.obligations);
+    expect(Math.abs(ui.finishSeconds - eng.finishSeconds)).toBeLessThan(1e-6);
+    expect(ui.met).toBe(eng.met);
+    expect(ui.lateVehicles).toEqual(eng.lateVehicles);
+    expect(Math.abs(ui.lowerBounds.finishSeconds - eng.lowerBounds.finishSeconds)).toBeLessThan(1e-6);
+    expect(ui.lowerBounds.vehicles).toBe(eng.lowerBounds.vehicles);
+    // Whatever the heuristic found, the shown finish never beats the bound for plans with at most 2 vehicles.
+    if (fp.routes.length <= 2) expect(ui.finishSeconds).toBeGreaterThanOrEqual(ui.lowerBounds.finishSeconds - 1e-6);
+    const fmtTime = (s: number): string => {
+      const t = Math.round(s);
+      const m = Math.floor(t / 60);
+      return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m}:${String(t - m * 60).padStart(2, '0')} min`;
+    };
+    await expect(page.getByTestId('cov-priority')).toContainText(`done ${fmtTime(eng.finishSeconds)} after the start`);
+    await expect(page.getByTestId('cov-priority')).toContainText('deadline 15:00 min');
+    await expect(page.getByTestId('cov-priority')).toContainText(eng.met ? 'deadline met' : 'late on vehicle');
+    for (let i = 0; i < fp.routes.length; i++) {
+      const f = fp.routes[i]!.priorityFinishSeconds;
+      expect(st.result!.routes[i]!.priorityFinishSeconds === null ? null : Math.round(st.result!.routes[i]!.priorityFinishSeconds!)).toBe(f === null ? null : Math.round(f));
+      await expect(page.getByTestId(`cov-vehicle-priority-${i}`)).toContainText(f === null ? '–' : fmtTime(f));
+    }
+    // The printable report states the same verdict and the basis of the bounds.
+    await page.getByTestId('cov-open-report').click();
+    await expect(page.getByTestId('rep-priority')).toContainText(`done ${fmtTime(eng.finishSeconds)} after the start`);
+    await expect(page.getByTestId('rep-priority')).toContainText('For any plan with at most 2 vehicle(s)');
+  });
+
+  test('several depots: each street goes to one depot, the UI shows the engine plan and honest bounds', async ({ page }) => {
+    type W = {
+      __sweepCity: {
+        project: (x: number, y: number, h: number) => [number, number] | null;
+        state: () => { city: { focus: { xy: [number, number] } | null; nodeX: Float64Array; nodeY: Float64Array; nodeCount: number } };
+        coverage: () => { zone: { kind: 'circle'; cx: number; cy: number; r: number } | null; depot: number | null; extraDepots: { node: number; vehicles: number }[]; result: { method: string; optimal: boolean; depots: { node: number; requiredSegments: number }[] | null; fleet: { totals: { distance: number; makespanSeconds: number; vehiclesUsed: number }; lowerBounds: { makespanSeconds: { value: number }; totalDistance: { value: number } } } | null; routes: { depotNode: number }[] } | null };
+      };
+    };
+    await openCity(page);
+    await page.getByTestId('mode-coverage').click();
+    await page.getByTestId('cam-top').click();
+    await waitForCamera(page);
+    const box = (await page.getByTestId('city-stage').boundingBox())!;
+    const [cx, cy] = await page.evaluate(() => (window as unknown as W).__sweepCity.state().city.focus?.xy ?? [0, 0]);
+    const click = async (x: number, y: number) => {
+      const p = (await page.evaluate(([a, b]) => (window as unknown as W).__sweepCity.project(a!, b!, 0), [x, y]))!;
+      await page.mouse.click(box.x + ((p[0] + 1) / 2) * box.width, box.y + ((1 - p[1]) / 2) * box.height);
+    };
+    const nearest = (x: number, y: number) =>
+      page.evaluate(([px, py]) => {
+        const c = (window as unknown as W).__sweepCity.state().city;
+        let best = 0;
+        let bd = Infinity;
+        for (let i = 0; i < c.nodeCount; i++) {
+          const d = (c.nodeX[i]! - px!) ** 2 + (c.nodeY[i]! - py!) ** 2;
+          if (d < bd) [best, bd] = [i, d];
+        }
+        return { x: c.nodeX[best]!, y: c.nodeY[best]! };
+      }, [x, y]);
+    await page.getByTestId('cov-shape-circle').click();
+    await page.getByTestId('cov-draw-zone').click();
+    await click(cx, cy);
+    await click(cx + 450, cy);
+    await expect(page.getByTestId('cov-zone')).toContainText('Radius');
+    const west = await nearest(cx - 300, cy);
+    const east = await nearest(cx + 300, cy);
+    await page.getByTestId('pick-depot').click();
+    await click(west.x, west.y);
+    await expect(page.getByTestId('cov-depot')).not.toHaveText(/Not set|Click/);
+    await page.getByTestId('cov-vehicles').fill('2');
+    await page.getByTestId('cov-add-depot').click();
+    await click(east.x, east.y);
+    await expect(page.getByTestId('cov-extra-depot-0')).toBeVisible();
+    await page.getByTestId('cov-extra-vehicles-0').fill('2');
+    await page.getByTestId('cov-run').click();
+    await expect(page.getByTestId('cov-depots')).toBeVisible({ timeout: 120_000 });
+
+    const st = await page.evaluate(() => (window as unknown as W).__sweepCity.coverage());
+    expect(st.extraDepots.length).toBe(1);
+    const ids = [st.depot!, st.extraDepots[0]!.node].map((n) => `n${city.nodeOsm[n]}`);
+    const zg = zoneCoverageGraph(city, { zone: st.zone!, direction: 'directed', depotId: ids[0]! });
+    const exp = planMultiDepotFleet(zg.graph, { depots: [{ depotId: ids[0]!, vehicles: 2 }, { depotId: ids[1]!, vehicles: 2 }], dumpId: null, direction: 'directed', objective: 'min-makespan', capacity: null, demandPerKm: 0, shiftSeconds: null, serviceSpeedKmh: 8, deadheadSpeedKmh: 20, dumpSeconds: 0 });
+    if (!exp.ok) throw new Error(exp.message);
+    const r = st.result!;
+    expect(r.method).toBe('nearest-depot-partition');
+    expect(r.optimal).toBe(false);
+    await expect(page.getByTestId('cov-optimal')).not.toHaveText('Proven optimal');
+    expect(Math.abs(r.fleet!.totals.distance - exp.totals.distance)).toBeLessThan(1e-6);
+    expect(Math.abs(r.fleet!.totals.makespanSeconds - exp.totals.makespanSeconds)).toBeLessThan(1e-6);
+    expect(r.depots!.map((d) => d.requiredSegments)).toEqual(exp.depots.map((d) => d.requiredEdges.length));
+    expect(r.fleet!.lowerBounds.makespanSeconds.value).toBeLessThanOrEqual(r.fleet!.totals.makespanSeconds + 1e-6);
+    expect(r.fleet!.lowerBounds.totalDistance.value).toBeLessThanOrEqual(r.fleet!.totals.distance + 1e-6);
+    // Every route belongs to one of the two depots; both depots are used.
+    expect(new Set(r.routes.map((v) => v.depotNode))).toEqual(new Set([st.depot!, st.extraDepots[0]!.node]));
+    for (const c of exp.validation.checks) expect(c.passed, c.detail).toBe(true);
+  });
+
+  test('turn-aware order: same streets and distance as the engine route, the engine turn counts, and a valid bound', async ({ page }) => {
+    type T = { straight: number; left: number; right: number; uturn: number; uturnsAwayFromDeadEnds: number; banned: number; seconds: number };
+    type W = {
+      __sweepCity: {
+        project: (x: number, y: number, h: number) => [number, number] | null;
+        state: () => { city: { focus: { xy: [number, number] } | null; nodeX: Float64Array; nodeY: Float64Array; nodeCount: number } };
+        coverage: () => { zone: { kind: 'circle'; cx: number; cy: number; r: number } | null; depot: number | null; result: { totals: { distanceM: number; serviceM: number }; turns: { ordered: boolean; before: T; after: T; lowerBound: { seconds: number; banned: number } | null; optimal: boolean } } | null };
+      };
+    };
+    await openCity(page);
+    await page.getByTestId('mode-coverage').click();
+    await page.getByTestId('cam-top').click();
+    await waitForCamera(page);
+    const box = (await page.getByTestId('city-stage').boundingBox())!;
+    const [cx, cy] = await page.evaluate(() => (window as unknown as W).__sweepCity.state().city.focus?.xy ?? [0, 0]);
+    const click = async (x: number, y: number) => {
+      const p = (await page.evaluate(([a, b]) => (window as unknown as W).__sweepCity.project(a!, b!, 0), [x, y]))!;
+      await page.mouse.click(box.x + ((p[0] + 1) / 2) * box.width, box.y + ((1 - p[1]) / 2) * box.height);
+    };
+    await page.getByTestId('cov-shape-circle').click();
+    await page.getByTestId('cov-draw-zone').click();
+    await click(cx, cy);
+    await click(cx + 350, cy);
+    await expect(page.getByTestId('cov-zone')).toContainText('Radius');
+    const node = await page.evaluate(([x, y]) => {
+      const c = (window as unknown as W).__sweepCity.state().city;
+      let best = 0;
+      let bd = Infinity;
+      for (let i = 0; i < c.nodeCount; i++) {
+        const d = (c.nodeX[i]! - x!) ** 2 + (c.nodeY[i]! - y!) ** 2;
+        if (d < bd) [best, bd] = [i, d];
+      }
+      return { x: c.nodeX[best]!, y: c.nodeY[best]! };
+    }, [cx, cy]);
+    await page.getByTestId('pick-depot').click();
+    await click(node.x, node.y);
+    await expect(page.getByTestId('cov-depot')).not.toHaveText(/Not set|Click/);
+    await expect(page.getByTestId('cov-turns-ordered')).toHaveAttribute('aria-pressed', 'true');
+    await page.getByTestId('cov-run').click();
+    await expect(page.getByTestId('cov-turns')).toBeVisible({ timeout: 120_000 });
+
+    const st = await page.evaluate(() => (window as unknown as W).__sweepCity.coverage());
+    const depotId = `n${city.nodeOsm[st.depot!]}`;
+    const zg = zoneCoverageGraph(city, { zone: st.zone!, direction: 'directed', depotId });
+    const raw = solveZoneCoverage(zg.graph, { direction: 'directed', depotId });
+    if (!raw.ok) throw new Error(raw.message);
+    const rules = cityTurnOptions(city, 'truck');
+    const exp = orderCoverageForTurns(raw, rules);
+    const on = st.result!;
+    expect(on.turns.ordered).toBe(true);
+    // Reordering never changes what is driven: the distance is the engine route's, to the millimetre.
+    expect(Math.abs(on.totals.distanceM - raw.route.totalDistance)).toBeLessThan(1e-6);
+    expect(Math.abs(on.totals.serviceM - raw.route.serviceDistance)).toBeLessThan(1e-6);
+    expect(on.turns.after).toEqual(exp.turns.after);
+    expect(on.turns.before).toEqual(exp.turns.before);
+    expect(on.turns.after.seconds).toBeLessThan(on.turns.before.seconds);
+    expect(on.turns.lowerBound!.seconds).toBeLessThanOrEqual(on.turns.after.seconds + 1e-9);
+    for (const ch of exp.checks) expect(ch.passed, `${ch.id}: ${ch.detail}`).toBe(true);
+    await expect(page.getByTestId('cov-turns')).toContainText(`${exp.turns.after.uturn} U-turns`);
+    await expect(page.getByTestId('cov-turns')).toContainText('Not included in the route times');
+
+    // Off: the engine's own order, with its turn counts.
+    await page.getByTestId('cov-turns-engine').click();
+    await expect(page.getByTestId('cov-stale')).toBeVisible();
+    await page.getByTestId('cov-run').click();
+    await expect(page.getByTestId('cov-stale')).toHaveCount(0, { timeout: 120_000 });
+    const off = (await page.evaluate(() => (window as unknown as W).__sweepCity.coverage())).result!;
+    expect(off.turns.ordered).toBe(false);
+    expect(off.turns.after).toEqual(new TurnModel(raw.graph, rules).tally(raw.route.steps));
+    expect(Math.abs(off.totals.distanceM - on.totals.distanceM)).toBeLessThan(1e-6);
+    await expect(page.getByTestId('cov-turns')).toContainText('turn order not optimised');
   });
 });

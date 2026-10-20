@@ -7,7 +7,7 @@ import type { OrbitControls as OrbitControlsImpl } from 'three/examples/jsm/cont
 import type { District } from './district';
 import { createBuildingMaterial, createGableGeometry, createSpectralMaterial } from './materials';
 import { sampleTrack, pointsBounds, type RouteTrack } from '../lib/routeTrack';
-import { startInLowPower } from '../lib/webgl';
+import { lowPowerFor, startInLowPower } from '../lib/webgl';
 import type { Highlight } from '../lib/analysis';
 import { routeClock } from '../workspace/routeClock';
 import { useWorkspace, type CameraCommand } from '../state/workspace';
@@ -713,8 +713,8 @@ export interface DistrictSceneProps {
 export default function DistrictScene({ district: d, tracks, trackColors, theme, reduced, highlight, dimRoute }: DistrictSceneProps) {
   const pal = SCENE_PALETTE[theme];
   const ext = d.extent;
-  // Software rasterisers start in low-power mode (no shadows, bloom or motes; frames only while playing or interacting)
-  // unless the `sweep.quality` preference says otherwise.
+  // Low power (no shadows, bloom or motes; frames only while playing or interacting) until the scene's own context
+  // shows a hardware GPU; the `sweep.quality` preference overrides the detection.
   const [lowPower, setLowPower] = useState(startInLowPower);
   const shadows = !lowPower;
   const hover = useWorkspace((s) => s.hover);
@@ -735,6 +735,7 @@ export default function DistrictScene({ district: d, tracks, trackColors, theme,
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = theme === 'velvet' ? 1.08 : 1.0;
+        setLowPower(lowPowerFor(gl.getContext()));
       }}
       onPointerMissed={() => select(null)}
       data-testid="district-canvas"

@@ -4,7 +4,7 @@ This document describes the implementation as it exists now.
 
 ```
 ┌──────────────────────────────── apps/web (React 19 · Vite 7 · TypeScript) ─────────────────────────────────┐
-│ Landing (R3F hero) · Workspace (long-form environment, surfaces A–I) · Mathematics · Report · Auth (opt.)  │
+│ Landing · City workspace /workspace (real Pune; see below) · Network lab /lab (surfaces A–I) · Maths · Auth │
 │                                                                                                            │
 │  state/ (zustand) ── workspace (graph, routing settings, result + fleet, analysis, camera) · prefs · auth  │
 │  workspace/useRouteData ── ONE derived model per result: route tracks (by true distance), district,        │
@@ -32,40 +32,50 @@ This document describes the implementation as it exists now.
 │ directed:   directed (arcs, feasibility, orientation enumeration) · mincostflow · stateSearch · verify     │
 │ fleet:      fleet (FHK split + exact split DP, bounds) · verify (verifyFleet) · routing (dispatcher)       │
 │ data:       geojson · osm (Overpass → graph) · geo · io (JSON/CSV) · paths · sha256 · examples (+ Zurich)  │
+│ city:       city/ (sweep-city/1 bundle, buildings, decode) · p2p/ (5 searches, profiles, reach, validate)   │
+│             coverage/ (zones, exact directed/undirected coverage, heuristic + bound, fleet planFleet)      │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 oracle/ (Python, networkx) ── independent cross-checks (matching, min-cost flow, brute force, state search); tests only
 ```
 
-## City workspace (`/workspace`, real OpenStreetMap data)
+## City workspace (`/workspace`)
+
+The city workspace runs on a real OpenStreetMap extract, bundled as a static file, entirely in the browser. The server is not involved.
 
 ```
-data/regions/<id>.json ── bbox, tile size, road classes, Overpass endpoints, focus point
-        │  pnpm city:acquire <id>   (scripts/city/acquire.ts)
-        │    one request at a time, ≥ 4 s apart, SWEEP User-Agent, 6 attempts with backoff,
-        │    endpoint fallback, quadrant split for tiles that keep timing out, checkpoint manifest
-        ▼
-data/cache/osm/<id>/ ── manifest.json + tiles/<row>_<col>_{streets,buildings}.json (raw Overpass JSON, committed)
-        │  pnpm city:build <id>     (scripts/city/build.ts → @sweep/engine city/bundle.ts)
-        │    merge + de-duplicate by OSM id · osmToGraph in a local metric frame · way tags kept ·
-        │    via-node turn restrictions · footprint validation · heights (tag | levels × 3 m | flagged estimate) ·
-        │    provenance (endpoints, OSM database dates, tiles ok/missing, queries, transformations, limitations)
-        ▼
-apps/web/public/cities/<id>.json + index.json ── format `sweep-city/1`, integer decimetre coordinates
-        │  fetch + decodeCityBundle (validates every length and index; CityFormatError otherwise)
-        ▼
-apps/web/src/city/
-  CityWorkspace ── bar (modes: Route lab · Coverage & fleet · Scenarios), camera tools, inspector, legend, provenance
-  GeoCityScene (R3F) ── chunked extruded footprints + ribbon roads (meshes built in geometry.worker),
-                        theme materials (materials.ts), overlays (routes, search traces, reach, zone, vehicles),
-                        picking via SegmentIndex + ground ray (buildings ray-cast on click only)
-  router.worker ── RoutingEngine per (profile, scenario): Dijkstra, A*, bidirectional, ALT, CH; validateRoute; reachability
-  coverage.worker ── zoneCoverageGraph → solveZoneCoverage → planFleet
-  stores (zustand) ── store (city, mode, picks) · routeStore · scenario · coverageStore · shift
-  panels ── RouteLab · RouteReport · ScenarioPanel · CoveragePanel · CoverageReport · Timeline
-  pure modules ── timeline.ts (deterministic shift clock) · costModel.ts (user-assumption estimates)
+data/regions/<id>.json ──► scripts/city/acquire.ts (polite, resumable Overpass tiles → data/cache/osm/<id>/)
+                           scripts/city/build.ts   (merge, validate, round-trip → apps/web/public/cities/<id>.json)
+                                     │  sweep-city/1: local metric frame (x east, y south), typed arrays, provenance
+                                     ▼
+apps/web/src/city
+  store.ts (city, meshes, mode, camera, hover, selection, pickTarget)
+  GeoCityScene.tsx ── extruded buildings (geometry.worker), road ribbons, overlays, camera rig, picker
+  routeStore ──► router.worker   (RoutingEngine per profile × scenario: dijkstra · astar · bidirectional · alt · ch,
+                                  validateRoute on every result, reachability)
+  coverageStore ──► coverage.worker (zoneCoverageGraph → solveZoneCoverage → planFleet)
+  scenario.ts (closures, direction changes, plan overrides) ── read by both workers' requests
+  panels/ RouteLab · RouteReport · CoveragePanel · CoverageReport · ScenarioPanel · Timeline
 ```
 
-All routing and coverage computation runs in Web Workers in the browser, on the same bundled data the engine tests use. The city workspace makes no server API calls; the server only serves the static files.
+| Concern | Where it lives | Notes |
+|---|---|---|
+| City bundle | `engine/city/` | Built offline from cached tiles; decoded once per worker. Heights: `height` tag, else `building:levels` × 3 m, else an estimate flagged as such |
+| Point-to-point routing | `engine/p2p/` | Turn-expanded graph (arc = segment × 2 + direction), turn penalties, via-node restrictions. Five algorithms on the same graph and cost; `validateRoute` is independent of the searches |
+| Route sheet | `web/city/routeSheet.ts` | Street-by-street legs; turns use the engine's `arcDirections` and `classifyTurn`, so the sheet's turns equal the engine's turn counts (unit-tested on real routes) |
+| Coverage | `engine/coverage/` | A zone (rectangle, circle or polygon) marks required segments; the rest of the network stays available for deadheading. Exact min-cost flow (directed), exact matching up to 600 odd vertices (undirected), else a heuristic with a dual-feasible lower bound |
+| Fleet | `engine/coverage/carp.ts` (`planFleet`) | Route-first, cluster-second split under capacity, shift, disposal and optional priority-deadline constraints, then local search; valid lower bounds; when the limits need more routes than vehicles, the plan is a diagnosis with that many routes and no makespan gap |
+| Several depots | `engine/coverage/multidepot.ts` (`planMultiDepotFleet`) | Streets go to the depot with the cheapest round trip, then one `planFleet` per depot; bounds valid for any partition |
+| Turn order | `engine/coverage/turns.ts` (`orderForTurns`) | Same traversals and length, reordered by exact per-intersection pairing and cheapest sub-tour merges; lower bound valid for every order. Fleet routes that unload mid-way, or whose new order would miss the priority deadline, keep their order |
+| Sparse assignment | `engine/coverage/assignment.ts` | Jonker–Volgenant with column reduction; the optimal-assignment start of the undirected lower bound and the per-intersection turn pairing |
+| Zone drawing | `web/city/zoneShape.ts` | Rectangle (two corners), circle (centre, rim), polygon (vertices; self-crossing points refused). The zone object goes to the engine unchanged |
+| Scenarios | `web/city/scenario.ts` | Network changes (closed segments, one-way overrides) and plan overrides (depot, vehicles, shift, cost assumptions). The coverage panel's inputs are the baseline operation; `effectiveInputs` applies the active scenario's overrides |
+| Shift timeline | `web/city/timeline.ts`, `panels/Timeline.tsx` | Deterministic clock from the planned steps (length ÷ speed, plus unloading) |
+| Exports | `web/city/coverageExport.ts` | GPX 1.1 (one track per vehicle, coordinates converted back with `localUnprojection`, the inverse of the bundle's projection) and a step CSV whose times come from the timeline's schedule |
+| Cost model | `web/city/costModel.ts` | Only from user-entered rates, applied to the distances and vehicle hours of the routes actually driven |
+
+**Picking.** The scene resolves a click on the canvas (ground plane plus a segment/node index; buildings are ray-cast on click only) according to a pick mode. The mode and callbacks are kept in a ref that the DOM-side `GeoCityScene` render updates, and are read when the pointer event arrives: props inside `<Canvas>` reach the R3F reconciler later, and on slow frames a quick click after choosing a tool would otherwise use the previous mode. Zone drawing uses the `ground` mode, which returns the exact ground point (never a building roof).
+
+**Test hooks.** `window.__sweepCity` exposes the stores, a world-to-screen projection and `cameraMoving()` so browser tests compute click positions and compare the UI with engine runs on the same bundle.
 
 ## Component boundaries
 

@@ -2,7 +2,8 @@ import { useEffect, useMemo } from 'react';
 import type { CityModel } from '@sweep/engine';
 import { Icon } from '../../components/Icon';
 import { useCity } from '../store';
-import { useCoverage } from '../coverageStore';
+import { effectiveInputs, useCoverage } from '../coverageStore';
+import { BASELINE, useScenarios } from '../scenario';
 import { arcPoints } from '../overlays';
 import { buildSchedule, clockLabel, positionAt } from '../timeline';
 import { SHIFT_SECONDS_PER_SECOND, useShift, vehiclePoses } from '../shift';
@@ -43,7 +44,12 @@ export function Timeline() {
   const city = useCity((s) => s.city);
   const mode = useCity((s) => s.mode);
   const result = useCoverage((s) => s.result);
-  const fleet = useCoverage((s) => s.fleet);
+  const depot = useCoverage((s) => s.depot);
+  const baseFleet = useCoverage((s) => s.fleet);
+  const costs = useCoverage((s) => s.costs);
+  const scenario = useScenarios((s) => s.scenarios.find((x) => x.id === s.activeId)) ?? BASELINE;
+  // Speeds and the shift limit the plan was made with (a scenario may override the shift limit).
+  const fleet = useMemo(() => effectiveInputs({ depot, fleet: baseFleet, costs }, scenario).fleet, [depot, baseFleet, costs, scenario]);
   const { t, playing, startOfDay } = useShift();
 
   const schedules = useMemo(() => (result ? result.routes.map((r) => buildSchedule(r, fleet)) : []), [result, fleet]);

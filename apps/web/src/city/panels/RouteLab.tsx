@@ -6,18 +6,14 @@ import { ALL_ALGORITHMS, useRoute } from '../routeStore';
 import { ALGO_COLOR } from '../overlays';
 import { segmentLabel } from '../Inspector';
 import { useScenarios } from '../scenario';
+import { fmtDist, fmtTime } from '../format';
+import { Term } from './Term';
 import { RouteReport } from './RouteReport';
 
-export const ALGO_LABEL: Record<AlgorithmId, string> = { dijkstra: 'Dijkstra', astar: 'A*', bidirectional: 'Bidirectional', alt: 'ALT', ch: 'Contraction Hierarchies' };
-export const PROFILE_LABEL: Record<ProfileId, string> = { car: 'Car', truck: 'Truck', bicycle: 'Bicycle', foot: 'Walking' };
+const ALGO_LABEL: Record<AlgorithmId, string> = { dijkstra: 'Dijkstra', astar: 'A*', bidirectional: 'Bidirectional', alt: 'ALT', ch: 'Contraction Hierarchies' };
+const PROFILE_LABEL: Record<ProfileId, string> = { car: 'Car', truck: 'Truck', bicycle: 'Bicycle', foot: 'Walking' };
 
-export const fmtDist = (m: number): string => (!Number.isFinite(m) ? '–' : m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`);
-export const fmtTime = (s: number): string => {
-  if (!Number.isFinite(s)) return '–';
-  const m = Math.floor(s / 60);
-  const r = Math.round(s - m * 60);
-  return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m}:${String(r).padStart(2, '0')} min`;
-};
+export { fmtDist, fmtTime } from '../format';
 
 /** Street names meeting at an intersection. */
 export function nodeLabel(city: CityModel, n: number): string {
@@ -211,6 +207,14 @@ export function RouteLab() {
           {error}
         </p>
       )}
+      {!runs && !running && (origin === null || destination === null) && (
+        <p className="cw-next small" data-testid="route-next">
+          <strong>Next:</strong>{' '}
+          {origin === null
+            ? 'choose where to start. Type a street in From and pick a result, or press Pick and click an intersection on the map.'
+            : 'choose the destination the same way, in To. The algorithms then run by themselves.'}
+        </p>
+      )}
 
       {runs && best && (
         <section className="rl-results" aria-label="Comparison" data-testid="route-results">
@@ -246,6 +250,9 @@ export function RouteLab() {
               <Icon name={agree.ok ? 'check' : 'cross'} size={13} /> {agree.text}
             </p>
           )}
+          <p className="faint small" data-testid="route-rows-help">
+            Each row is one algorithm: the work it did (<Term k="settled">arcs settled</Term>) and its time in this browser. Press a row to show its search on the map.
+          </p>
           <ul className="rl-rows" aria-label="Algorithms">
             {runs.map((x) => (
               <li key={x.result.algorithm} className={x.result.algorithm === active ? 'is-active' : ''} data-testid={`row-${x.result.algorithm}`}>
@@ -275,15 +282,15 @@ export function RouteLab() {
             </button>
             <span className="faint small">The glow replays the recorded settle order of {active ? ALGO_LABEL[active] : 'the algorithm'}, then drives the route.</span>
           </div>
-          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setReport(true)} data-testid="route-open-report">
-            <Icon name="table" size={13} /> Printable report
-          </button>
-          {report && <RouteReport onClose={() => setReport(false)} />}
           {meta && (
             <p className="faint small">
               Graph: {meta.graphStats.allowedArcs.toLocaleString()} permitted directed arcs, {meta.graphStats.transitions.toLocaleString()} turn transitions{meta.graphBuildMs ? ` (built in ${meta.graphBuildMs.toFixed(0)} ms)` : ''}.
             </p>
           )}
+          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setReport(true)} data-testid="route-open-report">
+            <Icon name="table" size={13} /> Printable report
+          </button>
+          {report && <RouteReport onClose={() => setReport(false)} />}
         </section>
       )}
 

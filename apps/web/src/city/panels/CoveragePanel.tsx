@@ -1,17 +1,52 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { CityModel } from '@sweep/engine';
 import { Icon } from '../../components/Icon';
 import { useCity } from '../store';
-import { coverageKey, useCoverage, zoneLabel, type PlanSummary } from '../coverageStore';
-import { useScenarios } from '../scenario';
+import { coverageKey, effectiveInputs, summarise, useCoverage, type PlanSummary } from '../coverageStore';
+import type { FleetPriority } from '@sweep/engine';
+import type { PlanTurns } from '../coverage.worker';
+import { BASELINE, useScenarios, type Scenario } from '../scenario';
 import { fmtDist, fmtTime, nodeLabel } from './RouteLab';
 import { estimateCost, type CostAssumptions } from '../costModel';
 import { CoverageReport } from './CoverageReport';
+import { describeZone, drawingPrompt, type ZoneShape } from '../zoneShape';
+import { Term } from './Term';
+import { plansToCsv, plansToGpx } from '../coverageExport';
+import { useShift } from '../shift';
+import { downloadText, safeFileName } from '../../lib/storage';
+
+const SHAPES: [ZoneShape, string][] = [
+  ['rect', 'Rectangle'],
+  ['circle', 'Circle'],
+  ['polygon', 'Outline'],
+];
+
+/** Polygon drawing keys: Enter closes the outline, Backspace removes the last point (not while typing in a field). */
+function usePolygonKeys(active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      const cv = useCoverage.getState();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (cv.finishZone()) useCity.getState().setPickTarget(null);
+      } else if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault();
+        cv.undoZonePoint();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [active]);
+}
 
 export const METHOD_LABEL = {
   'exact-directed-min-cost-flow': 'Exact · directed min-cost flow',
   'exact-undirected-edmonds-johnson': 'Exact · undirected matching (Edmonds–Johnson)',
   'heuristic-candidate-matching': 'Heuristic · candidate matching',
+  'nearest-depot-partition': 'Several depots · nearest-depot partition (heuristic)',
 } as const;
 
 export const VEHICLE_COLORS = ['#7dffb8', '#75e0ff', '#ffd98c', '#f3a7c4', '#b7a6ff', '#ff9f6e', '#9be15d', '#e9c98c'];
@@ -31,7 +66,31 @@ function useClasses(city: CityModel) {
 export const inr = (x: number | null) => (x === null ? '–' : `₹${Math.round(x).toLocaleString('en-IN')}`);
 export const pct = (x: number | null) => (x === null ? '–' : `${(x * 100).toFixed(2)} %`);
 
-function NumberField({ label, value, onChange, min, max, step, placeholder, testid, unit }: { label: string; value: number | null; onChange: (v: number | null) => void; min: number; max: number; step: number; placeholder?: string; testid: string; unit?: string }) {
+/** One line on the plan's turns: counts, penalty time, and how the order compares with its bound. */
+/** The main-roads deadline in words: when the plan finishes them, against the deadline and the engine's bounds. */
+export function priorityText(p: FleetPriority, vehicles: number, routesUsed: number): string {
+  if (p.obligations === 0) return 'No main road in this zone; the deadline does not apply.';
+  const plural = vehicles === 1 ? '' : 's';
+  const verdict = p.met ? 'deadline met' : `late on vehicle${p.lateVehicles.length === 1 ? '' : 's'} ${p.lateVehicles.join(', ')}`;
+  const parts = [`${fmtDist(p.serviceMeters)} done ${fmtTime(p.finishSeconds)} after the start`, `deadline ${fmtTime(p.deadlineSeconds)}`, verdict];
+  if (p.provenInfeasible) parts.push(p.lowerBounds.vehicles === null ? 'no vehicle can reach a main road in time' : `impossible with ${vehicles} vehicle${plural}: at least ${p.lowerBounds.vehicles} needed, and no plan finishes them before ${fmtTime(p.lowerBounds.finishSeconds)}`);
+  else if (routesUsed <= vehicles) parts.push(`no plan with ${vehicles} vehicle${plural} finishes them before ${fmtTime(p.lowerBounds.finishSeconds)} (lower bound)`);
+  return parts.join(' · ');
+}
+
+export function turnSummary(t: PlanTurns): string {
+  const a = t.after;
+  const parts = [`${fmtTime(a.seconds)} of turn penalties: ${a.uturn} U-turns (${a.uturnsAwayFromDeadEnds} away from dead ends), ${a.right} right, ${a.left} left`];
+  if (t.ordered) {
+    parts.push(`was ${fmtTime(t.before.seconds)} before ordering`);
+    if (t.lowerBound) parts.push(t.optimal ? `optimal order for these streets (bound ${fmtTime(t.lowerBound.seconds)} reached)` : `at least ${fmtTime(t.lowerBound.seconds)} for these streets`);
+    if (t.keptRoutes) parts.push(`${t.keptRoutes} route${t.keptRoutes === 1 ? '' : 's'} that unload mid-way kept their order`);
+  } else parts.push('turn order not optimised');
+  parts.push(t.restrictions ? `${a.banned} banned turn${a.banned === 1 ? '' : 's'}` : 'no turn restrictions are mapped in this extract');
+  return `${parts.join(' · ')}. Not included in the route times.`;
+}
+
+export function NumberField({ label, value, onChange, min, max, step, placeholder, testid, unit }: { label: string; value: number | null; onChange: (v: number | null) => void; min: number; max: number; step: number; placeholder?: string; testid: string; unit?: string }) {
   return (
     <label className="cv-field">
       <span>{label}</span>
@@ -61,18 +120,44 @@ function NumberField({ label, value, onChange, min, max, step, placeholder, test
 
 const methodWord = (p: PlanSummary) => (p.optimal ? 'proven optimal' : p.method === 'heuristic-candidate-matching' ? 'heuristic, with bound' : 'exact, connectors added');
 
-function CompareTable({ baseline, scenario, name, costs }: { baseline: PlanSummary | { error: string }; scenario: PlanSummary | { error: string }; name: string; costs: CostAssumptions }) {
+const COST_LABEL: Record<keyof CostAssumptions, string> = {
+  fuelServiceLPer100km: 'fuel while servicing',
+  fuelTransitLPer100km: 'fuel in transit',
+  fuelPricePerL: 'fuel price',
+  crewPerVehicle: 'crew per vehicle',
+  wagePerHour: 'wage',
+  co2KgPerL: 'CO₂ factor',
+};
+
+/** Plain-language list of a scenario's plan overrides. */
+export function describeOverrides(city: CityModel, s: Scenario): string[] {
+  const p = s.plan;
+  if (!p) return [];
+  const out: string[] = [];
+  if (p.depot !== undefined) out.push(`depot at ${nodeLabel(city, p.depot)}`);
+  if (p.vehicles !== undefined) out.push(`${p.vehicles} vehicle${p.vehicles === 1 ? '' : 's'}`);
+  if (p.shiftSeconds !== undefined) out.push(p.shiftSeconds === null ? 'no shift limit' : `shift limit ${fmtTime(p.shiftSeconds)}`);
+  for (const [k, v] of Object.entries(p.costs ?? {}) as [keyof CostAssumptions, number | null][]) out.push(`${COST_LABEL[k]} ${v ?? '–'}`);
+  return out;
+}
+
+const num1 = (x: number) => x.toFixed(1);
+const signed = (d: number, f: (v: number) => string) => `${d >= 0 ? '+' : '−'}${f(Math.abs(d))}`;
+
+function CompareTable({ baseline, scenario, name, costs }: { baseline: PlanSummary | { error: string }; scenario: PlanSummary | { error: string }; name: string; costs: { baseline: CostAssumptions; scenario: CostAssumptions } }) {
   const ok = (x: PlanSummary | { error: string }): x is PlanSummary => !('error' in x);
-  const est = (p: PlanSummary) => estimateCost({ serviceM: p.serviceM, transitM: p.transitM, vehicleSeconds: p.vehicleSeconds }, costs);
-  const rows: [string, (p: PlanSummary) => number, (v: number) => string][] = [
-    ['Total distance', (p) => p.distanceM, fmtDist],
-    ['Transit (deadhead)', (p) => p.transitM, fmtDist],
-    ['Finish (makespan)', (p) => p.makespanS, fmtTime],
-    ['Vehicle hours', (p) => p.vehicleSeconds, fmtTime],
-    ['Vehicles used', (p) => p.vehiclesUsed, (v) => String(v)],
+  const est = (p: PlanSummary, a: CostAssumptions) => estimateCost({ serviceM: p.serviceM, transitM: p.transitM, vehicleSeconds: p.vehicleSeconds }, a);
+  // Rows: label, value (null = cannot be computed from the inputs given), format, test id.
+  const rows: [string, (p: PlanSummary, a: CostAssumptions) => number | null, (v: number) => string, string][] = [
+    ['Total distance', (p) => p.distanceM, fmtDist, 'distance'],
+    ['Transit (deadhead)', (p) => p.transitM, fmtDist, 'transit'],
+    ['Finish (makespan)', (p) => p.makespanS, fmtTime, 'makespan'],
+    ['Vehicle hours', (p) => p.vehicleSeconds, fmtTime, 'hours'],
+    ['Vehicles used', (p) => p.vehiclesUsed, (v) => String(v), 'vehicles'],
+    ['Fuel (estimate)', (p, a) => est(p, a).fuelL, (v) => `${num1(v)} L`, 'fuel'],
+    ['CO₂ (estimate)', (p, a) => est(p, a).co2Kg, (v) => `${num1(v)} kg`, 'co2'],
+    ['Cost (estimate)', (p, a) => est(p, a).totalCost, inr, 'cost'],
   ];
-  if (ok(baseline) && est(baseline).fuelL !== null) rows.push(['Fuel (your rates)', (p) => est(p).fuelL!, (v) => `${v.toFixed(1)} L`], ['CO₂ (your factor)', (p) => est(p).co2Kg!, (v) => `${v.toFixed(1)} kg`]);
-  if (ok(baseline) && est(baseline).totalCost !== null) rows.push(['Cost (your rates)', (p) => est(p).totalCost!, (v) => `₹${Math.round(v).toLocaleString('en-IN')}`]);
   return (
     <table className="sc-table" data-testid="cov-comparison">
       <thead>
@@ -84,14 +169,18 @@ function CompareTable({ baseline, scenario, name, costs }: { baseline: PlanSumma
         </tr>
       </thead>
       <tbody>
-        {rows.map(([label, get, f]) => (
-          <tr key={label}>
-            <th scope="row">{label}</th>
-            <td>{ok(baseline) ? f(get(baseline)) : 'no plan'}</td>
-            <td>{ok(scenario) ? f(get(scenario)) : 'no plan'}</td>
-            <td>{ok(baseline) && ok(scenario) ? `${get(scenario) - get(baseline) >= 0 ? '+' : '−'}${f(Math.abs(get(scenario) - get(baseline)))}` : '–'}</td>
-          </tr>
-        ))}
+        {rows.map(([label, get, f, id]) => {
+          const b = ok(baseline) ? get(baseline, costs.baseline) : null;
+          const s = ok(scenario) ? get(scenario, costs.scenario) : null;
+          return (
+            <tr key={label} data-testid={`cmp-${id}`}>
+              <th scope="row">{label}</th>
+              <td>{!ok(baseline) ? 'no plan' : b === null ? '–' : f(b)}</td>
+              <td>{!ok(scenario) ? 'no plan' : s === null ? '–' : f(s)}</td>
+              <td>{b !== null && s !== null ? signed(s - b, f) : '–'}</td>
+            </tr>
+          );
+        })}
         <tr>
           <th scope="row">Method</th>
           <td>{ok(baseline) ? methodWord(baseline) : baseline.error}</td>
@@ -107,15 +196,25 @@ export function CoveragePanel() {
   const city = useCity((s) => s.city)!;
   const pickTarget = useCity((s) => s.pickTarget);
   const cv = useCoverage();
-  const activeScenario = useScenarios((s) => s.scenarios.find((x) => x.id === s.activeId));
-  useScenarios((s) => s.activeId + s.scenarios.length); // re-render when the scenario changes (stale flag)
+  const activeScenario = useScenarios((s) => s.scenarios.find((x) => x.id === s.activeId)) ?? BASELINE;
+  const eff = effectiveInputs(cv, activeScenario);
+  const overrides = describeOverrides(city, activeScenario);
   const classes = useClasses(city);
   const [report, setReport] = useState(false);
-  const pick = (t: 'zone-a' | 'depot' | 'dump') => useCity.getState().setPickTarget(pickTarget === t || (t === 'zone-a' && pickTarget === 'zone-b') ? null : t);
-  const circle = cv.zoneShape === 'circle';
-  const ready = cv.zone !== null && cv.depot !== null;
+  const drawing = pickTarget === 'zone';
+  const pick = (t: 'zone' | 'depot' | 'dump') => {
+    if (t === 'zone' || drawing) cv.cancelZone();
+    useCity.getState().setPickTarget(pickTarget === t ? null : t);
+  };
+  // Leaving the drawing mode any other way (Escape, another pick) drops the unfinished shape.
+  useEffect(() => {
+    if (!drawing && useCoverage.getState().draft.length) useCoverage.getState().cancelZone();
+  }, [drawing]);
+  usePolygonKeys(drawing && cv.zoneShape === 'polygon');
+  const ready = cv.zone !== null && eff.depot !== null;
   const stale = cv.result !== null && cv.resultKey !== coverageKey(cv);
   const r = cv.result;
+  const sum = r ? summarise(r) : null;
   const f = cv.fleet;
   const toggleClass = (c: string) => {
     const all = classes.map(([k]) => k);
@@ -135,37 +234,58 @@ export function CoveragePanel() {
       </header>
 
       <div className="cv-inputs">
-        <div className="segmented segmented--sm" role="group" aria-label="Zone shape">
-          <button type="button" aria-pressed={!circle} onClick={() => cv.setZoneShape('rect')} data-testid="cov-shape-rect">
-            Rectangle
-          </button>
-          <button type="button" aria-pressed={circle} onClick={() => cv.setZoneShape('circle')} data-testid="cov-shape-circle">
-            Circle
-          </button>
-        </div>
-        <div className="rl-end" data-testid="cov-zone-box">
+        <div className="rl-end rl-end--plain" data-testid="cov-zone-box">
           <div className="rl-end__body">
             <div className="rl-end__row">
               <span className="rl-end__label">Zone</span>
-              <strong className="rl-end__value" data-testid="cov-zone">
-                {cv.zone ? zoneLabel(cv.zone, fmtDist) : pickTarget === 'zone-a' ? (circle ? 'Click the centre' : 'Click the first corner') : pickTarget === 'zone-b' ? (circle ? 'Click a point on the edge' : 'Click the opposite corner') : 'Not drawn'}
+              <strong className="rl-end__value" data-testid="cov-zone" title={cv.zone && !drawing ? describeZone(cv.zone) : undefined}>
+                {drawing ? drawingPrompt(cv.zoneShape, cv.draft.length) : cv.zone ? describeZone(cv.zone) : 'Not drawn'}
               </strong>
-              <button type="button" className={`btn btn--ghost btn--sm${pickTarget === 'zone-a' || pickTarget === 'zone-b' ? ' is-on' : ''}`} aria-pressed={pickTarget === 'zone-a' || pickTarget === 'zone-b'} onClick={() => pick('zone-a')} data-testid="cov-draw-zone">
-                <Icon name="focus" size={13} /> Draw
+              <button type="button" className={`btn btn--ghost btn--sm${drawing ? ' is-on' : ''}`} aria-pressed={drawing} onClick={() => pick('zone')} data-testid="cov-draw-zone">
+                <Icon name="focus" size={13} /> {drawing ? 'Stop' : 'Draw'}
               </button>
             </div>
+            <div className="segmented segmented--sm cv-shapes" role="group" aria-label="Zone shape">
+              {SHAPES.map(([k, label]) => (
+                <button key={k} type="button" aria-pressed={cv.zoneShape === k} onClick={() => cv.setZoneShape(k)} data-testid={`cov-shape-${k}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {drawing && cv.zoneShape === 'polygon' && cv.draft.length > 0 && (
+              <div className="cv-zone-tools">
+                <button type="button" className="btn btn--ghost btn--sm" onClick={() => cv.undoZonePoint()} data-testid="cov-zone-undo">
+                  Undo point
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--primary btn--sm"
+                  disabled={cv.draft.length < 3}
+                  onClick={() => {
+                    if (cv.finishZone()) useCity.getState().setPickTarget(null);
+                  }}
+                  data-testid="cov-zone-finish"
+                >
+                  Finish outline
+                </button>
+              </div>
+            )}
+            {cv.zoneHint && (
+              <p className="notice notice--warn small" role="status" data-testid="cov-zone-hint">
+                {cv.zoneHint}
+              </p>
+            )}
           </div>
         </div>
         {(['depot', 'dump'] as const).map((w) => {
           const n = w === 'depot' ? cv.depot : cv.dump;
           return (
-            <div key={w} className="rl-end">
+            <div key={w} className="rl-end rl-end--plain">
               <div className="rl-end__body">
                 <div className="rl-end__row">
                   <span className="rl-end__label">{w === 'depot' ? 'Depot' : 'Disposal'}</span>
                   <strong className="rl-end__value" data-testid={`cov-${w}`}>
                     {n !== null ? nodeLabel(city, n) : pickTarget === w ? 'Click an intersection' : w === 'depot' ? 'Not set' : 'None (optional)'}
-                    {w === 'depot' && activeScenario?.ops?.depot !== undefined && <span className="faint small"> · this scenario uses another depot</span>}
                   </strong>
                   {w === 'dump' && n !== null && (
                     <button type="button" className="btn btn--ghost btn--sm" onClick={() => cv.setDump(null)}>
@@ -180,6 +300,36 @@ export function CoveragePanel() {
             </div>
           );
         })}
+        <div className="cv-depots" data-testid="cov-extra-depots">
+          {cv.extraDepots.map((d, i) => (
+            <div key={d.node} className="rl-end rl-end--plain" data-testid={`cov-extra-depot-${i}`}>
+              <div className="rl-end__body">
+                <div className="rl-end__row">
+                  <span className="rl-end__label">Depot {i + 2}</span>
+                  <strong className="rl-end__value">{nodeLabel(city, d.node)}</strong>
+                  <label className="cv-ops-label">
+                    <span className="faint small">vehicles</span>
+                    <input className="input input--sm cv-ops-input" type="number" min={1} max={20} step={1} value={d.vehicles} onChange={(e) => cv.setExtraDepotVehicles(i, Number(e.target.value) || 1)} aria-label={`Vehicles at depot ${i + 2}`} data-testid={`cov-extra-vehicles-${i}`} />
+                  </label>
+                  <button type="button" className="btn btn--ghost btn--sm" onClick={() => cv.removeExtraDepot(i)} aria-label={`Remove depot ${i + 2}`}>
+                    Remove
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+          <button
+            type="button"
+            className={`btn btn--ghost btn--sm${pickTarget === 'extra-depot' ? ' is-on' : ''}`}
+            aria-pressed={pickTarget === 'extra-depot'}
+            disabled={cv.depot === null}
+            onClick={() => useCity.getState().setPickTarget(pickTarget === 'extra-depot' ? null : 'extra-depot')}
+            data-testid="cov-add-depot"
+          >
+            <Icon name="add" size={13} /> {pickTarget === 'extra-depot' ? 'Click an intersection for the depot' : 'Add another depot'}
+          </button>
+          {cv.extraDepots.length > 0 && <p className="faint small">With several depots, each street goes to the depot with the cheapest round trip through it, and each depot plans its own vehicles (the Vehicles field is the first depot's fleet).</p>}
+        </div>
       </div>
 
       <fieldset className="cv-group">
@@ -215,6 +365,23 @@ export function CoveragePanel() {
       </fieldset>
 
       <fieldset className="cv-group">
+        <legend>Turns</legend>
+        <div className="segmented segmented--sm" role="group" aria-label="Turn order">
+          <button type="button" aria-pressed={cv.turnAware} onClick={() => cv.setTurnAware(true)} data-testid="cov-turns-ordered">
+            Fewer U-turns
+          </button>
+          <button type="button" aria-pressed={!cv.turnAware} onClick={() => cv.setTurnAware(false)} data-testid="cov-turns-engine">
+            Solver order
+          </button>
+        </div>
+        <p className="faint small">
+          {cv.turnAware
+            ? 'Same streets, same directions, same distance: the order at intersections is chosen to cut U-turns and right turns. Truck turn penalties (left-hand traffic): left 4 s, right 10 s, U-turn 20 s.'
+            : 'The order the coverage solver returns. Turns are counted with the same penalties but not optimised.'}
+        </p>
+      </fieldset>
+
+      <fieldset className="cv-group">
         <legend>Fleet</legend>
         <div className="cv-grid">
           <NumberField label="Vehicles" value={f.vehicles} onChange={(v) => cv.setFleet({ vehicles: v ?? 1 })} min={1} max={20} step={1} testid="cov-vehicles" />
@@ -224,7 +391,14 @@ export function CoveragePanel() {
           <NumberField label="Capacity" value={f.capacity} onChange={(v) => cv.setFleet({ capacity: v })} min={1} max={1e6} step={1} placeholder="none" unit="units" testid="cov-capacity" />
           <NumberField label="Demand" value={f.demandPerKm} onChange={(v) => cv.setFleet({ demandPerKm: v ?? 0 })} min={0} max={1e5} step={0.1} unit="units/km" testid="cov-demand" />
           <NumberField label="Unloading" value={f.dumpSeconds / 60} onChange={(v) => cv.setFleet({ dumpSeconds: Math.round((v ?? 0) * 60) })} min={0} max={240} step={1} unit="min" testid="cov-dump-min" />
+          <NumberField label="Main roads within" value={f.priorityDeadlineSeconds == null ? null : f.priorityDeadlineSeconds / 3600} onChange={(v) => cv.setFleet({ priorityDeadlineSeconds: v === null ? null : Math.round(v * 3600) })} min={0.25} max={24} step={0.25} placeholder="no deadline" unit="h" testid="cov-priority-deadline" />
         </div>
+        {f.priorityDeadlineSeconds != null && (
+          <p className="faint small" data-testid="cov-priority-note">
+            Main roads (trunk, primary, secondary and tertiary, with their links) in the zone must be serviced within {fmtTime(f.priorityDeadlineSeconds)} of the shift start, for example before the morning traffic.
+            {cv.extraDepots.length > 0 ? ' This deadline is supported for plans from one depot only: remove the extra depots or clear the deadline.' : ''}
+          </p>
+        )}
         <div className="segmented segmented--sm" role="group" aria-label="Fleet objective">
           <button type="button" aria-pressed={f.objective === 'min-makespan'} onClick={() => cv.setFleet({ objective: 'min-makespan' })} data-testid="cov-obj-makespan">
             Finish soonest
@@ -236,10 +410,25 @@ export function CoveragePanel() {
         <p className="faint small">Speeds, capacity and demand are your planning inputs, not measured values.</p>
       </fieldset>
 
-      <button type="button" className="btn btn--primary btn--spectral" disabled={!ready || cv.status === 'running'} onClick={() => void cv.run()} data-testid="cov-run">
+      {overrides.length > 0 && (
+        <p className="notice small" data-testid="cov-overrides">
+          Scenario <strong>{activeScenario.name}</strong> changes the operation: {overrides.join(' · ')}. Plans use these values; the fields above stay as the baseline operation.
+        </p>
+      )}
+
+      <button type="button" className="btn btn--primary btn--spectral" disabled={!ready || drawing || cv.status === 'running'} onClick={() => void cv.run()} data-testid="cov-run">
         {cv.status === 'running' ? <span className="spinner" aria-hidden="true" /> : <Icon name="route" size={14} />} {cv.status === 'running' ? 'Planning…' : 'Plan coverage'}
       </button>
-      {!ready && <p className="faint small">Draw a zone and pick a depot to plan.</p>}
+      {!ready && (
+        <p className="cw-next small" data-testid="cov-next">
+          <strong>Next:</strong>{' '}
+          {cv.zone === null
+            ? 'draw the area to sweep. Under Zone, choose a shape, press Draw, then click on the map (two corners, or a centre and an edge, or the points of an outline).'
+            : 'choose where the vehicles start. Under Depot, press Pick and click an intersection on the map.'}{' '}
+          Every street whose midpoint lies inside the zone is serviced.
+        </p>
+      )}
+      {ready && drawing && <p className="faint small">Finish or stop drawing the zone to plan.</p>}
       {cv.error && (
         <p className="notice notice--warn small" role="alert" data-testid="cov-error">
           {cv.error}
@@ -254,7 +443,9 @@ export function CoveragePanel() {
             </p>
           )}
           <p className="cv-method" data-testid="cov-method">
-            <strong>{METHOD_LABEL[r.method]}</strong>
+            <Term k="exact">
+              <strong>{METHOD_LABEL[r.method]}</strong>
+            </Term>
             <span className={`cv-badge${r.optimal ? ' is-exact' : ''}`} data-testid="cov-optimal">
               {r.optimal ? 'Proven optimal' : r.gap !== null ? `Within ${pct(r.gap)} of a lower bound` : 'No optimality guarantee'}
             </span>
@@ -264,16 +455,18 @@ export function CoveragePanel() {
           </p>
           <div className="rl-summary">
             <div>
-              <span>Total</span>
-              <strong data-testid="cov-total">{fmtDist(r.totals.distanceM)}</strong>
+              <span>{r.fleet ? 'Total, all vehicles' : 'Total'}</span>
+              <strong data-testid="cov-total">{fmtDist(sum!.distanceM)}</strong>
             </div>
             <div>
               <span>Service</span>
-              <strong>{fmtDist(r.totals.serviceM)}</strong>
+              <strong>{fmtDist(sum!.serviceM)}</strong>
             </div>
             <div>
-              <span>Deadhead</span>
-              <strong>{fmtDist(r.totals.deadheadM + r.totals.repeatM)}</strong>
+              <span>
+                <Term k="deadhead">Transit</Term>
+              </span>
+              <strong data-testid="cov-transit">{fmtDist(sum!.transitM)}</strong>
             </div>
           </div>
           <dl className="cv-facts">
@@ -281,10 +474,44 @@ export function CoveragePanel() {
             <dd>
               {r.report.requiredSegments.toLocaleString('en-US')} segments · {r.report.requiredKm.toFixed(2)} km{r.report.onewayRequired ? ` · ${r.report.onewayRequired} one-way` : ''}
             </dd>
-            <dt>Lower bound</dt>
+            {r.depots && (
+              <>
+                <dt>Depots</dt>
+                <dd data-testid="cov-depots">
+                  {r.depots.map((d, i) => (
+                    <span key={d.node} className="cv-depot-line">
+                      {i + 1}. {nodeLabel(city, d.node)}: {d.vehicles} vehicle{d.vehicles === 1 ? '' : 's'}, {d.requiredSegments.toLocaleString('en-US')} street segments{d.message ? ` (${d.message})` : ''}
+                    </span>
+                  ))}
+                </dd>
+              </>
+            )}
+            {r.fleet && !r.depots && (
+              <>
+                <dt>Single closed route</dt>
+                <dd data-testid="cov-single">{fmtDist(r.totals.distanceM)}, which the fleet plan splits into vehicle routes from the depot</dd>
+              </>
+            )}
+            <dt>
+              <Term k="lowerBound">Lower bound</Term>
+            </dt>
             <dd data-testid="cov-lb">{r.lowerBoundM !== null ? `${fmtDist(r.lowerBoundM)} (${r.lowerBoundMethod})` : 'none'}</dd>
-            <dt>Gap to bound</dt>
+            <dt>
+              <Term k="gap">{r.fleet ? 'Gap, single route' : 'Gap to the bound'}</Term>
+            </dt>
             <dd data-testid="cov-gap">{pct(r.gap)}</dd>
+            {r.fleet && (
+              <>
+                <dt>Gap, fleet total</dt>
+                <dd data-testid="cov-fleet-gap">
+                  {pct(r.fleet.gaps.totalDistance)} against {fmtDist(r.fleet.lowerBounds.totalDistance.value)}
+                </dd>
+              </>
+            )}
+            <dt>
+              <Term k="turns">Turns</Term>
+            </dt>
+            <dd data-testid="cov-turns">{turnSummary(r.turns)}</dd>
             {r.direction === 'undirected' && (
               <>
                 <dt>Wrong-way traversals</dt>
@@ -293,7 +520,9 @@ export function CoveragePanel() {
             )}
             {r.connectors.paths > 0 && (
               <>
-                <dt>Connectors</dt>
+                <dt>
+                  <Term k="connectors">Connectors</Term>
+                </dt>
                 <dd>
                   {r.connectors.paths} path{r.connectors.paths === 1 ? '' : 's'} ({fmtDist(r.connectors.distance)}) join {r.connectors.components} separate street groups
                 </dd>
@@ -322,17 +551,33 @@ export function CoveragePanel() {
               <p className="faint small" data-testid="cov-fleet-guarantee">
                 {r.fleet.guarantee}
               </p>
+              {r.fleet.totals.vehiclesUsed > eff.fleet.vehicles && (
+                <p className="notice notice--warn small" role="alert" data-testid="cov-overfleet">
+                  {eff.fleet.vehicles} vehicle{eff.fleet.vehicles === 1 ? '' : 's'} cannot do this work within the limits. The plan below uses {r.fleet.totals.vehiclesUsed} routes, each within the shift{r.priority ? ' and the main-roads deadline' : ''}
+                  {r.fleet.lowerBounds.vehiclesByShift !== null ? `; any plan needs at least ${r.fleet.lowerBounds.vehiclesByShift} vehicles for this shift` : ''}. {r.priority ? 'Add vehicles, lengthen the shift or relax the deadline.' : 'Add vehicles or lengthen the shift.'}
+                </p>
+              )}
               <dl className="cv-facts">
-                <dt>Finish (makespan)</dt>
+                <dt>
+                  <Term k="makespan">Last vehicle back</Term>
+                </dt>
                 <dd data-testid="cov-makespan">
-                  {fmtTime(r.fleet.totals.makespanSeconds)} · bound {fmtTime(r.fleet.lowerBounds.makespanSeconds.value)} · gap {pct(r.fleet.gaps.makespan)}
+                  {r.fleet.totals.vehiclesUsed > eff.fleet.vehicles
+                    ? `${fmtTime(r.fleet.totals.makespanSeconds)} with ${r.fleet.totals.vehiclesUsed} routes · with ${eff.fleet.vehicles} vehicle${eff.fleet.vehicles === 1 ? '' : 's'}, no plan finishes before ${fmtTime(r.fleet.lowerBounds.makespanSeconds.value)} (lower bound)`
+                    : `${fmtTime(r.fleet.totals.makespanSeconds)} · bound ${fmtTime(r.fleet.lowerBounds.makespanSeconds.value)} · gap ${pct(r.fleet.gaps.makespan)}`}
                 </dd>
                 <dt>Vehicles used</dt>
-                <dd>
-                  {r.fleet.totals.vehiclesUsed} of {f.vehicles}
+                <dd data-testid="cov-vehicles-used">
+                  {r.fleet.totals.vehiclesUsed > eff.fleet.vehicles ? `${r.fleet.totals.vehiclesUsed} routes needed, ${eff.fleet.vehicles} available` : `${r.fleet.totals.vehiclesUsed} of ${eff.fleet.vehicles}`}
                   {r.fleet.lowerBounds.vehiclesByShift !== null ? ` · at least ${r.fleet.lowerBounds.vehiclesByShift} needed for the shift limit` : ''}
                   {r.fleet.lowerBounds.vehiclesByCapacity !== null ? ` · at least ${r.fleet.lowerBounds.vehiclesByCapacity} by capacity` : ''}
                 </dd>
+                {r.priority && (
+                  <>
+                    <dt>Main roads</dt>
+                    <dd data-testid="cov-priority">{priorityText(r.priority, eff.fleet.vehicles, r.fleet.totals.vehiclesUsed)}</dd>
+                  </>
+                )}
                 <dt>Feasible</dt>
                 <dd data-testid="cov-feasible">{r.fleet.feasibility.ok ? 'yes' : `no: ${r.fleet.feasibility.issues.join('; ')}`}</dd>
               </dl>
@@ -343,9 +588,11 @@ export function CoveragePanel() {
             <thead>
               <tr>
                 <th scope="col">Vehicle</th>
+                {r.depots && <th scope="col">Depot</th>}
                 <th scope="col">Distance</th>
                 <th scope="col">Time</th>
                 <th scope="col">Trips</th>
+                {r.priority && <th scope="col">Main roads done</th>}
               </tr>
             </thead>
             <tbody>
@@ -355,9 +602,11 @@ export function CoveragePanel() {
                     <i className="cv-swatch" style={{ background: VEHICLE_COLORS[i % VEHICLE_COLORS.length] }} aria-hidden="true" /> {i + 1}
                     {!v.feasible.shift || !v.feasible.capacity ? <span className="sc-tag sc-tag--closed">over limit</span> : null}
                   </th>
+                  {r.depots && <td>{r.depots.findIndex((d) => d.node === v.depotNode) + 1}</td>}
                   <td>{fmtDist(v.distanceM)}</td>
                   <td>{fmtTime(v.seconds)}</td>
                   <td>{v.trips}</td>
+                  {r.priority && <td data-testid={`cov-vehicle-priority-${i}`}>{v.priorityFinishSeconds === null ? '–' : `${fmtTime(v.priorityFinishSeconds)}${v.priorityFinishSeconds > r.priority.deadlineSeconds + 1e-6 ? ' (late)' : ''}`}</td>}
                 </tr>
               ))}
             </tbody>
@@ -374,7 +623,7 @@ export function CoveragePanel() {
               <NumberField label="CO₂ factor" value={cv.costs.co2KgPerL} onChange={(v) => cv.setCosts({ co2KgPerL: v ?? 2.68 })} min={0} max={10} step={0.01} unit="kg/L" testid="cost-co2" />
             </div>
             {(() => {
-              const e = estimateCost({ serviceM: r.totals.serviceM, transitM: r.totals.deadheadM + r.totals.repeatM, vehicleSeconds: r.routes.reduce((a, v) => a + v.seconds, 0) }, cv.costs);
+              const e = estimateCost(sum!, eff.costs);
               return (
                 <dl className="cv-facts" data-testid="cost-results">
                   <dt>Fuel</dt>
@@ -395,58 +644,48 @@ export function CoveragePanel() {
 
           <section className="sc-compare" aria-label="Scenario impact on coverage">
             <h3>Scenario impact</h3>
-            {!activeScenario || activeScenario.id === 'baseline' ? (
-              <p className="faint small">Create a scenario (closures, direction changes) in the Scenarios tab to compare this plan against the baseline network.</p>
+            {activeScenario.id === 'baseline' ? (
+              <p className="faint small">Create a scenario in the Scenarios tab (closures, direction changes, another depot, fleet size or cost assumptions) to compare this plan against the baseline.</p>
             ) : (
               <>
                 <p className="faint small">
-                  The same zone, planned on the baseline (your depot and fleet) and on <strong>{activeScenario.name}</strong> (its street changes, plus the depot and fleet below).
+                  Same zone and streets. Baseline: the inputs above on the mapped network. <strong>{activeScenario.name}</strong>: its network changes{overrides.length ? ` and ${overrides.join(', ')}` : ''}.
                 </p>
-                <dl className="cv-facts" data-testid="cov-scenario-ops">
-                  <dt>Depot</dt>
-                  <dd>
-                    {activeScenario.ops?.depot !== undefined ? nodeLabel(city, activeScenario.ops.depot) : 'same as plan'}{' '}
-                    <button type="button" className={`btn btn--ghost btn--sm${pickTarget === 'scenario-depot' ? ' is-on' : ''}`} aria-pressed={pickTarget === 'scenario-depot'} onClick={() => useCity.getState().setPickTarget(pickTarget === 'scenario-depot' ? null : 'scenario-depot')} data-testid="pick-scenario-depot">
-                      Pick
-                    </button>
-                    {activeScenario.ops?.depot !== undefined && (
-                      <button type="button" className="btn btn--ghost btn--sm" onClick={() => useScenarios.getState().setOps({ depot: null })}>
-                        Reset
-                      </button>
-                    )}
-                  </dd>
-                  <dt>Vehicles</dt>
-                  <dd>
-                    <input
-                      className="input input--sm cv-ops-input"
-                      type="number"
-                      min={1}
-                      max={20}
-                      step={1}
-                      placeholder={`same (${f.vehicles})`}
-                      value={activeScenario.ops?.vehicles ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value.trim();
-                        useScenarios.getState().setOps({ vehicles: v === '' ? null : Math.min(20, Math.max(1, Math.round(Number(v)) || 1)) });
-                      }}
-                      aria-label="Vehicles in this scenario"
-                      data-testid="cov-scenario-vehicles"
-                    />
-                  </dd>
-                </dl>
                 <button type="button" className="btn btn--primary btn--sm" disabled={cv.comparing} onClick={() => void cv.compare()} data-testid="cov-compare">
                   {cv.comparing ? <span className="spinner" aria-hidden="true" /> : null} Compare with baseline
                 </button>
                 {cv.comparison && cv.comparison.key === coverageKey(cv) && (
-                  <CompareTable baseline={cv.comparison.baseline} scenario={cv.comparison.scenario} name={activeScenario.name} costs={cv.costs} />
+                  <CompareTable baseline={cv.comparison.baseline} scenario={cv.comparison.scenario} name={activeScenario.name} costs={{ baseline: cv.costs, scenario: eff.costs }} />
                 )}
               </>
             )}
           </section>
 
-          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setReport(true)} data-testid="cov-open-report">
-            <Icon name="table" size={13} /> Printable report
-          </button>
+          <div className="cv-exports">
+            <button type="button" className="btn btn--quiet btn--sm" onClick={() => setReport(true)} data-testid="cov-open-report">
+              <Icon name="table" size={13} /> Printable report
+            </button>
+            <button
+              type="button"
+              className="btn btn--quiet btn--sm"
+              onClick={() => {
+                const name = `${city.name} · coverage plan`;
+                const desc = `${METHOD_LABEL[r.method]}; ${r.routes.filter((v) => v.arcs.length).length} vehicle route(s); ${describeZone(cv.zone!)}. Generated by SWEEP from OpenStreetMap data.`;
+                downloadText(`${safeFileName(`${city.id}-coverage`)}.gpx`, plansToGpx(city, r.routes, { name, description: desc, time: new Date() }), 'application/gpx+xml');
+              }}
+              data-testid="cov-export-gpx"
+            >
+              <Icon name="download" size={13} /> GPX tracks
+            </button>
+            <button
+              type="button"
+              className="btn btn--quiet btn--sm"
+              onClick={() => downloadText(`${safeFileName(`${city.id}-coverage-steps`)}.csv`, plansToCsv(city, r.routes, eff.fleet, useShift.getState().startOfDay), 'text/csv')}
+              data-testid="cov-export-csv"
+            >
+              <Icon name="download" size={13} /> Step list (CSV)
+            </button>
+          </div>
           {report && <CoverageReport onClose={() => setReport(false)} />}
 
           <details className="cv-checks" data-testid="cov-checks">

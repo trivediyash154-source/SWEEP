@@ -9,8 +9,8 @@
 | Docker image (`docker build`, `docker compose`) | **Verified** in the development container: image built (343 MB, non-root `node` user), container healthy, `/api/health` and `/workspace` answer, optimise/register/scenario/run smoke test passes, data survives `docker restart` and `compose down`/`up`, and the `tests` profile runs the unit and integration suites inside the image |
 | GitHub Actions CI | **Verified on GitHub**: the `verify` job (typecheck, lint, unit/integration/property tests, Python oracle, build, Playwright end-to-end and axe in both themes) and the `docker` job (build, health check, smoke test, restart persistence, test target) pass |
 | GitHub Pages workflow | Committed; needs Pages enabled once in the repository settings (below) |
-| Public hosting | A static build of an **earlier version** (before the city workspace) was deployed to Vercel at the owner's request: https://sweep-ashy.vercel.app. It has **not** been redeployed since; redeploy only with the owner's go-ahead. |
-| City workspace in the static build | The city bundle is a static file (`apps/web/public/cities/`), and all city routing and coverage run in browser workers, so `/workspace` needs no server API. Verified with the production server and the e2e suite. The static build at a sub-path relies on `cityUrl()` honouring `BASE_URL`. |
+| Public hosting | **Verified**: the static build of this version is on Vercel at https://sweep-ashy.vercel.app (project "sweep"), with the city workspace at `/#/workspace`. Deployed on 2026-10-19 (22:56 UTC) from commit `fd4740d` with the Vercel CLI to the existing project "sweep". On the live site, headless Chromium checked the landing page, the lab, the city load, a Route lab comparison (all five algorithms agree) and a coverage plan, with no console errors or failed requests. |
+| City workspace in the static build | The city bundle is a static file (`apps/web/public/cities/`), and all city routing and coverage run in browser workers, so `/workspace` needs no server API. Verified with the production server and the e2e suite, and the static build (`pnpm build:static`) was checked in headless Chromium from a plain file server with no API: landing page, lab, city load at `/#/workspace`, the Route lab (all five algorithms agree) and a coverage plan, with no console errors or failed requests. Workers resolve the city URL against the page's base URI (a relative URL inside a worker resolves against `/assets/`). The static build at a sub-path relies on `cityUrl()` honouring `BASE_URL`. |
 
 ## Run locally (or on any Node 22 host)
 
@@ -83,6 +83,20 @@ The image (multi-stage: cached dependency install, build, slim `node:22-bookworm
 `.github/workflows/pages.yml` builds `apps/web/dist-static` (HashRouter, relative asset paths, in-browser engine, local saving, no accounts) and deploys it to Pages.
 
 **One manual step:** in the repository settings, open *Pages* and set *Source* to **GitHub Actions**. Then run the workflow, or push to `main`.
+
+## Static build on Vercel (https://sweep-ashy.vercel.app)
+
+The Vercel project is "sweep". The static build needs no server, no environment variables and no rewrites: it uses hash routes, so the city workspace is at `https://sweep-ashy.vercel.app/#/workspace`. From a machine whose Vercel CLI is logged in to the project's team:
+
+```bash
+pnpm install
+pnpm build:static                                   # → apps/web/dist-static (checked: city, Route lab and coverage run from a plain file server)
+npx vercel deploy apps/web/dist-static --prod       # uploads the built files as they are
+```
+
+On the first run the CLI asks which project to use: link it to the existing "sweep" project, not a new one. The build empties `dist-static` each time, which also removes that link, so the question comes back after every build; the answer stays the same.
+
+Then open `/#/workspace`, check that the "Pune · Bibwewadi & VIT" header appears, and run one Route lab comparison. The third session deployed this way on 2026-10-19 from `fd4740d`. It copied `dist-static` into a folder already linked to the project (`.vercel/`) that holds a `vercel.json` with three security headers (`X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`), then ran `vercel deploy --prod --yes`.
 
 ## Hosting the full app (server + accounts)
 

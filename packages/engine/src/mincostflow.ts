@@ -34,23 +34,46 @@ export interface FlowSolution {
   iterations: number;
 }
 
+/**
+ * Binary min-heap of (key, vertex) pairs, ordered by key and then by vertex, so
+ * ties break deterministically. Typed arrays and no per-operation allocation:
+ * this heap runs inside every shortest-path search of the flow.
+ */
 class Heap {
-  private k: number[] = [];
-  private v: number[] = [];
+  private k = new Float64Array(64);
+  private v = new Int32Array(64);
+  private n = 0;
+  /** Key and vertex of the last pop. */
+  topKey = 0;
+  topVal = 0;
   get size(): number {
-    return this.k.length;
+    return this.n;
   }
   private lt(i: number, j: number): boolean {
-    return this.k[i]! < this.k[j]! || (this.k[i] === this.k[j] && this.v[i]! < this.v[j]!);
+    const ki = this.k[i]!;
+    const kj = this.k[j]!;
+    return ki < kj || (ki === kj && this.v[i]! < this.v[j]!);
   }
   private sw(i: number, j: number): void {
-    [this.k[i], this.k[j]] = [this.k[j]!, this.k[i]!];
-    [this.v[i], this.v[j]] = [this.v[j]!, this.v[i]!];
+    const tk = this.k[i]!;
+    this.k[i] = this.k[j]!;
+    this.k[j] = tk;
+    const tv = this.v[i]!;
+    this.v[i] = this.v[j]!;
+    this.v[j] = tv;
   }
   push(key: number, val: number): void {
-    this.k.push(key);
-    this.v.push(val);
-    let i = this.k.length - 1;
+    if (this.n === this.k.length) {
+      const k = new Float64Array(this.n * 2);
+      k.set(this.k);
+      this.k = k;
+      const v = new Int32Array(this.n * 2);
+      v.set(this.v);
+      this.v = v;
+    }
+    let i = this.n++;
+    this.k[i] = key;
+    this.v[i] = val;
     while (i > 0) {
       const p = (i - 1) >> 1;
       if (!this.lt(i, p)) break;
@@ -58,38 +81,60 @@ class Heap {
       i = p;
     }
   }
-  pop(): [number, number] {
-    const top: [number, number] = [this.k[0]!, this.v[0]!];
-    const lk = this.k.pop()!;
-    const lv = this.v.pop()!;
-    if (this.k.length > 0) {
-      this.k[0] = lk;
-      this.v[0] = lv;
+  /** Removes the smallest pair; read it from `topKey` and `topVal`. */
+  pop(): void {
+    this.topKey = this.k[0]!;
+    this.topVal = this.v[0]!;
+    const last = --this.n;
+    if (last > 0) {
+      this.k[0] = this.k[last]!;
+      this.v[0] = this.v[last]!;
       let i = 0;
       for (;;) {
         const l = 2 * i + 1;
         const r = l + 1;
         let s = i;
-        if (l < this.k.length && this.lt(l, s)) s = l;
-        if (r < this.k.length && this.lt(r, s)) s = r;
+        if (l < last && this.lt(l, s)) s = l;
+        if (r < last && this.lt(r, s)) s = r;
         if (s === i) break;
         this.sw(i, s);
         i = s;
       }
     }
-    return top;
   }
 }
 
 export function minCostFlow(n: number, arcs: FlowArc[], supply: ArrayLike<number>): FlowSolution {
   const m = arcs.length;
-  const out: number[][] = Array.from({ length: n }, () => []);
-  const inc: number[][] = Array.from({ length: n }, () => []);
+  // Arcs and adjacency in flat arrays (compressed rows, arcs in index order, as the searches expect).
+  const aTail = new Int32Array(m);
+  const aHead = new Int32Array(m);
+  const aCost = new Float64Array(m);
+  const outStart = new Int32Array(n + 1);
+  const inStart = new Int32Array(n + 1);
   arcs.forEach((a, i) => {
+    aTail[i] = a.tail;
+    aHead[i] = a.head;
+    aCost[i] = a.cost;
     if (a.tail === a.head) return; // a loop never helps to move flow
-    out[a.tail]!.push(i);
-    inc[a.head]!.push(i);
+    outStart[a.tail + 1]!++;
+    inStart[a.head + 1]!++;
   });
+  for (let v = 0; v < n; v++) {
+    outStart[v + 1] = outStart[v + 1]! + outStart[v]!;
+    inStart[v + 1] = inStart[v + 1]! + inStart[v]!;
+  }
+  const outArcs = new Int32Array(outStart[n]!);
+  const inArcs = new Int32Array(inStart[n]!);
+  {
+    const oFill = outStart.slice(0, n);
+    const iFill = inStart.slice(0, n);
+    for (let i = 0; i < m; i++) {
+      if (aTail[i] === aHead[i]) continue;
+      outArcs[oFill[aTail[i]!]!++] = i;
+      inArcs[iFill[aHead[i]!]!++] = i;
+    }
+  }
   const flow = new Float64Array(m);
   const pi = new Float64Array(n);
   const excess = Float64Array.from({ length: n }, (_, v) => supply[v]!);
@@ -118,7 +163,9 @@ export function minCostFlow(n: number, arcs: FlowArc[], supply: ArrayLike<number
     let sink = -1;
     let sinkDist = Infinity;
     while (heap.size > 0) {
-      const [d, u] = heap.pop();
+      heap.pop();
+      const d = heap.topKey;
+      const u = heap.topVal;
       if (done[u] || d > dist[u]!) continue;
       done[u] = 1;
       if (excess[u]! < 0) {
@@ -126,19 +173,21 @@ export function minCostFlow(n: number, arcs: FlowArc[], supply: ArrayLike<number
         sinkDist = d;
         break;
       }
-      for (const a of out[u]!) {
-        const w = arcs[a]!.head;
-        const nd = d + arcs[a]!.cost + pi[u]! - pi[w]!;
+      for (let i = outStart[u]!; i < outStart[u + 1]!; i++) {
+        const a = outArcs[i]!;
+        const w = aHead[a]!;
+        const nd = d + aCost[a]! + pi[u]! - pi[w]!;
         if (nd < dist[w]!) {
           dist[w] = nd;
           pred[w] = a + 1;
           heap.push(nd, w);
         }
       }
-      for (const a of inc[u]!) {
+      for (let i = inStart[u]!; i < inStart[u + 1]!; i++) {
+        const a = inArcs[i]!;
         if (flow[a]! <= 0) continue;
-        const w = arcs[a]!.tail;
-        const nd = d - arcs[a]!.cost + pi[u]! - pi[w]!;
+        const w = aTail[a]!;
+        const nd = d - aCost[a]! + pi[u]! - pi[w]!;
         if (nd < dist[w]!) {
           dist[w] = nd;
           pred[w] = -(a + 1);
@@ -158,10 +207,10 @@ export function minCostFlow(n: number, arcs: FlowArc[], supply: ArrayLike<number
     let v = sink;
     while (pred[v] !== 0) {
       const p = pred[v]!;
-      if (p > 0) v = arcs[p - 1]!.tail;
+      if (p > 0) v = aTail[p - 1]!;
       else {
         amount = Math.min(amount, flow[-p - 1]!);
-        v = arcs[-p - 1]!.head;
+        v = aHead[-p - 1]!;
       }
     }
     amount = Math.min(amount, excess[v]!);
@@ -171,12 +220,12 @@ export function minCostFlow(n: number, arcs: FlowArc[], supply: ArrayLike<number
       const p = pred[v]!;
       if (p > 0) {
         flow[p - 1] = flow[p - 1]! + amount;
-        cost += amount * arcs[p - 1]!.cost;
-        v = arcs[p - 1]!.tail;
+        cost += amount * aCost[p - 1]!;
+        v = aTail[p - 1]!;
       } else {
         flow[-p - 1] = flow[-p - 1]! - amount;
-        cost -= amount * arcs[-p - 1]!.cost;
-        v = arcs[-p - 1]!.head;
+        cost -= amount * aCost[-p - 1]!;
+        v = aHead[-p - 1]!;
       }
     }
     excess[source] = excess[source]! - amount;

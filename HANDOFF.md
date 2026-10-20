@@ -2,12 +2,10 @@
 
 This file is written for a Claude Code session that takes over the city-scale redesign of SWEEP. Read it fully before changing anything.
 
-**Start with `docs/FINAL_REPORT.md`.** It is the latest consolidated state: dataset, counts, guarantees, tests, performance and blockers.
-
 * Read `IMPLEMENTATION_STATUS.md` next. It is the factual record of what has been verified.
 * The original product brief is in `PROJECT_BRIEF.md` and `PRD.md`; the earlier engine maths is in `MATHEMATICAL_SPEC.md`.
 
-Snapshot: 2026-10-19, branch `claude/laughing-ramanujan-wg70al`. The commit that adds this file holds all work up to that point.
+Snapshot: 2026-10-19, evening (see §3 for which session did what). Earlier snapshot text, from the second session, follows. Work continues on branch `claude/peaceful-cray-qmjciz` (draft PR trivediyash154-source/SWEEP#2), stacked on `claude/laughing-ramanujan-wg70al` (draft PR trivediyash154-source/SWEEP#1). **Two sessions worked in parallel** that afternoon; the second session's branch merged PR #1's branch in at 17:15 UTC, keeping the fuller implementation of each overlapping feature. `docs/FINAL_REPORT.md` was written by the other session before that merge, so check its figures against this file. The commit that updates this file holds all work up to that point.
 
 ---
 
@@ -49,7 +47,7 @@ The owner was explicit about every one of these.
 
 **Git and deployment**
 
-* Pushing to this PR branch is authorized.
+* Pushing to the session's working branch is authorized.
 * Merging, deploying, and changing repository permissions or branch protection are **not** authorized without asking.
 * Do not put a model identifier in commits, PR text or code.
 
@@ -83,7 +81,7 @@ pip install -r oracle/requirements.txt && python3 -I oracle/run_oracle.py  # ind
 |---|---|
 | `pnpm typecheck` | `tsc` for every package |
 | `pnpm lint` | ESLint with `--max-warnings=0` |
-| `pnpm test` | vitest: engine 154 tests, server 38, web 9 |
+| `pnpm test` | vitest: engine 154 tests, server 38, web 26 |
 | `pnpm test:e2e` | Playwright (desktop and mobile projects; 2 workers; port 8790) |
 | `pnpm verify` | everything above, plus the oracle and the build. **This must exit 0 before the final report.** |
 | `pnpm bench` | engine benchmarks (`packages/engine/bench/*.ts`, including `p2p.ts` and `coverage.ts`) |
@@ -98,6 +96,11 @@ Run `pnpm dev`, or build and then run `node scripts/e2e-server.mjs 8790` to serv
 
 * **`.gitignore` has a repo-wide `coverage/` rule** (test-coverage output). It once silently dropped `packages/engine/src/coverage/` from a commit. A negation now re-includes it. After adding a new source folder, check `git status --ignored`.
 * **Do not run `pkill -f <pattern>`** in a command line that itself contains the pattern. It kills its own shell (exit 144).
+* **Do not commit OSM tiles one at a time.** Each push triggers CI, each CI result wakes the session, and the loop burns the owner's usage. Commit the cache once, when a download run ends.
+* **The cloud proxy may block Overpass.** In the second session every mirror (`maps.mail.ru`, `overpass-api.de`, `overpass.private.coffee`) returned `403` on CONNECT: the environment's network policy, not the servers. Check with `curl -sS "$HTTPS_PROXY/__agentproxy/status"` and a `curl` to the mirror. If it is a policy denial, stop the acquisition (the rules say not to retry a confirmed denial) and ask the owner to allow the host in the environment's network settings.
+* **Never create a throwaway WebGL context** (a feature probe) on a page that will create a scene. On software rasterisers it stalls the main thread (see §4.1). Detect the renderer from the scene's own context.
+* **Pick modes are read from a ref, not a prop.** Props inside `<Canvas>` reach the R3F reconciler late on slow frames, so `GeoCityScene` keeps `pickMode`, `onPick` and `onHover` in a DOM-side ref that the picker reads at event time. Keep it that way; passing the mode as a prop made quick clicks after choosing a tool resolve with the old mode (this was the intermittent "close a road" e2e failure).
+* **Wait for the camera with `__sweepCity.cameraMoving()`** before computing click positions in e2e tests. A fixed timeout or "projection unchanged for 400 ms" is not enough when one software-rendered frame takes over a second.
 * **Headless Chromium uses SwiftShader** (software WebGL). The app detects this and starts the 3D scene in low-power mode (`lib/webgl.ts` → `startInLowPower`; demand frameloop, DPR 1, no shadows). Two browsers in parallel on four cores make the real-data tests slow, so the city spec has a 180 s describe timeout. The assertions were not changed.
 
 ---
@@ -170,13 +173,17 @@ Run `pnpm dev`, or build and then run `node scripts/e2e-server.mjs 8790` to serv
 | `geometry.ts`, `geometry.worker.ts` | mesh building off the main thread |
 | `store.ts` | `useCity` (status, city, meshes, mode, camera, hover, selection, pickTarget, showEstimates) |
 | `routeStore.ts`, `router.worker.ts`, `routerClient.ts` | Route Lab state, plus the worker that runs every algorithm on one `RoutingEngine` per (profile, scenario key) |
-| `scenario.ts`, `panels/ScenarioPanel.tsx` | scenarios (`closed[]`, `oneway[]`) with real recalculation and a baseline comparison |
+| `scenario.ts`, `panels/ScenarioPanel.tsx` | scenarios (`closed[]`, `oneway[]`, and `plan` overrides: depot, vehicles, shift, cost assumptions) with real recalculation and a baseline comparison. `effectiveInputs` in `coverageStore.ts` applies a scenario's plan overrides to the coverage panel's inputs. |
 | `panels/RouteLab.tsx` | endpoint search that snaps to junctions; profiles; objective; algorithm chips; results rows; agreement banner; replay; reach bands; assumptions |
 | `overlays.ts` | route path, search exploration ribbons, reach ribbons, scenario highlights |
 | `coverage.worker.ts`, `coverageClient.ts`, `coverageStore.ts` | coverage plans off the main thread: `zoneCoverageGraph` → `solveZoneCoverage` → `planFleet` (when there is more than one vehicle, or a capacity, shift or disposal site is set). Routes come back as arcs. The store holds zone, depot, dump, classes, direction, fleet, result and `resultKey` (a stale flag that includes the scenario key). |
 | `panels/CoveragePanel.tsx`, `coverageOverlays.ts` | **done**: the Coverage & fleet panel (rectangle zone drawn with two clicks; depot and disposal picks; road classes; respect or ignore one-ways; fleet inputs; results with method, guarantee, lower bound, gap, per-vehicle table, fleet bounds and checks) and its map layers (one coloured path per vehicle, zone outline, markers) |
 | `timeline.ts`, `shift.ts`, `panels/Timeline.tsx` | **done**: the deterministic shift timeline (unit-tested), with shift start, clock, scrubber, fixed-rate playback, per-vehicle street, % done, finish time, over-shift warnings, and vehicle markers on the map |
-| `costModel.ts` | **done**: cost and CO₂ estimate from user assumptions only (unit-tested). Shown in the coverage results. |
+| `costModel.ts` | **done**: cost and CO₂ estimate from user assumptions only (unit-tested). Applied to the distances and vehicle hours of the routes actually driven (`summarise` in `coverageStore.ts`). |
+| `zoneShape.ts` | **done**: rectangle, circle and polygon zones (construction, simplicity checks, outline, labels; unit-tested). Zone drawing uses pick target `zone` and the scene's `ground` pick mode. |
+| `routeSheet.ts`, `panels/RouteReport.tsx` | **done**: street-by-street route sheet whose turns use the engine's `arcDirections` and `classifyTurn` (unit-tested against `result.turns` on real routes), and the printable Route lab report |
+| `format.ts` | `fmtDist`, `fmtTime` (re-exported from `panels/RouteLab.tsx`; unit-tested) |
+| `coverageExport.ts` | **done**: GPX tracks and a step CSV of a coverage plan (unit- and e2e-tested). Uses the engine's new `localUnprojection` (inverse of the bundle projection, tested against the stored node coordinates). |
 | `Inspector.tsx`, `Provenance.tsx` | feature details (height source, OSM links) and the data provenance dialog |
 
 ### Changes elsewhere in the web app
@@ -186,57 +193,60 @@ Run `pnpm dev`, or build and then run `node scripts/e2e-server.mjs 8790` to serv
 
 ### E2E tests
 
-* `e2e/city.spec.ts`: real-data UI checks against the engine, including:
-  * provenance;
-  * equivalence of all five algorithms;
-  * reachability nesting;
-  * a closure clicked on the map triggering a recalculation;
-  * measured roof/ground contrast in both themes (must be > 1.3; measured 6.14 in Velvet and 1.52 in Porcelain);
-  * the theme switch rebuilding the 3D scene;
-  * a building click showing the OSM feature and its height source.
-* `e2e/png.ts` decodes screenshots for pixel measurements.
-* `e2e/engine.ts` re-exports engine functions for the tests.
+`e2e/city.spec.ts` checks the city workspace against the engine on the bundled data:
+
+* provenance, attribution and the "partial" chip;
+* equivalence of all five algorithms, validation of every route, and the printable Route lab report (same time, distance and search work; the route sheet's last leg ends at the route distance);
+* reachability nesting;
+* a closure clicked on the map triggering a recalculation that equals the engine;
+* measured roof/ground contrast in both themes (must be > 1.3);
+* the theme switch rebuilding the 3D scene;
+* a building click showing the OSM feature and its height source;
+* coverage of a drawn rectangle in directed and undirected mode, with honest method labels, the shift timeline, the cost model, the printable report and the scenario comparison;
+* **circle and free-outline zones**, each planned and compared with an engine run on the exact zone the UI built, including refusal of a self-crossing point and undo;
+* **a 3-vehicle fleet with a shift limit**: routes, totals and bounds equal `planFleet`; the timeline flags exactly the over-shift vehicles; a 15-minute shift that the makespan bound proves infeasible must show the "fleet too small" diagnosis; and a scenario with another depot, 2 vehicles and a higher fuel price is compared with the baseline (both plans equal the engine, and the cost row uses each side's assumptions).
+
+Helpers: `e2e/png.ts` decodes screenshots for pixel measurements; `e2e/engine.ts` re-exports engine functions; `waitForCamera` waits on `__sweepCity.cameraMoving()`.
 
 ---
 
 ## 3. Current state (verified numbers; do not restate them without re-measuring)
 
-### Checks that pass
+Four sessions have worked on this branch.
 
-* `pnpm typecheck` ✓.
-* `pnpm lint` ✓.
-* Engine tests: 154/154 ✓.
-* Web tests: 9/9 ✓.
+* **Third session.** It added several depots, turn-aware order, the faster lower bound, the freeze fix and the static-build worker fix.
+* **Fourth session.** It ran in parallel with the third and believed the third session's container had ended. It added the main-roads deadline, fixed a test time budget and refreshed the docs on 55 tiles.
+* **Third session again.** Its container was still alive. It pushed its 4 extra tile files (59 of 85), rebuilt the bundle, re-measured and updated these docs on 59 tiles, and replaced the turn checkbox with a two-button control.
 
-### E2E (last full local run, 2026-10-19: **49 of 49 passed**, 7.3 min, one worker)
+### Checks that pass (2026-10-20, 59-tile bundle)
 
-The 4 earlier failures were fixed:
-
-* the Network-lab links still pointed at `/workspace`;
-* the closure test clicked a street hidden behind the side panel;
-* intermittent city-page freezes: a leaked WebGL probe context, plus an implicit SwiftShader fallback.
-
-Check CI on the PR for the latest head. On commit `f566421`, CI had 47 of 48 passing; the failure was the closure test, which has since been fixed.
+* `pnpm typecheck` ✓ and `pnpm lint` ✓ (0 warnings).
+* Unit tests: engine 178/178 (17 files), server 38/38, web 50/50 (14 files).
+* Both Python oracles: all comparisons agree.
+* `pnpm build` and `pnpm build:static` ✓.
+* E2E: **73 of 73 passed** in one full `pnpm verify` run (10.1 min, one worker): 19 on the real Pune data, 6 on the Sweep planner, 4 on Directions.
+* The static build, served by a plain file server with no API, was checked in headless Chromium: landing page, lab, `/#/workspace` city load, the Route lab (all five algorithms agree) and a coverage plan, with no console errors or failed requests.
 
 ### Bundled dataset
 
-`apps/web/public/cities/pune-bibwewadi.json` is real but **partial**: it was rebuilt on 2026-10-19 from 50 of 85 tile files, which include the VIT tile `t3_3`.
+`apps/web/public/cities/pune-bibwewadi.json` is real but **partial**: built from 59 of 85 tile files (`pnpm city:build pune-bibwewadi`, 1.57 MB).
 
 | Item | Value |
 |---|---|
-| Nodes | 4,160 |
-| Segments | 5,000 (290.97 km). This is a coincidence, not a cap: 2,512 distinct ways; the import limit is 800,000 and throws instead of truncating. |
-| One-way segments | 493 |
-| Buildings | 10,704 (10,692 with estimated heights) |
-| Turn restrictions | 0 (the restriction query had not been fetched) |
+| Area | 16.04 km² |
+| Nodes | 4,753 |
+| Segments | 5,691 (327.39 km) |
+| One-way segments | 583 |
+| Buildings | 12,404 (1 with a `height` tag, 14 from `building:levels`, 12,389 estimated) |
+| Turn restrictions | 0 (the region-wide restriction query has not been fetched) |
 
 The UI shows a "partial" chip and lists the missing tiles in provenance.
 
 ### Raw tile cache
 
-The cache is committed under `data/cache/osm/pune-bibwewadi/`. Its manifest had **38 tile files OK and 6 failed** out of 85 (42 tiles × {streets, buildings} + 1 restrictions query). The public Overpass mirrors return many 504/500 errors.
+Committed under `data/cache/osm/pune-bibwewadi/`: **59 tile files OK** out of 85 (42 tiles × {streets, buildings} + 1 restrictions query). One file is marked failed (`t2_4:buildings`), and the rest have not been attempted yet, including the restrictions query. Run `pnpm city:acquire pune-bibwewadi --status` for the exact list.
 
-To continue, rerun the acquisition. It resumes from the manifest:
+To continue, rerun the acquisition; it resumes from the manifest:
 
 ```bash
 NODE_USE_ENV_PROXY=1 NODE_EXTRA_CA_CERTS=/root/.ccr/ca-bundle.crt pnpm city:acquire pune-bibwewadi   # long-running; run in background, log to a file
@@ -245,201 +255,122 @@ pnpm city:build pune-bibwewadi                                                  
 ```
 
 * The two environment variables are needed in the Claude cloud container, because outbound HTTPS goes through a proxy.
-* `overpass-api.de` was unreachable from that environment. `maps.mail.ru` works but is slow.
-* Do **not** hammer the servers.
+* Whether the mirror is reachable depends on the environment's network policy. In the second and fourth sessions the proxy refused every Overpass mirror (HTTP 403 on CONNECT): stop at once, do not retry, and ask the owner to allow `maps.mail.ru` in the environment's network settings. In the third session `maps.mail.ru` was reachable but slow (mostly HTTP 504, about 4 tiles an hour).
+* Do **not** hammer the servers, and commit the cache once per run, not per tile. Commit it before the session can end, so downloads are not lost again.
 
-### Verified in the browser
+### Benchmarks (59-tile bundle, third session; full tables in TEST_PLAN §5)
 
-On a car route from Swami Vivekanand Marg to Kamate Nagar Road:
-
-* travel time 10:14 over 4.45 km, with all 5 algorithms agreeing and every route valid;
-* the scenario closure moved it to 10:16.
-
-| Algorithm | Arcs settled |
-|---|---|
-| Dijkstra | 3,513 |
-| A* | 1,712 |
-| Bidirectional | 1,938 |
-| ALT | 434 |
-| CH | 44 |
-
-Reachability from the same origin: 22.30 km of street in 5 min, 211.58 km in 10 min, 293.51 km in 15 min.
-
-### Benchmarks
-
-Measured with `pnpm bench` on the partial bundle:
-
-* **P2P, car by time, median per query:** Dijkstra 0.33 ms, A* 0.24 ms, bidirectional 0.13 ms, ALT 0.07 ms, CH 0.05 ms. CH preprocessing takes 227–477 ms.
-* **Coverage, full network:** directed exact 368.41 km in 158 ms. The undirected heuristic gives 316.58 km against a lower bound of 296.84 km (gap 6.65 %) in 4.9 s.
+* P2P, car by time, median of 200 queries: Dijkstra 0.53 ms, A* 0.51 ms, bidirectional 0.26 ms, ALT 0.27 ms, CH 0.026 ms. CH preprocessing takes 585–764 ms across profiles.
+* Coverage, whole network (5,691 segments, 327.4 km):
+  * directed exact: 622.46 km in 0.24 s;
+  * undirected heuristic: 499.16 km against a lower bound of 467.20 km (gap 6.84 %) in **5.6–5.8 s**, of which 1.9–2.1 s is the lower bound.
+* History:
+  * 20.2 s → 9.4 s from the typed-array heaps (second session, 47 tiles);
+  * bound 6.0 s → 1.55 s from the sparse assignment start (third session, 54 tiles).
+* Turn-aware order, 600 m zone around VIT, one-ways respected: 229 → 143 min of turn penalties, against a bound of 132 min, in about 25 ms.
 
 ### Phase status
 
 | Phase | Status |
 |---|---|
 | 1 Audit | done |
-| 2 Real Pune data | partial; acquisition must finish |
-| 3 Renderer and themes | done for the workspace; recapture the same-camera screenshots in both themes for the report |
-| 4–6 Routing, profiles, reachability | done and tested |
-| 7 Coverage | engine done and tested; Coverage & fleet UI done, with an e2e test against the engine (rectangle zones) |
-| 8 Fleet in UI, scenarios for coverage, cost model, report | fleet planning, the cost model, the coverage-vs-baseline comparison and a printable coverage report are done |
-| 9 Shift timeline | **done** (coverage plans); e2e-checked against the engine route timed at the set speeds |
-| 10 Docs, full verify, final report | **not started** |
+| 2 Real Pune data | partial: 59 of 85 tile files; needs an environment that can reach an Overpass mirror, and patience (it is overloaded) |
+| 3 Renderer and themes | done for the workspace; same-camera screenshots of both themes in `docs/screenshots/city-*.png`; page-load freeze fixed (§4.1) |
+| 4–6 Routing, profiles, reachability | done and tested; printable Route lab report with route sheet done and tested |
+| 7 Coverage | done: rectangle, circle and polygon zones; turn-aware order; faster whole-network bound; engine and UI tested against each other |
+| 8 Fleet, scenarios, cost, report | done: multi-vehicle plans with honest over-fleet diagnosis, several depots, a main-roads deadline with bounds, scenario plan overrides (depot, vehicles, shift, costs) with baseline comparison, cost from the routes actually driven, printable coverage report, GPX/CSV exports |
+| 9 Shift timeline | done, including multi-vehicle plans (e2e) |
+| 10 Docs, full verify, final report | docs refreshed in the fourth session (README, IMPLEMENTATION_STATUS, TEST_PLAN, DEPLOYMENT, this file, `docs/FINAL_REPORT.md`); MATHEMATICAL_SPEC §12–17 |
+| 11 Public deployment | not done: the owner asked for the Vercel deployment to be updated; see §5 |
 
 ---
 
 ## 4. What to do next, in order
 
-### 4.1 Make the full e2e suite green: DONE locally (keep it green; confirm on CI)
+### 4.1 Keep the suite green and confirm on CI
 
-Run `npx playwright test --reporter=line`.
+Run `npx playwright test --reporter=line`. Inspect failures with `test-results/<name>/trace.zip` (unzip and read `0-trace.trace`, or `npx playwright show-trace`). Fix root causes; never weaken or delete tests.
 
-* Inspect each failure with `test-results/<name>/trace.zip`. Unzip it and read `0-trace.trace` and `0-trace.network`, or use `npx playwright show-trace`.
-* An "element(s) not found" on `city-name` while the screenshot shows the page usually means the renderer's main thread was starved or blocked.
-* Fix the root causes. Do not delete or weaken the tests.
+**Resolved in the third session: the intermittent page-load freeze.**
 
-#### What is known about the intermittent city-page freeze
+* **Reproducer.** Load `/workspace` repeatedly in one headless Chromium (SwiftShader). 11 of 60 loads stalled. In every stall, `page.evaluate` and a CDP `Debugger.pause` both went unanswered, so the main thread was blocked outside JavaScript.
+* **Bisection:**
 
-* **Symptom.** Sometimes a `/workspace` page never shows "Pune" in `city-name`. Playwright then reports "element(s) not found" even though the DOM has the element, which means the renderer's main thread is blocked. The trace shows the GeoCityScene and geometry-worker chunk requests issued right after the city JSON arrives, and they never complete.
-* **It is not only CPU contention.** It still happened with `workers: 1`.
-* **Loading in isolation works.** Six fresh loads in one browser all loaded in about 0.65 s.
-* **Mitigations applied so far:**
-  * a single WebGL probe per page, released straight away (`lib/webgl.ts`; before, one probe context leaked on every page);
-  * Playwright launches with `--enable-unsafe-swiftshader --use-angle=swiftshader`;
-  * `workers: 1`.
+  | Run | Stalls |
+  |---|---|
+  | as built | 11 of 60 |
+  | `--disable-webgl --disable-3d-apis` | 0 of 60 |
+  | probe creates no context | 0 of 60 |
+  | after the fix | 0 of 120 |
 
-  Check whether the full suite is now green. If not, open a CDP session on the stuck page and call `Debugger.pause` (bound every CDP call with a timeout). If it pauses, the stack shows the looping JavaScript. If it never pauses, the main thread is stuck in a native or GL call: the SwiftShader GPU process.
+* **Cause.** The feature probe in `lib/webgl.ts` created a throwaway WebGL context, read the renderer name and called `loseContext()`. On SwiftShader this left the page's main thread blocked in a later synchronous GPU call.
+* **Fix.**
+  * `webglAvailable()` now only checks that the API exists.
+  * Software rendering is detected from each scene's own context (`lowPowerFor(gl)` in `onCreated`).
+  * Scenes start in low power until a hardware GPU is confirmed. The `sweep.quality` preference still wins.
+  * Every 3D scene is wrapped in `components/WebGLBoundary` with a readable fallback, in case context creation fails.
 
-### 4.2 Coverage & Fleet UI (the second workflow): mostly done
+**Resolved in the second session:** the intermittent "close a road" failure. The click arrived, but the picker still had the previous pick mode because the prop had not yet reached the R3F reconciler (main-thread frame gaps of up to 3 s in SwiftShader). The picker now reads the mode from a DOM-side ref.
 
-**Done.** The worker, store, panel and map layers are built, and an e2e test in `e2e/city.spec.ts` ("coverage plan of a drawn zone matches the engine…") checks that the UI totals equal an engine run in directed and undirected mode, with honest method labels.
+### 4.2 Finish the Pune data (needs the owner)
 
-**Still to do:**
+Ask the owner to allow an Overpass mirror in the environment's network settings, then resume the acquisition (§3), rebuild the bundle, run the full suite and update the numbers in README, this file and IMPLEMENTATION_STATUS. The tests compare the UI with the engine on whatever bundle is present, so they need no changes for new data.
 
-* polygon zones in the UI (the engine supports them). Rectangles and circles are done.
-* ~~multi-vehicle fleet e2e~~: done ("circle zone with a three-vehicle fleet and shift limit…").
-* coverage in the scenario comparison (see §4.5).
+### 4.3 Faster lower bound for large undirected zones: DONE (third session)
 
-The original plan for this section is kept below for reference.
+The new sparse Jonker–Volgenant assignment (`coverage/assignment.ts`, unit-tested against brute force and min-cost flow) replaced the general min-cost flow in the optimal-assignment start. On the whole 54-tile network (3,606 odd intersections) the bound went from **6.0 s to 1.55 s**, and the value from 437,285.7 m to 437,302.1 m (slightly stronger, still feasible for every pair). The history is kept below.
 
-**`apps/web/src/city/coverage.worker.ts` (new)**
 
-* Load the city (same approach as `router.worker.ts`: fetch and `decodeCityBundle`).
-* Handle the op `{ zone, roadClasses, direction, scenario, depotNode, dumpNode?, fleet: { vehicles, capacity, demandPerKm, shiftSeconds, serviceSpeedKmh, deadheadSpeedKmh, dumpSeconds, objective } }`. It should:
-  1. call `zoneCoverageGraph(city, { zone, roadClasses, direction, closedSegments, onewayOverrides, depotId })`, using the vertex id that maps to `depotNode` via `vertexNode`;
-  2. call `solveZoneCoverage(graph, { direction, depotId })`;
-  3. if vehicles > 1, or capacity or shift is set, call `planFleet(graph, { …, coverage })`;
-  4. return the method, `optimal`, `guarantee`, lower bound, gap, connectors, excluded streets, checks, timings, and per-vehicle steps mapped back to segments via `edgeSegment`.
-* A `RouteStep` holds an `edgeId`, `from` and `to`; the vertex ids map back to city nodes via `vertexNode`.
+Profiled on the whole 47-tile network (3,032 odd intersections): the optional optimal-assignment start of `fractionalMatchingDual` (`engine/coverage/bounds.ts`) dominated, with 9.5 s in `minCostFlow` and 1.8 s in its pricing searches. Without that start the bound takes 0.13 s but is weaker (T-join part 96.0 km instead of 106.4 km). The second session replaced the allocation-heavy heaps in `mincostflow.ts` and `coverage/arcs.ts` with typed-array heaps (same ordering, so results are bit-identical; engine tests and both oracles agree) and flattened the flow's arcs: the bound now takes about 6 s. Next idea: a dedicated sparse assignment solver with a column-reduction start for this bound only (not in the shared exact flow); it may return a different optimal dual, so compare bound values.
 
-**`panels/CoveragePanel.tsx`**
+### 4.4 Screenshots and the final report
 
-* **Zone tools:** draw a rectangle (two clicks: pick targets `zone-a` and `zone-b`) or a circle (centre plus radius). Show the zone area and the required km from `report`.
-* **Depot and dump pick:** pick targets `'depot'` and `'dump'` already map to `pickMode 'node'` in `CityWorkspace.tsx`. Extend `handleCityPick` in `actions.ts`.
-* **Road-class checkboxes:** take them from `data/regions/*.json` `roadClasses` and the classes actually present in `city.ways`.
-* **Direction mode:**
-  * *Respect one-ways (directed)*: exact min-cost flow;
-  * *Ignore one-ways (undirected relaxation, for sweepers on foot)*: label it as a relaxation, and show `wrongWayTraversals` counts.
-* **Fleet:** vehicles, capacity, shift hours, service and deadhead speeds, dump time, objective (min total / min makespan).
-* **Results:**
-  * method, and "proven optimal" **only** if `optimal`;
-  * otherwise "heuristic", with LB and gap %;
-  * total, service and deadhead km;
-  * per-vehicle table (distance, time, trips, dumps, feasibility);
-  * the validation checks list;
-  * timings.
+* Same-camera screenshots of `/workspace` in both themes, the Route lab and a coverage plan are in `docs/screenshots/city-*.png` and in README, recaptured on the 59-tile bundle in the third session's final pass. Recapture them with `node scripts/city-screenshots.mjs` (server on :8790) after the data changes.
+* The final report for the owner is `docs/FINAL_REPORT.md`. It was updated to the 59-tile bundle, with every feature built so far and the re-measured contrast, benchmarks and test results. Update it whenever the data or the test figures change.
 
-**`coverageOverlays.ts`**
+### 4.5 Next features
 
-* A coloured path per vehicle: reuse `arcsPath` from `overlays.ts`. The step direction gives the arc: `arc = seg*2 + (from === u ? 0 : 1)`.
-* The zone outline (`SceneOverlays.zone`), and depot and dump markers.
-* `vehicles` for the timeline.
+* **Several depots in one plan: DONE** (third session).
+  * Engine: `planMultiDepotFleet`, which partitions streets by nearest round trip and then plans each depot.
+  * The lower bounds hold for any partition (MATHEMATICAL_SPEC §15).
+  * UI: "Add another depot" in the Coverage panel, with vehicles per depot, per-depot results, a depot column per vehicle, map markers and the report.
+  * Tests: engine (4), and e2e against the engine.
+* **Turn costs in coverage: DONE** (third session), as a turn-aware order of the same traversals.
+  * Engine: `orderForTurns` (`coverage/turns.ts`). It pairs arrivals and departures exactly at each intersection, then merges the sub-tours cheapest first. The distance is unchanged.
+  * It reports the turn counts, the penalty time, and lower bounds valid for every order of the same traversals (MATHEMATICAL_SPEC §16).
+  * It runs on single routes and on fleet routes, including several depots. Routes that unload mid-way keep their order.
+  * Real Pune, 600 m zone around VIT, one-ways respected: 229 → 143 min of turn penalties, against a bound of 132 min, in about 20 ms.
+  * The bundle has no mapped turn restrictions yet: the region-wide restriction query has not been fetched. Banned-turn handling is tested on synthetic instances only.
+  * UI: a "Turns" control ("Fewer U-turns", the default, or "Solver order"), a Turns row in the results and the report.
+  * Tests: engine (7, including exhaustive search), e2e against the engine.
+* **Priority deadline (time windows, latest finish): DONE** (fourth session).
+  * Engine: `planFleet` option `priority: { edgeIds, deadlineSeconds }`. The deadline is a route constraint in evaluation, both splits and local search. Three starting points: coverage order, priority first, and two-phase (priority streets split among the vehicles, the rest appended). A turn order never makes a met deadline late.
+  * Bounds valid for any plan with k vehicles: the finish time, and the vehicles needed (MATHEMATICAL_SPEC §17). A proven-impossible deadline gets the over-fleet diagnosis. If no fleet of any size can meet it, the plan ignores it and says so.
+  * `verifyFleetPlan` recomputes every priority finish time from the steps.
+  * UI: "Main roads within" (hours) in the Fleet settings, a "Main roads" result row, a per-vehicle "Main roads done" column, and the report. Main roads are trunk to tertiary with their links. One depot only: the engine refuses it with several depots.
+  * Real Pune, 400 m zone, 2 vehicles: a 10-minute deadline is met (9.0 min) with a 159-minute shift, against 158.8 min at a 20-minute deadline.
+  * Tests: engine (8), e2e against the engine.
+* **Not built:** earliest-start windows (service not before a time), the deadline with several depots, and per-street windows chosen in the UI. The coverage solvers also do not choose deadhead streets to reduce turns; only the order is turn-aware.
 
-**E2E tests** in `e2e/city.spec.ts`:
+### 4.6 Real-map pages (third session, final pass): DONE and tested
 
-* The UI totals equal an engine run on the same inputs, as the routing tests do.
-* Directed mode never says "undirected".
-* A heuristic result shows an LB and never says "optimal".
-* A closure changes the coverage result against the baseline.
+The owner wants a big map. These pages give real data at any size: Directions anywhere, and coverage of any real zone up to 25 km².
 
-### 4.3 Shift timeline: DONE (kept for reference; consider adding a timeline for multi-vehicle plans to the e2e test)
-
-**`panels/Timeline.tsx`**
-
-* A shift start time, for example 06:00, that the user can configure.
-* The clock is derived **deterministically** from fleet routes: for each step, `t += length / speed` (service or deadhead speed), plus dump seconds.
-* A scrubber over 0…makespan.
-* For each vehicle:
-  * current position (interpolate along the step polyline);
-  * current segment name;
-  * percentage of the route complete;
-  * ETA to finish;
-  * shift-limit violations, shown in red, using `shiftSeconds`.
-* Play/pause runs in real time × a fixed factor. It must not be a set of arbitrary "speed buttons".
-* Put the pure timeline maths in `apps/web/src/city/timeline.ts` and unit-test it. Required property: the same input gives the same positions, and they are monotonic in t.
-
-### 4.4 Cost model: DONE (fields start blank; only the 2.68 kg/L diesel factor has a default)
-
-**`apps/web/src/city/costModel.ts`** holds configurable, **visibly labelled assumptions**:
-
-* fuel L/100 km (separately for service and deadhead);
-* fuel price ₹/L;
-* crew wage ₹/h and crew size;
-* diesel CO₂ of 2.68 kg/L, cited as an emission factor and editable.
-
-Rules:
-
-* Output cost, fuel and CO₂ per scenario, always with the label "estimate from your assumptions".
-* No default should look like a measured municipal number.
-* Unit-test the arithmetic.
-
-### 4.5 Scenarios for coverage: PARTLY DONE
-
-**Done.** The coverage panel has "Compare with baseline", which plans the same zone, depot and fleet on the baseline and on the active scenario (closures and direction changes) and shows distance, transit, makespan and vehicle hours. The e2e test checks both plans against the engine.
-
-**Also done:** a scenario's operational overrides (another depot, or another fleet size), applied wherever the scenario is active and in the comparison; the e2e test checks a 2-vehicle variant against `planFleet`. **Still to do:** a profile variant per scenario (the Route lab profile switch already recalculates).
-
-Original plan, for reference:
-
-* Extend `scenario.ts` so a scenario also holds depot, fleet size, profile and cost assumptions.
-* Comparing with the baseline must rerun both coverage plans. Show the deltas in km, hours, vehicles and estimated cost and CO₂.
-
-### 4.6 Printable report: DONE for coverage plans (`panels/CoverageReport.tsx`, print CSS in `city.css`; e2e-checked). Route Lab report: DONE (`panels/RouteReport.tsx`, e2e-checked).
-
-Original plan, for reference:
-
-* Generate it from the **actual** active scenario: dataset provenance, zone, method, guarantee, LB and gap, fleet table, assumptions, validation checks, and the timeline summary.
-* The old `apps/web/src/report/Report.tsx` is a pattern to follow, with print CSS.
-
-### 4.7 Docs, verification and final report
-
-**Docs**
-
-* Update `IMPLEMENTATION_STATUS.md` (phase table), `README.md` (run commands, `/workspace`), `ARCHITECTURE.md` (city, p2p, coverage, workers), `TEST_PLAN.md`, `MATHEMATICAL_SPEC.md` (CH/ALT correctness, LB derivations, fleet bounds), `SECURITY.md` (acquisition etiquette, no secrets) and `DEPLOYMENT.md`.
-
-**Verification**
-
-* `pnpm verify` must exit 0.
-* Then commit, push to `claude/laughing-ramanujan-wg70al`, and check CI on the PR (`.github/workflows/ci.yml`: `verify` and `docker` jobs).
-
-**Final report**
-
-Write it for the owner, covering:
-
-* files changed;
-* the dataset and its extent, and whether it is partial;
-* road and building counts;
-* theme verification, with same-camera screenshots in both themes;
-* the algorithms and their guarantees;
-* test results;
-* performance measurements;
-* Docker and CI status;
-* run commands;
-* blockers, including the reference repo never received and Overpass availability.
-
----
+* **`/directions`**
+  * Files: `apps/web/src/directions/DirectionsPage.tsx`, `lib/directions.ts` (OSRM client, instructions, server fallback), `lib/geocode.ts` (Photon, Nominatim fallback), `map/MapCanvas.tsx` (MapLibre 5.10, OpenFreeMap styles, OSM raster fallback), `map/PlaceSearch.tsx`.
+  * Routes are OSRM's, never SWEEP's, and the page says so.
+* **`/sweep`**
+  * Files: `apps/web/src/sweep/SweepPage.tsx`, `sweep/plan.ts`, `sweep/sweep.worker.ts`.
+  * Zones up to 4 km² use `acquireMap` (through the server when there is one). Larger zones, up to 25 km², use `acquireLargeArea` in `lib/maps.ts`: browser tiles of at most 3.5 km², sequential, merged by OSM id.
+  * The plan is the engine unchanged: `solveZoneCoverage`, `planFleet` and `orderCoverageForTurns`.
+* **Tests**
+  * Unit: `lib/directions.test.ts`, `lib/geocode.test.ts`, `sweep/plan.test.ts` (on a real cached Pune Overpass response).
+  * e2e: `e2e/directions.spec.ts`, `e2e/sweep.spec.ts`. External services are replaced by stand-ins in their real formats; Overpass answers with the cached real Pune tiles.
+* **Not verified against the live services** from the Claude container: its network policy denied those hosts at the time. The live Vercel site calls them from the visitor's browser.
+* **Parallel session.** A second Claude session (the city-UX session) works on `claude/city-ux` (draft PR #3) and owns `apps/web/src/city/**`, `three/**` and `landing/**`. Instructions go to it as `[main]` comments on PR #3; its status is in `docs/CITY_UX_NOTES.md` on its branch. See `docs/coordination/LEAD_TASKS.md`.
 
 ## 5. Deployment note
 
-* The owner earlier asked for a Vercel deployment of the static build. That deployment, https://sweep-ashy.vercel.app (project "sweep"), predates the city workspace.
-* Do **not** redeploy without the owner's go-ahead.
+* **Deployed.** The owner asked for this work to be on Vercel. The third session deployed the static build of `fd4740d` to the existing project "sweep" on 2026-10-19 (22:56 UTC), with the Vercel CLI logged in inside its container. It is live at https://sweep-ashy.vercel.app, with the city at `/#/workspace`. Landing, lab, city load, Route lab and a coverage plan were checked on the live site, with no console errors.
+* To redeploy after changes, follow DEPLOYMENT.md, "Static build on Vercel". A session without a Vercel login cannot deploy: the fourth session's Vercel connector was refused (HTTP 403) for the project's team. Ask the owner first, as before.
 * `pnpm build:static` produces `apps/web/dist-static/`. The city JSON is served from `public/cities/`, and `cityUrl()` respects `BASE_URL`.

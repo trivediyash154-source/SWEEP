@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildCityBundle, buildingHeight, cleanRing, decodeCityBundle, estimateLevels, mergeElements, parseHeight, parseLevels, CityFormatError, type OsmElement } from '../src/index.js';
-import { haversine } from '../src/geo.js';
+import { haversine, localProjection, localUnprojection } from '../src/geo.js';
 
 // Small hand-made Overpass fixtures (test data, not map data).
 const lat0 = 18.46;
@@ -246,5 +246,26 @@ describe.skipIf(!existsSync(BUNDLED))('bundled Pune dataset (real OSM data)', ()
   });
   it('every footprint is a valid ring', () => {
     for (let b = 0; b < c.buildingCount; b++) expect(c.bRingOff[b + 1]! - c.bRingOff[b]!).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('local projection', () => {
+  it('unprojects back to the same coordinates (within the projection\'s 1 cm rounding)', () => {
+    const fwd = localProjection(73.869, 18.463);
+    const inv = localUnprojection(73.869, 18.463);
+    for (const p of [[73.85, 18.445], [73.888, 18.481], [73.869, 18.463], [73.8712345, 18.4598765]] as [number, number][]) {
+      const back = inv(fwd(p));
+      expect(haversine(p, back)).toBeLessThan(0.01);
+    }
+  });
+
+  const BUNDLE = join(__dirname, '..', '..', '..', 'apps', 'web', 'public', 'cities', 'pune-bibwewadi.json');
+  it.skipIf(!existsSync(BUNDLE))('recovers the stored WGS84 position of every real node from its metres', () => {
+    const c = decodeCityBundle(JSON.parse(readFileSync(BUNDLE, 'utf8')));
+    const inv = localUnprojection(c.origin[0], c.origin[1]);
+    let worst = 0;
+    for (let n = 0; n < c.nodeCount; n++) worst = Math.max(worst, haversine([c.nodeLon[n]!, c.nodeLat[n]!], inv([c.nodeX[n]!, c.nodeY[n]!])));
+    // Node metres are stored to 0.1 m and degrees to 1e-7 (about 1 cm).
+    expect(worst).toBeLessThan(0.1);
   });
 });

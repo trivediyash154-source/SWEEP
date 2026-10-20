@@ -1,11 +1,12 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Wordmark } from '../components/Wordmark';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { Icon } from '../components/Icon';
 import { usePrefs, useReducedMotion } from '../state/prefs';
-import { startInLowPower, webglAvailable } from '../lib/webgl';
-import { useCity, type CityMode, type PickTarget } from './store';
+import { lowPowerFor, startInLowPower, webglAvailable, whenTextSettled } from '../lib/webgl';
+import { WebGLBoundary } from '../components/WebGLBoundary';
+import { useCity, type CityMode } from './store';
 import { FeatureDetails } from './Inspector';
 import { ProvenanceDialog } from './Provenance';
 import type { SceneOverlays } from './GeoCityScene';
@@ -15,6 +16,7 @@ import { useRoute } from './routeStore';
 import { useScenarios } from './scenario';
 import { useCoverage } from './coverageStore';
 import { sampleScene } from './debug';
+import { parseRouteLink } from './deepLink';
 import { CityPanels } from './panels/CityPanels';
 import { Timeline } from './panels/Timeline';
 import '../styles/city.css';
@@ -26,10 +28,6 @@ const MODES: { id: CityMode; label: string; sub: string }[] = [
   { id: 'coverage', label: 'Coverage & fleet', sub: 'Street service' },
   { id: 'scenarios', label: 'Scenarios', sub: 'What if' },
 ];
-
-const pickModeOf = (t: PickTarget): 'node' | 'segment' | 'any' => (t === 'origin' || t === 'destination' || t === 'depot' || t === 'dump' || t === 'scenario-depot' ? 'node' : t === 'close-road' || t === 'make-oneway' ? 'segment' : 'any');
-/** The pick mode at this instant, from the store (stable function for the canvas picker). */
-const currentPickMode = () => pickModeOf(useCity.getState().pickTarget);
 
 export default function CityWorkspace() {
   const theme = usePrefs((s) => s.theme);
@@ -47,10 +45,39 @@ export default function CityWorkspace() {
   const pickTarget = useCity((s) => s.pickTarget);
   const st = useCity.getState();
   const [prov, setProv] = useState(false);
-  const [lowPower] = useState(startInLowPower);
-  const debugRef = useRef<{ project: (x: number, y: number, h: number) => [number, number] } | null>(null);
+  const [lowPower, setLowPower] = useState(startInLowPower);
+  const debugRef = useRef<{ project: (x: number, y: number, h: number) => [number, number]; moving: () => boolean; appliedNonce: () => number } | null>(null);
   const webgl = webglAvailable();
   const overlays: SceneOverlays = useCityOverlays();
+  // A route-lab link (?from=lat,lng&to=lat,lng[&profile=…]) opens the Route lab on those points and runs it, once
+  // per link: a new link followed while the page is open applies too.
+  const [params] = useSearchParams();
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const linkApplied = useRef<string | null>(null);
+  useEffect(() => {
+    const key = params.toString();
+    if (!city || linkApplied.current === key) return;
+    linkApplied.current = key;
+    const res = parseRouteLink(params, city);
+    setLinkError(res && !res.ok ? res.message : null);
+    if (!res?.ok) return;
+    useCity.getState().setMode('route');
+    const r = useRoute.getState();
+    r.setDestination(null);
+    if (res.link.profile) r.setProfile(res.link.profile);
+    r.setOrigin(res.link.from);
+    r.setDestination(res.link.to);
+  }, [city, params]);
+  // The 3D scene's code is fetched and compiled only once the panels' text has its fonts (see whenTextSettled).
+  const [textSettled, setTextSettled] = useState(false);
+  useEffect(() => {
+    if (!city || textSettled) return;
+    let live = true;
+    void whenTextSettled().then(() => live && setTextSettled(true));
+    return () => {
+      live = false;
+    };
+  }, [city, textSettled]);
 
   useEffect(() => {
     document.title = 'SWEEP · City workspace';
@@ -65,6 +92,9 @@ export default function CityWorkspace() {
   useEffect(() => {
     (window as unknown as { __sweepCity?: unknown }).__sweepCity = {
       project: (x: number, y: number, h: number) => debugRef.current?.project(x, y, h) ?? null,
+      // True while a camera command is pending or the camera glides between views; screen positions are only
+      // stable once it is false. A command reaches the scene after a delay, so "not animating" alone is not enough.
+      cameraMoving: () => !debugRef.current || debugRef.current.moving() || debugRef.current.appliedNonce() !== useCity.getState().camera.nonce,
       state: () => useCity.getState(),
       route: () => useRoute.getState(),
       sample: (n?: number) => {
@@ -76,7 +106,7 @@ export default function CityWorkspace() {
     };
   }, []);
 
-  const pickMode = useMemo(() => pickModeOf(pickTarget), [pickTarget]);
+  const pickMode = useMemo(() => (pickTarget === 'origin' || pickTarget === 'destination' || pickTarget === 'depot' || pickTarget === 'dump' || pickTarget === 'scenario-depot' || pickTarget === 'extra-depot' ? 'node' : pickTarget === 'close-road' || pickTarget === 'make-oneway' ? 'segment' : pickTarget === 'zone' ? 'ground' : 'any'), [pickTarget]);
 
   return (
     <div className="cw" data-testid="city-workspace">
@@ -115,7 +145,18 @@ export default function CityWorkspace() {
             {error} The city dataset is bundled with SWEEP; check that <code>cities/index.json</code> is served.
           </div>
         )}
-        {city && webgl ? (
+        {linkError && (
+          <div className="cw-link-error notice notice--warn small" role="alert" data-testid="route-link-error">
+            {linkError}
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setLinkError(null)}>
+              Dismiss
+            </button>
+          </div>
+        )}
+        {city && webgl && !textSettled ? (
+          <div className="cw-loading" role="status">Building the city…</div>
+        ) : city && webgl ? (
+          <WebGLBoundary fallback={<div className="cw-loading" role="status">The 3D view could not start on this device (WebGL is unavailable). The panels still work.</div>}>
           <Suspense fallback={<div className="cw-loading" role="status">Building the city…</div>}>
             <GeoCityScene
               city={city}
@@ -123,17 +164,18 @@ export default function CityWorkspace() {
               theme={theme}
               reduced={reduced}
               lowPower={lowPower}
+              onContext={(gl) => setLowPower(lowPowerFor(gl))}
               showEstimates={showEstimates}
               overlays={overlays}
               camera={camera}
               pickMode={pickMode}
-              getPickMode={currentPickMode}
               onPick={handleCityPick}
               onHover={(p) => st.setHover(p)}
               debugRef={debugRef}
               panelPx={420}
             />
           </Suspense>
+          </WebGLBoundary>
         ) : city && !webgl ? (
           <div className="cw-error notice notice--warn" role="alert">
             This browser cannot create a WebGL context, so the 3D city cannot be drawn. Routing and planning still run; results appear in the panels.
@@ -172,7 +214,7 @@ export default function CityWorkspace() {
 
         {city && <CityPanels />}
 
-        {city && (hover || selection) && (
+        {city && ((selection && selection.kind !== 'ground') || (hover && hover.kind !== 'ground')) && (
           <aside className="cw-inspect" aria-live="polite" data-testid="city-inspector">
             {selection && selection.kind !== 'ground' ? (
               <>

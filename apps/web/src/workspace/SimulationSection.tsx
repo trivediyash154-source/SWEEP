@@ -1,9 +1,10 @@
-import { lazy, Suspense, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import type { DirectedOptimizationRecord, OptimizationRecord } from '@sweep/engine';
 import { isOneway } from '@sweep/engine';
 import { useWorkspace } from '../state/workspace';
 import { useReducedMotion } from '../state/prefs';
-import { webglAvailable } from '../lib/webgl';
+import { webglAvailable, whenTextSettled } from '../lib/webgl';
+import { WebGLBoundary } from '../components/WebGLBoundary';
 import { formatDistance, formatNumber } from '../lib/format';
 import { Icon } from '../components/Icon';
 import { RouteProjection } from './RouteProjection';
@@ -242,6 +243,16 @@ export function SimulationSection() {
   const analysisStep = useWorkspace((s) => s.analysisStep);
   const webgl = webglAvailable();
   const use3d = stage === '3d' && webgl;
+  // Compile the 3D scene only once the page's web fonts are in: compiling it while text still waits on a font
+  // can deadlock Chromium's renderer thread pool (docs/CITY_UX_NOTES.md §1).
+  const [textSettled, setTextSettled] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void whenTextSettled().then(() => live && setTextSettled(true));
+    return () => {
+      live = false;
+    };
+  }, []);
   const ref = useWorkspace((s) => s.ref);
   const edited = useWorkspace((s) => s.networkEdited);
   const src = edited && graph.source?.kind !== 'live-acquisition' && graph.source?.kind !== 'bundled-sample' ? 'user' : (graph.source?.kind ?? (ref?.kind === 'example' ? 'example' : 'user'));
@@ -251,9 +262,11 @@ export function SimulationSection() {
     <section id="surface-simulation" className="surface surface--sim" aria-labelledby="sim-title" data-bloom-zone data-petal-intensity="0.7">
       <div className="sim-stage" data-testid="sim-stage">
         {use3d ? (
+          <WebGLBoundary fallback={<div className="stage-loading" role="status">The 3D view could not start on this device (WebGL is unavailable). Use the 2D stage.</div>}>
           <Suspense fallback={<div className="stage-loading" role="status">Building the district…</div>}>
-            <DistrictScene district={district} tracks={fresh ? tracks3d : []} trackColors={colors} theme={theme} reduced={reduced} highlight={highlight} dimRoute={analysisStep !== null && !highlight.showRoute} />
+            {textSettled ? <DistrictScene district={district} tracks={fresh ? tracks3d : []} trackColors={colors} theme={theme} reduced={reduced} highlight={highlight} dimRoute={analysisStep !== null && !highlight.showRoute} /> : <div className="stage-loading" role="status">Building the district…</div>}
           </Suspense>
+          </WebGLBoundary>
         ) : (
           <RouteProjection
             graph={graph}

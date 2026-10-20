@@ -46,6 +46,13 @@ export function localProjection(lon0: number, lat0: number): (p: Point) => Point
   return (p: Point): Point => [Math.round((p[0] - lon0) * kx * 100) / 100, Math.round(-(p[1] - lat0) * ky * 100) / 100];
 }
 
+/** Inverse of `localProjection` for the same origin: [x, y] in metres (x east, y south) to [lon, lat]. */
+export function localUnprojection(lon0: number, lat0: number): (p: Point) => Point {
+  const kx = TO_RAD * EARTH_RADIUS_M * Math.cos((lat0 * Math.PI) / 180);
+  const ky = TO_RAD * EARTH_RADIUS_M;
+  return (p: Point): Point => [lon0 + p[0] / kx, lat0 - p[1] / ky];
+}
+
 /**
  * Area in km² of a latitude/longitude rectangle on the sphere:
  * R² · Δλ · (sin φ_north − sin φ_south). Returns 0 for inverted boxes.

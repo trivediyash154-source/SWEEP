@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { decodeCityBundle, planFleet, solveZoneCoverage, zoneCoverageGraph, type CheckResult, type CityModel, type CoverageResult, type FleetPlan, type RouteStep, type Zone, type ZoneReport } from '@sweep/engine';
+import { cityTurnOptions, decodeCityBundle, orderCoverageForTurns, planFleet, planMultiDepotFleet, solveZoneCoverage, TurnModel, zoneCoverageGraph, type CheckResult, type CityModel, type CoverageResult, type FleetPlan, type FleetPriority, type FleetTurns, type RouteStep, type TurnOptions, type TurnPenalties, type TurnTally, type Zone, type ZoneReport } from '@sweep/engine';
 import type { ScenarioSpec } from './router.worker';
 
 /**
@@ -19,15 +19,22 @@ export interface FleetSettings {
   serviceSpeedKmh: number;
   deadheadSpeedKmh: number;
   dumpSeconds: number;
+  /** Main roads must be serviced within this many seconds of the shift start (null or absent: no deadline). */
+  priorityDeadlineSeconds?: number | null;
 }
+
+/** OSM highway classes treated as main roads for the priority deadline. */
+export const MAIN_ROAD_CLASSES: readonly string[] = ['trunk', 'trunk_link', 'primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link'];
 
 export type CoverageRequest =
   | { id: number; op: 'init'; url: string }
-  | { id: number; op: 'plan'; zone: Zone; roadClasses: string[] | null; direction: 'undirected' | 'directed'; scenario: ScenarioSpec; depotNode: number; dumpNode: number | null; fleet: FleetSettings };
+  | { id: number; op: 'plan'; zone: Zone; roadClasses: string[] | null; direction: 'undirected' | 'directed'; scenario: ScenarioSpec; depotNode: number; dumpNode: number | null; fleet: FleetSettings; extraDepots?: { node: number; vehicles: number }[]; turnAware?: boolean };
 
 /** A vehicle route as arcs (segment × 2 + direction) with the kind and length of every step. */
 export interface VehicleRoute {
   vehicle: number;
+  /** City node of the depot this vehicle starts and ends at. */
+  depotNode: number;
   arcs: Int32Array;
   /** 0 service, 1 repeat, 2 deadhead. */
   kinds: Uint8Array;
@@ -40,13 +47,17 @@ export interface VehicleRoute {
   seconds: number;
   trips: number;
   feasible: { capacity: boolean; shift: boolean };
+  /** When this vehicle's last main road is serviced, in seconds after the shift start (null: none, or no deadline). */
+  priorityFinishSeconds: number | null;
 }
 
 export interface CoveragePlanResult {
   report: ZoneReport;
   direction: 'undirected' | 'directed';
-  method: CoverageResult['method'];
+  method: CoverageResult['method'] | 'nearest-depot-partition';
   optimal: boolean;
+  /** Several depots: each depot's vehicles and the streets assigned to it (null for one depot). */
+  depots: { node: number; vehicles: number; requiredSegments: number; message: string | null }[] | null;
   guarantee: string;
   lowerBoundM: number | null;
   lowerBoundMethod: string | null;
@@ -69,15 +80,45 @@ export interface CoveragePlanResult {
     timingsMs: FleetPlan['timingsMs'];
   };
   routes: VehicleRoute[];
+  /** Turns of the planned routes (truck turn penalties, left-hand traffic). Not included in the route times. */
+  turns: PlanTurns;
+  /** The main-roads deadline: what the plan achieves and the engine's bounds (null: no deadline set). */
+  priority: FleetPriority | null;
+}
+
+export interface PlanTurns {
+  /** Whether the turn order was optimised (same streets and distance). */
+  ordered: boolean;
+  penalties: TurnPenalties;
+  /** Mapped turn restrictions that apply to the truck profile. */
+  restrictions: number;
+  /** The engine's order before turn optimisation, and the order shown. */
+  before: TurnTally;
+  after: TurnTally;
+  /** Valid for every order of the same street traversals; null when not computed. */
+  lowerBound: { seconds: number; banned: number } | null;
+  optimal: boolean;
+  /** Routes that unload mid-way keep their order. */
+  keptRoutes: number;
 }
 
 export type CoverageResponse = { id: number; ok: true; op: 'init' } | { id: number; ok: true; op: 'plan'; result: CoveragePlanResult } | { id: number; ok: false; error: string };
 
 let city: CityModel | null = null;
+let rules: TurnOptions | null = null;
+let restrictionCount = 0;
+
+function fleetTurns(t: FleetTurns | null, graph: CoverageResult['graph'], steps: RouteStep[][]): PlanTurns {
+  if (t) return { ordered: true, penalties: rules!.penalties, restrictions: restrictionCount, before: t.before, after: t.after, lowerBound: t.lowerBound, optimal: t.optimal, keptRoutes: t.keptRoutes };
+  const model = new TurnModel(graph, rules!);
+  const tallies = steps.map((x) => model.tally(x));
+  const sum = tallies.reduce((a, b) => ({ straight: a.straight + b.straight, left: a.left + b.left, right: a.right + b.right, uturn: a.uturn + b.uturn, uturnsAwayFromDeadEnds: a.uturnsAwayFromDeadEnds + b.uturnsAwayFromDeadEnds, banned: a.banned + b.banned, seconds: a.seconds + b.seconds }), model.tally([]));
+  return { ordered: false, penalties: rules!.penalties, restrictions: restrictionCount, before: sum, after: sum, lowerBound: null, optimal: false, keptRoutes: 0 };
+}
 
 const KIND = { service: 0, repeat: 1, deadhead: 2 } as const;
 
-function toVehicleRoute(c: CityModel, nodeOfVertex: Map<string, number>, vehicle: number, steps: RouteStep[], extra: { dumpAfterStep: number[]; seconds: number; trips: number; feasible: { capacity: boolean; shift: boolean } }): VehicleRoute {
+function toVehicleRoute(c: CityModel, nodeOfVertex: Map<string, number>, vehicle: number, steps: RouteStep[], extra: { depotNode: number; dumpAfterStep: number[]; seconds: number; trips: number; feasible: { capacity: boolean; shift: boolean }; priorityFinishSeconds?: number | null }): VehicleRoute {
   const arcs = new Int32Array(steps.length);
   const kinds = new Uint8Array(steps.length);
   const lengths = new Float64Array(steps.length);
@@ -94,7 +135,7 @@ function toVehicleRoute(c: CityModel, nodeOfVertex: Map<string, number>, vehicle
     if (s.kind === 'service') serviceM += s.weight;
     else deadheadM += s.weight;
   });
-  return { vehicle, arcs, kinds, lengths, distanceM, serviceM, deadheadM, ...extra };
+  return { vehicle, arcs, kinds, lengths, distanceM, serviceM, deadheadM, ...extra, priorityFinishSeconds: extra.priorityFinishSeconds ?? null };
 }
 
 function plan(req: Extract<CoverageRequest, { op: 'plan' }>): CoveragePlanResult {
@@ -115,15 +156,26 @@ function plan(req: Extract<CoverageRequest, { op: 'plan' }>): CoveragePlanResult
   const nodeOfVertex = new Map<string, number>();
   zg.graph.vertices.forEach((v, i) => nodeOfVertex.set(v.id, zg.vertexNode[i]!));
 
-  const cov = solveZoneCoverage(zg.graph, { direction: req.direction, depotId });
-  if (!cov.ok) throw new Error(cov.message);
   const f = req.fleet;
-  const needsFleet = f.vehicles > 1 || f.capacity !== null || f.shiftSeconds !== null || dumpId !== null;
-  const base: Omit<CoveragePlanResult, 'fleet' | 'routes'> = {
+  const deadline = f.priorityDeadlineSeconds ?? null;
+  if (req.extraDepots && req.extraDepots.length > 0) {
+    if (deadline !== null) throw new Error('The main-roads deadline is supported for plans from one depot only. Remove the extra depots or switch the deadline off.');
+    return planSeveralDepots(req, zg, nodeOfVertex, depotId, dumpId);
+  }
+
+  const turnAware = req.turnAware !== false;
+  const raw = solveZoneCoverage(zg.graph, { direction: req.direction, depotId });
+  if (!raw.ok) throw new Error(raw.message);
+  const needsFleet = f.vehicles > 1 || f.capacity !== null || f.shiftSeconds !== null || dumpId !== null || deadline !== null;
+  // A single route is reordered here; fleet routes are reordered by planFleet, one by one.
+  const ordered = turnAware && !needsFleet ? orderCoverageForTurns(raw, rules!) : null;
+  const cov = ordered ?? raw;
+  const base: Omit<CoveragePlanResult, 'fleet' | 'routes' | 'turns' | 'priority'> = {
     report: zg.report,
     direction: cov.direction,
     method: cov.method,
     optimal: cov.optimal,
+    depots: null,
     guarantee: cov.guarantee,
     lowerBoundM: cov.lowerBound?.value ?? null,
     lowerBoundMethod: cov.lowerBound?.method ?? null,
@@ -138,7 +190,10 @@ function plan(req: Extract<CoverageRequest, { op: 'plan' }>): CoveragePlanResult
   };
   if (!needsFleet) {
     const seconds = (cov.route.serviceDistance / 1000 / f.serviceSpeedKmh + (cov.route.totalDistance - cov.route.serviceDistance) / 1000 / f.deadheadSpeedKmh) * 3600;
-    return { ...base, fleet: null, routes: [toVehicleRoute(c, nodeOfVertex, 0, cov.route.steps, { dumpAfterStep: [], seconds, trips: 1, feasible: { capacity: true, shift: true } })] };
+    const turns: PlanTurns = ordered
+      ? { ordered: true, penalties: rules!.penalties, restrictions: restrictionCount, before: ordered.turns.before, after: ordered.turns.after, lowerBound: ordered.turns.lowerBound, optimal: ordered.turns.optimal, keptRoutes: 0 }
+      : fleetTurns(null, cov.graph, [cov.route.steps]);
+    return { ...base, fleet: null, turns, priority: null, routes: [toVehicleRoute(c, nodeOfVertex, 0, cov.route.steps, { depotNode: req.depotNode, dumpAfterStep: [], seconds, trips: 1, feasible: { capacity: true, shift: true } })] };
   }
   const fp = planFleet(cov.graph, {
     vehicles: f.vehicles,
@@ -153,12 +208,83 @@ function plan(req: Extract<CoverageRequest, { op: 'plan' }>): CoveragePlanResult
     deadheadSpeedKmh: f.deadheadSpeedKmh,
     dumpSeconds: f.dumpSeconds,
     coverage: cov,
+    turns: turnAware ? rules : null,
+    priority: deadline !== null ? { edgeIds: cov.graph.edges.filter((e) => e.required && MAIN_ROAD_CLASSES.includes(e.roadClass ?? '')).map((e) => e.id), deadlineSeconds: deadline } : null,
   });
   if (!fp.ok) throw new Error(fp.message);
   return {
     ...base,
+    turns: fleetTurns(fp.turns, cov.graph, fp.routes.map((r) => r.steps)),
     fleet: { guarantee: fp.guarantee, totals: fp.totals, lowerBounds: fp.lowerBounds, gaps: fp.gaps, feasibility: fp.feasibility, validationOk: fp.validation.ok, checks: fp.validation.checks, timingsMs: fp.timingsMs },
-    routes: fp.routes.map((r) => toVehicleRoute(c, nodeOfVertex, r.vehicle, r.steps, { dumpAfterStep: r.dumpAfterStep, seconds: r.seconds, trips: r.tripLoads.length || 1, feasible: r.feasible })),
+    priority: fp.priority,
+    routes: fp.routes.map((r) => toVehicleRoute(c, nodeOfVertex, r.vehicle, r.steps, { depotNode: req.depotNode, dumpAfterStep: r.dumpAfterStep, seconds: r.seconds, trips: r.tripLoads.length || 1, feasible: r.feasible, priorityFinishSeconds: r.priorityFinishSeconds })),
+  };
+}
+
+/** Several depots: nearest-depot partition, then a single-depot plan per depot (engine planMultiDepotFleet). */
+function planSeveralDepots(req: Extract<CoverageRequest, { op: 'plan' }>, zg: ReturnType<typeof zoneCoverageGraph>, nodeOfVertex: Map<string, number>, depotId: string, dumpId: string | null): CoveragePlanResult {
+  const c = city!;
+  const f = req.fleet;
+  const extras = req.extraDepots ?? [];
+  const depots = [{ depotId, vehicles: f.vehicles, node: req.depotNode }, ...extras.map((d) => ({ depotId: `n${c.nodeOsm[d.node]}`, vehicles: d.vehicles, node: d.node }))];
+  for (const d of depots.slice(1)) if (!zg.graph.vertices.some((v) => v.id === d.depotId)) throw new Error('An additional depot is not connected to the streets of this zone. Pick another one.');
+  const md = planMultiDepotFleet(zg.graph, {
+    depots: depots.map(({ depotId: id, vehicles }) => ({ depotId: id, vehicles })),
+    dumpId,
+    direction: req.direction,
+    objective: f.objective,
+    capacity: f.capacity,
+    demandPerKm: f.demandPerKm,
+    shiftSeconds: f.shiftSeconds,
+    serviceSpeedKmh: f.serviceSpeedKmh,
+    deadheadSpeedKmh: f.deadheadSpeedKmh,
+    dumpSeconds: f.dumpSeconds,
+    turns: req.turnAware !== false ? rules : null,
+  });
+  if (!md.ok) throw new Error(md.message);
+  const covs = md.depots.map((d) => d.coverage).filter((x): x is CoverageResult => !!x);
+  const nodeOfDepot = new Map(depots.map((d) => [d.depotId, d.node]));
+  const plans = md.depots.map((d) => d.plan).filter((p): p is FleetPlan => !!p);
+  const fleetTotals: FleetPlan['totals'] = {
+    distance: md.totals.distance,
+    serviceDistance: md.totals.serviceDistance,
+    deadheadDistance: md.totals.deadheadDistance,
+    makespanSeconds: md.totals.makespanSeconds,
+    totalSeconds: md.totals.totalSeconds,
+    vehiclesUsed: md.totals.vehiclesUsed,
+    intermediateDumps: plans.reduce((x, p) => x + p.totals.intermediateDumps, 0),
+    demand: plans.reduce((x, p) => x + p.totals.demand, 0),
+  };
+  return {
+    report: zg.report,
+    direction: req.direction,
+    method: 'nearest-depot-partition',
+    optimal: false,
+    depots: md.depots.map((d) => ({ node: nodeOfDepot.get(d.depotId)!, vehicles: d.vehicles, requiredSegments: d.requiredEdges.length, message: d.message })),
+    guarantee: md.guarantee,
+    lowerBoundM: md.lowerBounds.totalDistance.value,
+    lowerBoundMethod: 'service length',
+    lowerBoundDetail: md.lowerBounds.totalDistance.basis,
+    gap: md.gaps.totalDistance,
+    connectors: { components: covs.reduce((x, v) => x + v.connectors.components, 0), paths: covs.reduce((x, v) => x + v.connectors.paths, 0), distance: covs.reduce((x, v) => x + v.connectors.distance, 0), edgeIds: covs.flatMap((v) => v.connectors.edgeIds) },
+    excluded: { unserviceable: md.unserviceable, reason: md.unserviceable.length ? 'no depot can service them on a closed legal route' : null },
+    wrongWayTraversals: covs.reduce((x, v) => x + v.route.wrongWayTraversals, 0),
+    totals: { distanceM: md.totals.distance, serviceM: md.totals.serviceDistance, deadheadM: md.totals.deadheadDistance, repeatM: 0 },
+    checks: md.validation.checks,
+    timingsMs: { total: md.timingsMs.total, partition: md.timingsMs.partition, plans: md.timingsMs.plans },
+    fleet: {
+      guarantee: md.guarantee,
+      totals: fleetTotals,
+      lowerBounds: { totalDistance: md.lowerBounds.totalDistance, vehiclesByCapacity: null, vehiclesByShift: null, tripsByCapacity: null, makespanSeconds: md.lowerBounds.makespanSeconds, minimumTotalSeconds: 0 },
+      gaps: md.gaps,
+      feasibility: md.feasibility,
+      validationOk: md.validation.ok,
+      checks: [...md.validation.checks, ...plans.flatMap((p) => p.validation.checks)],
+      timingsMs: { coverage: 0, table: 0, split: 0, localSearch: 0, expand: 0, verify: 0, total: md.timingsMs.total },
+    },
+    turns: fleetTurns(md.turns, zg.graph, md.routes.map((r) => r.steps)),
+    priority: null,
+    routes: md.routes.map((r) => toVehicleRoute(c, nodeOfVertex, r.vehicle, r.steps, { depotNode: nodeOfDepot.get(r.depotId)!, dumpAfterStep: r.dumpAfterStep, seconds: r.seconds, trips: r.tripLoads.length || 1, feasible: r.feasible })),
   };
 }
 
@@ -171,6 +297,8 @@ self.onmessage = async (ev: MessageEvent<CoverageRequest>) => {
       const res = await fetch(req.url);
       if (!res.ok) throw new Error(`City data unavailable (HTTP ${res.status}).`);
       city = decodeCityBundle(await res.json());
+      rules = cityTurnOptions(city, 'truck');
+      restrictionCount = city.restrictions.length;
       post({ id: req.id, ok: true, op: 'init' });
       return;
     }

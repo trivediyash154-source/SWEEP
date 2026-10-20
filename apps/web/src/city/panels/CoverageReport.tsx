@@ -1,13 +1,14 @@
 import { useEffect } from 'react';
 import { Icon } from '../../components/Icon';
 import { useCity } from '../store';
-import { useCoverage, zoneLabel } from '../coverageStore';
-import { useScenarios } from '../scenario';
+import { effectiveInputs, summarise, useCoverage } from '../coverageStore';
+import { BASELINE, useScenarios } from '../scenario';
 import { useShift } from '../shift';
 import { buildSchedule, clockLabel } from '../timeline';
 import { estimateCost } from '../costModel';
-import { METHOD_LABEL, VEHICLE_COLORS, inr, pct } from './CoveragePanel';
+import { METHOD_LABEL, VEHICLE_COLORS, describeOverrides, inr, pct, priorityText, turnSummary } from './CoveragePanel';
 import { fmtDist, fmtTime, nodeLabel } from './RouteLab';
+import { describeZone } from '../zoneShape';
 
 /**
  * Printable report of the coverage plan currently shown in the workspace. Every
@@ -17,7 +18,7 @@ import { fmtDist, fmtTime, nodeLabel } from './RouteLab';
 export function CoverageReport({ onClose }: { onClose: () => void }) {
   const city = useCity((s) => s.city)!;
   const cv = useCoverage();
-  const scenario = useScenarios((s) => s.scenarios.find((x) => x.id === s.activeId));
+  const scenario = useScenarios((s) => s.scenarios.find((x) => x.id === s.activeId)) ?? BASELINE;
   const startOfDay = useShift((s) => s.startOfDay);
   const r = cv.result;
   useEffect(() => {
@@ -27,9 +28,13 @@ export function CoverageReport({ onClose }: { onClose: () => void }) {
   }, [onClose]);
   if (!r || !cv.zone) return null;
   const pv = city.provenance;
-  const f = cv.fleet;
+  // The values the plan was made with: the panel's inputs plus the active scenario's overrides.
+  const eff = effectiveInputs(cv, scenario);
+  const f = eff.fleet;
+  const overrides = describeOverrides(city, scenario);
   const schedules = r.routes.map((v) => buildSchedule(v, f));
-  const cost = estimateCost({ serviceM: r.totals.serviceM, transitM: r.totals.deadheadM + r.totals.repeatM, vehicleSeconds: r.routes.reduce((a, v) => a + v.seconds, 0) }, cv.costs);
+  const sum = summarise(r);
+  const cost = estimateCost(sum, eff.costs);
   const checks = [...r.checks, ...(r.fleet?.checks ?? [])];
   return (
     <div className="cv-report" role="dialog" aria-modal="true" aria-label="Coverage plan report" data-testid="cov-report">
@@ -67,19 +72,27 @@ export function CoverageReport({ onClose }: { onClose: () => void }) {
         <h2>Service zone and scenario</h2>
         <dl className="cv-facts">
           <dt>Zone</dt>
-          <dd>{cv.zone.kind === 'circle' ? 'circle, ' : 'rectangle, '}{zoneLabel(cv.zone, fmtDist)}</dd>
+          <dd data-testid="rep-zone">{describeZone(cv.zone)}</dd>
           <dt>Required streets</dt>
           <dd data-testid="rep-required">
             {r.report.requiredSegments.toLocaleString('en-US')} segments, {r.report.requiredKm.toFixed(2)} km{cv.roadClasses ? ` (classes: ${cv.roadClasses.join(', ')})` : ' (all road classes)'}
           </dd>
-          <dt>Depot</dt>
-          <dd>{cv.depot !== null ? nodeLabel(city, cv.depot) : '–'}</dd>
+          <dt>{r.depots ? 'Depots' : 'Depot'}</dt>
+          <dd data-testid="rep-depots">
+            {r.depots
+              ? r.depots.map((d, i) => `${i + 1}. ${nodeLabel(city, d.node)} (${d.vehicles} vehicle${d.vehicles === 1 ? '' : 's'}, ${d.requiredSegments} segments)`).join('; ')
+              : eff.depot !== null
+                ? nodeLabel(city, eff.depot)
+                : '–'}
+          </dd>
           <dt>Disposal site</dt>
           <dd>{cv.dump !== null ? nodeLabel(city, cv.dump) : 'none'}</dd>
           <dt>One-way model</dt>
           <dd>{r.direction === 'directed' ? 'respected (directed; two-way streets serviced in both directions)' : `ignored (undirected relaxation; ${r.wrongWayTraversals} wrong-way traversals)`}</dd>
           <dt>Scenario</dt>
-          <dd>{scenario && scenario.id !== 'baseline' ? `${scenario.name}: ${scenario.closed.length} closures, ${scenario.oneway.length} direction changes` : 'baseline (as mapped)'}</dd>
+          <dd data-testid="rep-scenario">
+            {scenario.id !== 'baseline' ? `${scenario.name}: ${scenario.closed.length} closures, ${scenario.oneway.length} direction changes${overrides.length ? `; ${overrides.join(', ')}` : ''}` : 'baseline (as mapped)'}
+          </dd>
         </dl>
 
         <h2>Method and guarantee</h2>
@@ -88,21 +101,40 @@ export function CoverageReport({ onClose }: { onClose: () => void }) {
         </p>
         <p className="small">{r.guarantee}</p>
         <dl className="cv-facts">
-          <dt>Total distance</dt>
-          <dd data-testid="rep-total">{fmtDist(r.totals.distanceM)}</dd>
+          <dt>{r.fleet ? 'Total distance, all vehicles' : 'Total distance'}</dt>
+          <dd data-testid="rep-total">{fmtDist(sum.distanceM)}</dd>
+          <dt>Turns</dt>
+          <dd data-testid="rep-turns">{turnSummary(r.turns)}</dd>
+          {r.fleet && (
+            <>
+              <dt>Single closed route</dt>
+              <dd>{fmtDist(r.totals.distanceM)} (split into the vehicle routes below)</dd>
+            </>
+          )}
           <dt>Lower bound</dt>
           <dd>{r.lowerBoundM !== null ? `${fmtDist(r.lowerBoundM)} (${r.lowerBoundMethod})` : 'none'}</dd>
           <dt>Service / transit</dt>
           <dd>
-            {fmtDist(r.totals.serviceM)} / {fmtDist(r.totals.deadheadM + r.totals.repeatM)}
+            {fmtDist(sum.serviceM)} / {fmtDist(sum.transitM)}
           </dd>
         </dl>
 
         <h2>Fleet</h2>
         <p className="small">
-          {f.vehicles} vehicle{f.vehicles === 1 ? '' : 's'} · objective {f.objective === 'min-makespan' ? 'finish soonest' : 'least total driving'} · service {f.serviceSpeedKmh} km/h, transit {f.deadheadSpeedKmh} km/h · shift limit {f.shiftSeconds === null ? 'none' : fmtTime(f.shiftSeconds)} · capacity {f.capacity ?? 'none'} · unloading {Math.round(f.dumpSeconds / 60)} min. These are planning inputs, not measured values.
+          {f.vehicles} vehicle{f.vehicles === 1 ? '' : 's'} · objective {f.objective === 'min-makespan' ? 'finish soonest' : 'least total driving'} · service {f.serviceSpeedKmh} km/h, transit {f.deadheadSpeedKmh} km/h · shift limit {f.shiftSeconds === null ? 'none' : fmtTime(f.shiftSeconds)} · capacity {f.capacity ?? 'none'} · unloading {Math.round(f.dumpSeconds / 60)} min{f.priorityDeadlineSeconds != null ? ` · main roads within ${fmtTime(f.priorityDeadlineSeconds)} of the shift start` : ''}. These are planning inputs, not measured values.
         </p>
+        {r.priority && r.fleet && (
+          <p className="small" data-testid="rep-priority">
+            <strong>Main roads:</strong> {priorityText(r.priority, f.vehicles, r.fleet.totals.vehiclesUsed)}. {r.priority.lowerBounds.basis}
+          </p>
+        )}
         {r.fleet && <p className="small">{r.fleet.guarantee}</p>}
+        {r.fleet && r.fleet.totals.vehiclesUsed > f.vehicles && (
+          <p className="small" data-testid="rep-overfleet">
+            <strong>Not feasible with {f.vehicles} vehicle{f.vehicles === 1 ? '' : 's'}:</strong> the plan uses {r.fleet.totals.vehiclesUsed} routes to stay within the limits
+            {r.fleet.lowerBounds.vehiclesByShift !== null ? `, and any plan needs at least ${r.fleet.lowerBounds.vehiclesByShift} vehicles for this shift` : ''}.
+          </p>
+        )}
         <table className="sc-table">
           <thead>
             <tr>
@@ -132,7 +164,7 @@ export function CoverageReport({ onClose }: { onClose: () => void }) {
 
         <h2>Cost estimate (your assumptions)</h2>
         <p className="small">
-          Fuel {cost.fuelL === null ? 'not estimated (fuel rates not entered)' : `${cost.fuelL.toFixed(1)} L`} · CO₂ {cost.co2Kg === null ? '–' : `${cost.co2Kg.toFixed(1)} kg at ${cv.costs.co2KgPerL} kg/L`} · fuel cost {inr(cost.fuelCost)} · labour {inr(cost.labourCost)} · total {inr(cost.totalCost)}. Derived only from the entered rates; not measured municipal figures.
+          Fuel {cost.fuelL === null ? 'not estimated (fuel rates not entered)' : `${cost.fuelL.toFixed(1)} L`} · CO₂ {cost.co2Kg === null ? '–' : `${cost.co2Kg.toFixed(1)} kg at ${eff.costs.co2KgPerL} kg/L`} · fuel cost {inr(cost.fuelCost)} · labour {inr(cost.labourCost)} · total {inr(cost.totalCost)}. Derived only from the entered rates; not measured municipal figures.
         </p>
 
         <h2>Independent checks</h2>

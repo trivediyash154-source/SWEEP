@@ -3,7 +3,7 @@ import type { AlgorithmId, Objective, ProfileId } from '@sweep/engine';
 import { router } from './routerClient';
 import type { AlgorithmRun, RouterResponse } from './router.worker';
 import { specOf, useScenarios } from './scenario';
-import { cityUrl } from './data';
+import { absoluteCityUrl } from './data';
 import { useCity } from './store';
 
 export const ALL_ALGORITHMS: AlgorithmId[] = ['dijkstra', 'astar', 'bidirectional', 'alt', 'ch'];
@@ -69,7 +69,7 @@ async function ensureRouter(): Promise<void> {
   const st = useCity.getState();
   const entry = st.index.find((c) => c.id === st.cityId);
   if (!entry) throw new Error('City not loaded.');
-  await router.init(cityUrl(entry.file));
+  await router.init(absoluteCityUrl(entry.file));
 }
 
 export const useRoute = create<RouteState>((set, get) => ({

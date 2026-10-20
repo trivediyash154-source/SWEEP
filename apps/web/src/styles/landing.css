@@ -339,7 +339,7 @@
   color: var(--repeat);
 }
 .plate__figure--good {
-  color: var(--route);
+  color: var(--route-ink);
 }
 
 /* ---- B: sticky transformation ---- */
@@ -525,7 +525,7 @@
   background: var(--line-soft);
 }
 .ledger .good {
-  color: var(--route);
+  color: var(--route-ink);
 }
 .ledger .bad {
   color: var(--repeat);

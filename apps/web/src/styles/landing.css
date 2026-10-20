@@ -33,7 +33,7 @@
   gap: var(--space-6);
 }
 .hero__copy {
-  max-width: 640px;
+  max-width: 700px;
   display: grid;
   gap: var(--space-5);
 }
@@ -136,6 +136,18 @@
   height: auto;
   opacity: 0.9;
 }
+/* On a phone the drawing sits faintly behind the title, clear of the buttons and figures below it. */
+@media (max-width: 760px) {
+  .hero-fallback {
+    place-items: start center;
+    padding: 72px 0 0;
+  }
+  .hero-fallback svg {
+    width: 135vw;
+    max-width: none;
+    opacity: 0.22;
+  }
+}
 
 /* ========================================================== sections */
 .section {
@@ -184,6 +196,106 @@
     grid-template-columns: 1fr;
     gap: var(--space-6);
   }
+}
+
+/* ---- the four tools ---- */
+.paths__grid {
+  list-style: none;
+  margin: var(--space-7) 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+@media (max-width: 1100px) {
+  .paths__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 620px) {
+  .paths__grid {
+    grid-template-columns: 1fr;
+  }
+}
+/* The whole card is the link's target; the link's own name stays the tool's name. */
+.path {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-deep) 50%, transparent);
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease;
+}
+.path:hover,
+.path:focus-within {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .path:hover,
+  .path:focus-within {
+    transform: none;
+  }
+}
+.path__icon {
+  color: var(--accent);
+}
+:root[data-theme='porcelain'] .path__icon {
+  color: var(--match);
+}
+.path__name {
+  font-size: var(--text-xl);
+  letter-spacing: -0.02em;
+}
+.path__link {
+  color: var(--text);
+  text-decoration: none;
+}
+.path__link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.path__where {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.path__text {
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.path__source {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text);
+}
+.path__go {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+.hero__note {
+  max-width: 560px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.closing__actions {
+  justify-content: center;
 }
 
 /* ---- A: the problem: two plates ---- */

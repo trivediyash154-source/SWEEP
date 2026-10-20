@@ -5,7 +5,7 @@ Owner of this file: the **city-UX session**. Branch `claude/city-ux`; one draft 
 ## How the two sessions coordinate
 
 * **Status (this file).** The city-UX session keeps the status below current and pushes it with its work. The main session reads it here or in the PR.
-* **Instructions to the city-UX session.** Post them as a comment on this branch's PR starting with `[main]`, for example `[main] Next: ...`. The city-UX session is subscribed to that PR, so each comment reaches it. It replies on the PR starting with `[city-ux]` and updates this file.
+* **Instructions to the city-UX session.** Post them as a comment on this branch's PR starting with `[main]`, for example `[main] Next: ...`. Both sessions post from the same GitHub account, so these comments do not arrive as events; the city-UX session reads the PR's comments at every step and on a schedule. It replies on the PR starting with `[city-ux]` and updates this file.
 * **Requests from the city-UX session to the main session.** Changes to files the city-UX session does not own are listed under "Requests for the other session" below and mentioned in a `[city-ux]` PR comment.
 * **Ownership.** The city-UX session edits only:
   * `apps/web/src/city/**`, `apps/web/src/three/**` and `apps/web/src/landing/**`;
@@ -22,8 +22,8 @@ Owner of this file: the **city-UX session**. Branch `claude/city-ux`; one draft 
 | 1. Scene-start freeze on `/workspace` | **done**: root cause found in Chromium's native stacks; fixed in the app; 0 stalls in 120 loads (before: about 11 %) |
 | 2. First-visit guide, plain labels, explained terms, empty states, top-down camera, phone layout | **done** (see below); 3 new e2e tests |
 | 3. `/workspace?from=&to=&profile=` deep link into the Route lab, with an e2e test | **done** (see below); 4 unit tests, 2 e2e tests |
-| 4. Landing page: calls to action for Directions, Sweep planner, Pune lab, network lab; light hero | next; the hero already shows the static drawing until fonts settle |
-| 5. Tests for the above, full `pnpm verify` | ongoing |
+| 4. Landing page: calls to action for Directions, Sweep planner, Pune lab, network lab; light hero | **done** (see below); 3 new e2e tests |
+| 5. Tests for the above, full `pnpm verify` | see "Final checks" below |
 
 ## 1. The `/workspace` freeze: root cause and fix
 
@@ -115,6 +115,49 @@ WebGL is not involved.
     * a truck link opens the Route lab; the origin is the nearest intersection, checked by great-circle distance over all nodes; all five algorithms return the engine optimum;
     * a Mumbai point is refused and the panel still says what to do next.
 * **Checks after merging `c9af0f8`:** typecheck and lint clean; unit tests engine 178, web 50, server 38; city, landing, a11y and responsive specs 41 of 41.
+
+## 4. Landing page
+
+* **"Start here": four tools,** in the site navigation's order. Each card is one link (the whole card is clickable; the link's name is the tool's name). Each says what the tool does and who computes the answer:
+  * **Directions:** anywhere; computed by the public OSRM service on OpenStreetMap data, not by SWEEP; free-flow times, no live traffic.
+  * **Sweep planner:**
+    * any real zone up to 25 km², downloaded live from OpenStreetMap in polite tiles;
+    * the four one-click Pune example zones: around VIT (1 km²), Kothrud (4 km²), the old city (9 km²) and the centre (about 20 km²);
+    * "Play the shift";
+    * SWEEP's own coverage engine, with the proven lower bound and gap on every plan.
+  * **Pune algorithm lab:** the bundled Bibwewadi and VIT extract in 3D: five shortest-path algorithms, fleet coverage, road closures.
+  * **Network lab:** the exact Chinese Postman method step by step, on sample networks or the reader's own.
+
+  Above the cards: "Directions are computed by the public OSRM service. SWEEP's own algorithms run in the Sweep planner, the Pune lab and the Network lab, and each result there is either proven optimal or shown with a proven bound."
+* **Hero:**
+  * "Plan a sweep" (`/sweep`) and "Open the Pune lab" (`/workspace`), plus "Explore the mathematics";
+  * a lede about what SWEEP does now;
+  * a note that the district drawn behind the title is a synthetic illustration, while the planner and the Pune lab use real streets.
+* **Light hero.** The static drawing is the hero. The 3D scene is added only when all of these hold:
+  * a wide screen (at least 900 px) with a fine pointer;
+  * no data saving and no reduced motion;
+  * the fonts have settled and the browser is idle.
+
+  Once loaded, it stays, and "Pause motion" only pauses it. On a phone the drawing sits faintly behind the title, clear of the buttons.
+
+  | JavaScript fetched by `/` within 8 s (uncompressed, 3 loads each) | Before | After |
+  |---|---|---|
+  | desktop 1440 × 900 | 1,492 KB, 3D hero | 1,497 KB, 3D hero (loaded when idle) |
+  | phone 390 × 844 | 1,492 KB, 3D hero | **550 KB**, static, no WebGL context |
+  | desktop, reduced motion | 1,492 KB, 3D hero (still) | **550 KB**, static, no WebGL context |
+* **Stale copy corrected:**
+  * the "workspace" section described the network lab but linked to `/workspace`; it now says "The network lab" and links to `/lab`;
+  * the method list now covers one-way streets (min-cost flow), the bounded heuristic for large zones, fleets and the five shortest-path algorithms;
+  * the limitations list no longer claims "no one-way streets, fleets or turn penalties". It now states the real limits: OSRM for Directions, live downloads up to 25 km², the partial Pune extract and estimated heights, and the network lab's connectivity and 600-odd-intersection limits;
+  * the footer links all four tools.
+* **Tests:** `landing.spec.ts` gains "four tools, each card a link, saying who computes the result" and "a light hero …"; `responsive.spec.ts` gains "landing on a phone: a static hero without the 3D code …". Axe is clean on `/` in both themes.
+
+## Final checks
+
+A full `pnpm verify` is running on the merged head (with `9ddebb9`). Its results go here with the next push. Already passed on the landing commit before that merge:
+* typecheck and lint clean;
+* unit tests engine 178, web 50, server 38;
+* city spec 19/19; landing, a11y and responsive specs 25/25.
 
 ## Requests for the other session
 

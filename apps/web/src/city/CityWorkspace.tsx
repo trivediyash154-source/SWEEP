@@ -4,7 +4,7 @@ import { Wordmark } from '../components/Wordmark';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { Icon } from '../components/Icon';
 import { usePrefs, useReducedMotion } from '../state/prefs';
-import { lowPowerFor, startInLowPower, webglAvailable } from '../lib/webgl';
+import { lowPowerFor, startInLowPower, webglAvailable, whenTextSettled } from '../lib/webgl';
 import { WebGLBoundary } from '../components/WebGLBoundary';
 import { useCity, type CityMode } from './store';
 import { FeatureDetails } from './Inspector';
@@ -48,6 +48,16 @@ export default function CityWorkspace() {
   const debugRef = useRef<{ project: (x: number, y: number, h: number) => [number, number]; moving: () => boolean; appliedNonce: () => number } | null>(null);
   const webgl = webglAvailable();
   const overlays: SceneOverlays = useCityOverlays();
+  // The 3D scene's code is fetched and compiled only once the panels' text has its fonts (see whenTextSettled).
+  const [textSettled, setTextSettled] = useState(false);
+  useEffect(() => {
+    if (!city || textSettled) return;
+    let live = true;
+    void whenTextSettled().then(() => live && setTextSettled(true));
+    return () => {
+      live = false;
+    };
+  }, [city, textSettled]);
 
   useEffect(() => {
     document.title = 'SWEEP · City workspace';
@@ -115,7 +125,9 @@ export default function CityWorkspace() {
             {error} The city dataset is bundled with SWEEP; check that <code>cities/index.json</code> is served.
           </div>
         )}
-        {city && webgl ? (
+        {city && webgl && !textSettled ? (
+          <div className="cw-loading" role="status">Building the city…</div>
+        ) : city && webgl ? (
           <WebGLBoundary fallback={<div className="cw-loading" role="status">The 3D view could not start on this device (WebGL is unavailable). The panels still work.</div>}>
           <Suspense fallback={<div className="cw-loading" role="status">Building the city…</div>}>
             <GeoCityScene

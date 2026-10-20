@@ -22,7 +22,8 @@ Both pages use a full map of the world (OpenFreeMap vector tiles, free and witho
   * They are **not** SWEEP's own engine. SWEEP's exact algorithms run in the Pune lab and the Sweep planner.
 * **Sweep planner.**
   * Draw a rectangle or outline over **any real streets**, up to 25 km² (about 5 × 5 km).
-  * The streets are downloaded live from OpenStreetMap: one request up to 4 km², or polite tiles of at most 3.5 km² fetched one after another and merged.
+  * **One click** on "Try it now" or an example zone plans it straight away. Zones inside the bundled real Pune extract (Bibwewadi and VIT, clear of its missing tiles) plan **at once from the shipped streets, with no download**: the 1 km² VIT zone and the 4 km² Bibwewadi zone each take about a second in the browser.
+  * Elsewhere, the streets are downloaded live from OpenStreetMap: one request up to 4 km², or polite tiles of at most 3.5 km² fetched one after another and merged. "Always download live" forces this path everywhere.
   * A street is required when its midpoint lies in the zone.
   * SWEEP's exact coverage engine then plans the routes: min-cost flow when one-way streets are obeyed; exact matching, or a bounded heuristic, when they are ignored.
   * Several vehicles and shift limits use the fleet planner, and the turns are reordered.

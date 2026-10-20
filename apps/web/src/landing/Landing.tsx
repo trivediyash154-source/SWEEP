@@ -58,8 +58,8 @@ const TOOLS: Tool[] = [
     icon: 'truck',
     name: 'Sweep planner',
     where: 'Any real zone, up to 25 km²',
-    text: 'Draw a zone over real streets. They are downloaded live from OpenStreetMap, in polite tiles for large zones, and SWEEP plans routes that cover every street for your vehicles. Play the shift to watch them drive it.',
-    examples: 'One-click examples over real Pune areas: around VIT (1 km²), Kothrud (4 km²), the old city (9 km²) and the centre (about 20 km²).',
+    text: 'Draw a zone over real streets. Inside the bundled Pune extract it plans at once; elsewhere the streets are downloaded live from OpenStreetMap, in polite tiles for large zones. SWEEP then plans routes that cover every street for your vehicles. Play the shift to watch them drive it.',
+    examples: 'One-click examples over real Pune areas: around VIT (1 km²), Bibwewadi and VIT (4 km²), Kothrud (4 km²), the old city (9 km²) and the centre (about 20 km²).',
     source: "SWEEP's own coverage engine. Every plan shows its proven lower bound and gap.",
   },
   {
@@ -578,7 +578,7 @@ export default function Landing() {
             <h3>Limitations</h3>
             <ul>
               <li>Directions come from public OSRM servers, not from SWEEP. Their times assume free-flowing traffic.</li>
-              <li>The Sweep planner downloads streets live from OpenStreetMap, up to 25 km² per zone. A busy server makes it slow, and it can fail.</li>
+              <li>Outside the bundled Pune extract, the Sweep planner downloads streets live from OpenStreetMap, up to 25 km² per zone. A busy server makes that slow, and it can fail.</li>
               <li>The Pune lab's bundled extract is partial: some tile downloads failed, and its provenance dialog lists them. Most building heights are estimates, marked as such.</li>
               <li>In the network lab, the required streets must be connected. When they are not, it explains why that case is NP-hard and suggests connecting streets.</li>
               <li>In the network lab, exact matching is supported up to 600 odd intersections. Its sample districts are synthetic teaching networks, labelled as such; real networks can be imported as GeoJSON.</li>

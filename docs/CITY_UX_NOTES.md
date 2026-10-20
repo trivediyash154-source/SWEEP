@@ -24,6 +24,7 @@ Owner of this file: the **city-UX session**. Branch `claude/city-ux`; one draft 
 | 3. `/workspace?from=&to=&profile=` deep link into the Route lab, with an e2e test | **done** (see below); 4 unit tests, 2 e2e tests |
 | 4. Landing page: calls to action for Directions, Sweep planner, Pune lab, network lab; light hero | **done** (see below); 3 new e2e tests |
 | 5. Tests for the above, full `pnpm verify` | see "Final checks" below |
+| 6. Landing hero: buildings invisible in Velvet, washed out in Porcelain, weak route (owner request after the merge) | **done** (see below); 1 new e2e test that fails on the old hero |
 
 ## 1. The `/workspace` freeze: root cause and fix
 
@@ -152,6 +153,55 @@ WebGL is not involved.
   * the footer links all four tools.
 * **Tests:** `landing.spec.ts` gains "four tools, each card a link, saying who computes the result" and "a light hero …"; `responsive.spec.ts` gains "landing on a phone: a static hero without the 3D code …". Axe is clean on `/` in both themes.
 
+## 6. Landing hero: a visible city and route
+
+**The owner's report:** on the landing page, the buildings are not visible in Velvet; Porcelain is too light (the cream is right, but the buildings and the route do not stand out); and the route itself looks poor.
+
+**Cause:** the hero used its own older scene (`three/CityScene.tsx`):
+* flat-coloured boxes close to the ground colour;
+* a thin route tube;
+* a low camera, so the towers hid most streets.
+
+The network lab's district (`three/DistrictScene.tsx`) already had the look the owner liked: lit windows, trees, street markings and the glowing spectral route.
+
+**Change:**
+* **Shared parts:** the lab's static parts moved to `three/districtParts.tsx`, unchanged: palette, ground, streets, junctions, buildings with the window shader, trees and route-tube geometry. The lab imports them from there, with the same props and the same output. Street and junction handlers are now optional.
+* **`three/HeroScene.tsx`:** now renders that district for the hero city, with its own self-running route:
+  * it draws itself along the true route order behind a small vehicle over 14 s;
+  * it holds complete for 8 s;
+  * then it starts again;
+  * the part still to come shows as a faint trace, so the city is never without its route.
+
+  The route tube is thicker than in the lab. Under reduced motion, the static drawing is shown, as before.
+* **Camera:** about 50° down instead of 34°, so the route shows between the towers. It starts at its resting view (no swoop) and keeps the slow drift.
+* **Porcelain:**
+  * the same cream page;
+  * one step deeper on the ground, streets and sidewalks;
+  * slightly warmer building tones;
+  * less flat ambient light;
+  * less fog.
+
+  White buildings and the ink route now stand out.
+* **Quality:** shadows, bloom and full resolution only once the scene's context shows a hardware GPU (`lowPowerFor`), as in the lab. Software rendering gets the low-power version.
+* **Removed:** `three/CityScene.tsx` and `three/cityModel.ts`. Nothing else imported them.
+
+**Measured** in the city area of the hero (1440 × 900, x 760–1300, y 200–700), after 9 s, in headless Chromium (low-power path):
+
+| Theme | Luminance spread (90th / 10th percentile) | Strongly coloured pixels |
+|---|---|---|
+| Velvet, old hero | 1.66 : 1 | 6.8 % |
+| Velvet, new hero | 3.37 : 1 | 13.3 % |
+| Porcelain, old hero | 1.98 : 1 | 0.0 % |
+| Porcelain, new hero | 2.32 : 1 | 3.2 % |
+
+**Test:** `landing.spec.ts`, "the 3D hero city is visible in both themes …", asserts these measures above the old hero's values:
+* Velvet: > 2.2 : 1 and > 9 %;
+* Porcelain: > 2.15 : 1 and > 0.8 %.
+
+Run against the old hero, it fails: Velvet measured 1.66 : 1.
+
+**Screenshots:** `docs/screenshots/city-hero-velvet.png` and `docs/screenshots/city-hero-porcelain.png`, full quality, with the route complete.
+
 ## Final checks
 
 * **Full `pnpm verify`** on the merged head `84624b0` (with the main session's `9ddebb9`), 02:02–02:15 UTC: exit 0.
@@ -175,3 +225,4 @@ WebGL is not involved.
    useEffect(() => { let live = true; void whenTextSettled().then(() => live && setTextSettled(true)); return () => { live = false; }; }, []);
    // render <DistrictScene> only when textSettled
    ```
+2. **Open: `HANDOFF.md` line 192** (owned by the main session). It says "The Velvet materials in the landing `three/CityScene.tsx` and the lab `three/DistrictScene.tsx` were lifted so buildings are visible." `three/CityScene.tsx` no longer exists. Suggested text: "The landing hero (`three/HeroScene.tsx`) now renders the lab's district parts (`three/districtParts.tsx`): lit windows, trees and the spectral route; see `docs/CITY_UX_NOTES.md` §6."

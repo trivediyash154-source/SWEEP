@@ -1,4 +1,5 @@
-// Captures the city workspace for the docs: the same camera in both themes, a route comparison and a coverage plan.
+// Captures the city workspace for the docs: the same camera in both themes, a route comparison and a coverage plan;
+// and the landing hero's city in both themes.
 // Usage: node scripts/city-screenshots.mjs [baseUrl] [outDir]   (server must be running, e.g. node scripts/e2e-server.mjs 8790)
 import { chromium } from '@playwright/test';
 
@@ -81,6 +82,22 @@ for (const theme of ['velvet', 'porcelain']) {
   await page.waitForTimeout(2500);
   await settle(page);
   await page.screenshot({ path: `${out}/city-coverage-porcelain.png` });
+  await ctx.close();
+}
+
+// The landing hero at full quality (shadows and bloom, as on a hardware GPU), once its route has drawn itself.
+for (const theme of ['velvet', 'porcelain']) {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  await ctx.addInitScript((t) => {
+    localStorage.setItem('sweep.theme', t);
+    localStorage.setItem('sweep.quality', 'full');
+  }, theme);
+  const page = await ctx.newPage();
+  await page.goto(`${base}/`);
+  await page.locator('.hero__scene canvas').waitFor({ timeout: 30_000 });
+  await page.mouse.move(1380, 120);
+  await page.waitForTimeout(18_500);
+  await page.screenshot({ path: `${out}/city-hero-${theme}.png` });
   await ctx.close();
 }
 

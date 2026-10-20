@@ -218,14 +218,13 @@ Four sessions have worked on this branch.
 * **Fourth session.** It ran in parallel with the third and believed the third session's container had ended. It added the main-roads deadline, fixed a test time budget and refreshed the docs on 55 tiles.
 * **Third session again.** Its container was still alive. It pushed its 4 extra tile files (59 of 85), rebuilt the bundle, re-measured and updated these docs on 59 tiles, and replaced the turn checkbox with a two-button control.
 
-### Checks that pass (2026-10-19, fourth session, 55-tile bundle)
+### Checks that pass (2026-10-20, 59-tile bundle)
 
 * `pnpm typecheck` ✓ and `pnpm lint` ✓ (0 warnings).
-* Unit tests: engine 178/178 (17 files), server 38/38, web 29/29.
+* Unit tests: engine 178/178 (17 files), server 38/38, web 46/46 (13 files).
 * Both Python oracles: all comparisons agree.
 * `pnpm build` and `pnpm build:static` ✓.
-* E2E: **55 of 55 passed** in a full local run (12.4 min, one worker), 15 of them on the real Pune data (after the priority deadline was added).
-* CI (`verify` and `docker`) green on `c4ae948`.
+* E2E: **65 of 65 passed** in one full `pnpm verify` run (9.3 min, one worker): 15 on the real Pune data, 6 on the Sweep planner, 4 on Directions.
 * The static build, served by a plain file server with no API, was checked in headless Chromium: landing page, lab, `/#/workspace` city load, the Route lab (all five algorithms agree) and a coverage plan, with no console errors or failed requests.
 
 ### Bundled dataset

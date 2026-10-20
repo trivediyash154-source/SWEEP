@@ -29,7 +29,7 @@ The redesign spans 49 commits since `918dac0` (plus two merge commits): 128 file
   * `components/WebGLBoundary.tsx` around every 3D scene, and `lib/webgl.ts` no longer creates a throwaway probe context (the cause of the intermittent page-load freeze).
   * The old abstract lab moved to `/lab`.
 * **Tests and CI.**
-  * `e2e/city.spec.ts`: 15 real-data tests, each checked against independent engine runs (routing, reachability, closures, theme contrast in both themes, building identification, rectangle, circle and free-outline zones, fleets with a shift limit, several depots, turn-aware order on and off, a main-roads deadline, scenario comparisons, the route report, GPX and CSV downloads);
+  * `e2e/city.spec.ts`: 19 real-data tests, each checked against independent engine runs (routing, reachability, closures, theme contrast in both themes, building identification, rectangle, circle and free-outline zones, fleets with a shift limit, several depots, turn-aware order on and off, a main-roads deadline, scenario comparisons, the route report, GPX and CSV downloads);
   * web unit tests for zone geometry, the route sheet (on 60 real routes), the exports, formats, the cost model and the timeline;
   * `e2e/png.ts`: pixel contrast measurement;
   * Playwright now runs one worker with explicit SwiftShader;

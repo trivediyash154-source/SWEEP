@@ -81,8 +81,8 @@ pip install -r oracle/requirements.txt && python3 -I oracle/run_oracle.py  # ind
 |---|---|
 | `pnpm typecheck` | `tsc` for every package |
 | `pnpm lint` | ESLint with `--max-warnings=0` |
-| `pnpm test` | vitest: engine 154 tests, server 38, web 26 |
-| `pnpm test:e2e` | Playwright (desktop and mobile projects; 2 workers; port 8790) |
+| `pnpm test` | vitest: engine 178 tests, server 38, web 55 |
+| `pnpm test:e2e` | Playwright (desktop and mobile projects; 1 worker; port 8790) |
 | `pnpm verify` | everything above, plus the oracle and the build. **This must exit 0 before the final report.** |
 | `pnpm bench` | engine benchmarks (`packages/engine/bench/*.ts`, including `p2p.ts` and `coverage.ts`) |
 | `pnpm city:acquire pune-bibwewadi` | resumable OSM acquisition (see §3) |

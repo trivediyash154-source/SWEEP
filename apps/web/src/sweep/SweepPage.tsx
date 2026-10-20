@@ -530,9 +530,11 @@ export default function SweepPage() {
             </label>
           </div>
 
-          <button type="button" className="btn btn--primary btn--block sweep-run" onClick={() => void run()} disabled={!zone || tooLarge || status === 'downloading' || status === 'planning'} data-testid="sweep-run">
-            {status === 'downloading' ? (progress ?? 'Downloading streets…') : status === 'planning' ? 'Planning routes…' : plan && !stale ? 'Plan again' : 'Plan the sweeping routes'}
-          </button>
+          <div className="sweep-run">
+            <button type="button" className="btn btn--primary btn--block" onClick={() => void run()} disabled={!zone || tooLarge || status === 'downloading' || status === 'planning'} data-testid="sweep-run">
+              {status === 'downloading' ? (progress ?? 'Downloading streets…') : status === 'planning' ? 'Planning routes…' : plan && !stale ? 'Plan again' : 'Plan the sweeping routes'}
+            </button>
+          </div>
           {stale && <p className="atlas__note" data-testid="sweep-stale">Inputs changed since this plan: plan again to update it.</p>}
           {error && <p className="atlas__error" role="alert" data-testid="sweep-error">{error}</p>}
 

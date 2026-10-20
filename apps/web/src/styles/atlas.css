@@ -334,10 +334,13 @@
   margin-top: 2px;
   flex: none;
 }
-/* Sweep planner: keep the plan button in reach while the settings scroll. */
+/* Sweep planner: keep the plan button in reach while the settings scroll, on a solid strip so nothing shows through. */
 .atlas__panel .sweep-run {
   position: sticky;
-  bottom: 0;
+  bottom: -32px;
   z-index: 3;
-  box-shadow: 0 -10px 16px var(--surface);
+  margin: 0 -20px -32px;
+  padding: 12px 20px 32px;
+  background: var(--surface);
+  border-top: 1px solid var(--line-soft);
 }

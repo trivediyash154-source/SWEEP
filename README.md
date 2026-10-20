@@ -3,7 +3,7 @@
 **Every street. One intelligent route.**
 *Every street has a story. Every route has a proof.*
 
-SWEEP is an urban route-intelligence platform. You build, import or acquire a street network and mark the streets that need service. SWEEP then computes the **shortest closed route that covers them all**, proves that it is optimal, and drives it through a 3D city:
+SWEEP is an urban route-intelligence platform. You build, import or acquire a street network and mark the streets that need service. SWEEP then computes the **shortest closed route that covers them all**. When an exact method applies, it proves the route optimal; otherwise it reports a proven lower bound and the gap. It then drives the route through a 3D city:
 
 * undirected networks: the Chinese Postman Problem;
 * one-way and mixed networks: the directed and mixed postman problems;

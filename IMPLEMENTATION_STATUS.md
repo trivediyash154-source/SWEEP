@@ -4,6 +4,8 @@ This is a living record of the city-scale redesign: what exists, what was verifi
 
 ## Phase 1: Baseline audit (2026-10-19)
 
+This section is the historical starting point of the redesign, kept as it was recorded; current results are in the later sections and in `TEST_PLAN.md`.
+
 ### Repository
 
 | Item | State |

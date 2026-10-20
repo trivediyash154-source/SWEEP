@@ -154,10 +154,18 @@ WebGL is not involved.
 
 ## Final checks
 
-A full `pnpm verify` is running on the merged head (with `9ddebb9`). Its results go here with the next push. Already passed on the landing commit before that merge:
-* typecheck and lint clean;
-* unit tests engine 178, web 50, server 38;
-* city spec 19/19; landing, a11y and responsive specs 25/25.
+* **Full `pnpm verify`** on the merged head `84624b0` (with the main session's `9ddebb9`), 02:02–02:15 UTC: exit 0.
+  * typecheck and lint clean;
+  * unit tests: engine 178, server 38, web 50;
+  * the Python oracle: all comparisons agree (661 undirected and 1,401 directed or mixed graphs);
+  * build;
+  * browser tests 73 of 73.
+* **After that run,** two changes followed:
+  * `.ledger .good` and `.plate__figure--good` (route-coloured text) now use the main session's `--route-ink` token;
+  * `docs/screenshots/city-*.png` were recaptured. The theme pair shows the first-visit guide; the route and coverage shots hide it.
+
+  Checked again: typecheck and lint clean, unit tests 178 / 38 / 50, city / landing / a11y / responsive specs 44 of 44.
+* **New tests from this workstream:** 8 e2e tests (city 4, landing 2, responsive 2) and 4 unit tests (`deepLink.test.ts`). No test was weakened, skipped or removed, and no timeout was raised.
 
 ## Requests for the other session
 

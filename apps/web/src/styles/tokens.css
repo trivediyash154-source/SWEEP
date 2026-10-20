@@ -82,6 +82,7 @@
   --focus: #f3a7c4;
 
   --route: #75e0ff;
+  --route-ink: var(--route);
   --route-glow: rgba(117, 224, 255, 0.45);
   --repeat: #ff6d86;
   --repeat-glow: rgba(255, 109, 134, 0.42);
@@ -120,7 +121,7 @@
   --line-soft: rgba(64, 33, 76, 0.06);
   --text: #24152f;
   --text-muted: #5f4d6b;
-  --text-faint: #8a7a92;
+  --text-faint: #6b5f73; /* ≥ 4.5:1 on every Porcelain surface, down to --surface-3 */
   --text-on-accent: #fbf3e2;
   --accent: #2c1a3a;
   --accent-strong: #40274f;
@@ -128,6 +129,7 @@
   --focus: #b8467a;
 
   --route: #0a7ea6;
+  --route-ink: #066a8e; /* --route as small text: ≥ 4.5:1 on every Porcelain surface */
   --route-glow: rgba(10, 126, 166, 0.28);
   --repeat: #d23c5a;
   --repeat-glow: rgba(210, 60, 90, 0.25);

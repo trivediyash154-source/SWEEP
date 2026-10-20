@@ -1,0 +1,168 @@
+/* ------------------------------------------------------------- wordmark */
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--text);
+}
+.wordmark__glyph {
+  width: 26px;
+  height: 26px;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--brand-rose) 35%, transparent));
+}
+.wordmark__text {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.12rem;
+  letter-spacing: 0.32em;
+  margin-right: -0.32em;
+}
+:root[data-theme='porcelain'] .wordmark__text {
+  background-image: linear-gradient(100deg, #b8467a 0%, #9a6d1f 25%, #0a7ea6 50%, #6148d1 75%, #b8467a 100%);
+  background-size: 300% 100%;
+}
+.wordmark--sm .wordmark__glyph {
+  width: 22px;
+  height: 22px;
+}
+.wordmark--sm .wordmark__text {
+  font-size: 0.98rem;
+}
+.wordmark--lg .wordmark__glyph {
+  width: 34px;
+  height: 34px;
+}
+.wordmark--lg .wordmark__text {
+  font-size: 1.5rem;
+}
+
+/* ------------------------------------------------------------------ nav */
+.site-nav {
+  position: relative;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-5);
+  padding: 18px clamp(16px, 4vw, 48px);
+  border-bottom: 1px solid var(--line-soft);
+}
+.site-nav--overlay {
+  position: absolute;
+  inset: 0 0 auto 0;
+  border-bottom-color: transparent;
+}
+.site-nav__links {
+  display: flex;
+  gap: var(--space-5);
+  justify-content: center;
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.site-nav__links a {
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 6px 2px;
+  border-bottom: 1px solid transparent;
+  transition: color var(--dur-fast), border-color var(--dur-fast);
+}
+.site-nav__links a:hover,
+.site-nav__links a.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.site-nav__end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+@media (max-width: 720px) {
+  .site-nav {
+    grid-template-columns: auto auto;
+    gap: var(--space-3);
+  }
+  .site-nav__links {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-start;
+    gap: var(--space-4);
+  }
+  .hide-sm {
+    display: none;
+  }
+}
+
+.theme-toggle button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.theme-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+}
+.theme-swatch--velvet {
+  background: radial-gradient(circle at 35% 35%, #4a2a63, #160b21 70%);
+  box-shadow: inset 0 0 0 2px rgba(233, 201, 140, 0.4);
+}
+.theme-swatch--porcelain {
+  background: radial-gradient(circle at 35% 35%, #fffaf0, #e7dccb 75%);
+}
+
+/* ------------------------------------------------------- route fallback */
+.route-fallback {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+}
+.route-fallback__mark {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.4em;
+  font-size: 1.1rem;
+  animation: pulse-soft 1.6s ease-in-out infinite, spectral-flow 9s linear infinite;
+}
+@keyframes pulse-soft {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* ------------------------------------------------------- botanical field */
+.botanical-field {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------- footer */
+.site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-6) clamp(16px, 4vw, 48px);
+  border-top: 1px solid var(--line);
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+}
+.site-footer nav {
+  display: flex;
+  gap: var(--space-4);
+}
+
+/* ------------------------------------------------------------- page shell */
+.page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+.page__main {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  padding: var(--space-8) clamp(16px, 4vw, 48px);
+}

@@ -1,0 +1,152 @@
+/*
+ * SWEEP design tokens.
+ * Two themes share one structure:
+ *   velvet    — royal aubergine night with champagne-gold hairlines (default)
+ *   porcelain — warm cream "architect's model" daylight
+ * Semantic tokens (route, repeat, odd, …) carry meaning and are reused by the
+ * 2D canvas, the 3D scenes and reports.
+ */
+:root {
+  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Instrument Serif', 'Iowan Old Style', Georgia, serif;
+  --font-ui: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+  --space-10: 144px;
+
+  --radius-xs: 3px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-md: 0.9375rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.875rem;
+  --text-3xl: clamp(2.2rem, 3.6vw, 3.25rem);
+  --text-hero: clamp(3rem, 7.2vw, 6.6rem);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 140ms;
+  --dur-med: 280ms;
+  --dur-slow: 640ms;
+
+  --spectral: linear-gradient(100deg, #f3a7c4 0%, #e9c98c 22%, #75e0ff 46%, #b7a6ff 68%, #ff6d86 86%, #f3a7c4 100%);
+
+  /* fixed brand primitives (both themes) */
+  --brand-rose: #f3a7c4;
+  --brand-coral: #ff6d86;
+  --brand-cyan: #75e0ff;
+  --brand-gold: #e9c98c;
+  --brand-lavender: #b7a6ff;
+  --brand-steel: #8591a3;
+  --brand-porcelain: #f4f0e8;
+}
+
+/* ---------------------------------------------------------------- velvet */
+:root,
+:root[data-theme='velvet'] {
+  color-scheme: dark;
+  --bg: #1d0f2e;
+  --bg-deep: #160a24;
+  --bg-glow-1: rgba(176, 52, 118, 0.38);
+  --bg-glow-2: rgba(104, 62, 196, 0.30);
+  --bg-glow-3: rgba(233, 201, 140, 0.10);
+  --surface: #24133a;
+  --surface-2: #2c1846;
+  --surface-3: #372054;
+  --surface-glass: rgba(40, 21, 62, 0.74);
+  --line: rgba(233, 201, 140, 0.15);
+  --line-strong: rgba(233, 201, 140, 0.32);
+  --line-soft: rgba(246, 239, 230, 0.07);
+  --text: #f6efe6;
+  --text-muted: #c5b3d3;
+  --text-faint: #9583a6;
+  --text-on-accent: #1a0f20;
+  --accent: #e9c98c;
+  --accent-strong: #f4dcab;
+  --accent-ink: #1a0f20;
+  --focus: #f3a7c4;
+
+  --route: #75e0ff;
+  --route-ink: var(--route);
+  --route-glow: rgba(117, 224, 255, 0.45);
+  --repeat: #ff6d86;
+  --repeat-glow: rgba(255, 109, 134, 0.42);
+  --odd: #b7a6ff;
+  --odd-glow: rgba(183, 166, 255, 0.45);
+  --match: #e9c98c;
+  --required: #f1e6d6;
+  --optional: #7d6f8f;
+  --depot: #e9c98c;
+  --danger: #ff8a9b;
+  --warning: #f0c27a;
+  --success: #8fe3c0;
+  --petal-1: #f3a7c4;
+  --petal-2: #ffd1e1;
+  --petal-3: #e98bb0;
+
+  --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 10px 30px -12px rgba(5, 0, 12, 0.7);
+  --shadow-2: 0 24px 60px -20px rgba(5, 0, 12, 0.85);
+  --canvas-dot: rgba(233, 201, 140, 0.10);
+}
+
+/* -------------------------------------------------------------- porcelain */
+:root[data-theme='porcelain'] {
+  color-scheme: light;
+  --bg: #f4f0e8;
+  --bg-deep: #ebe4d8;
+  --bg-glow-1: rgba(243, 167, 196, 0.28);
+  --bg-glow-2: rgba(183, 166, 255, 0.18);
+  --bg-glow-3: rgba(233, 201, 140, 0.25);
+  --surface: #fbf8f2;
+  --surface-2: #f2ece2;
+  --surface-3: #e8dfd2;
+  --surface-glass: rgba(251, 248, 242, 0.8);
+  --line: rgba(64, 33, 76, 0.13);
+  --line-strong: rgba(64, 33, 76, 0.28);
+  --line-soft: rgba(64, 33, 76, 0.06);
+  --text: #24152f;
+  --text-muted: #5f4d6b;
+  --text-faint: #6b5f73; /* ≥ 4.5:1 on every Porcelain surface, down to --surface-3 */
+  --text-on-accent: #fbf3e2;
+  --accent: #2c1a3a;
+  --accent-strong: #40274f;
+  --accent-ink: #f4dcab;
+  --focus: #b8467a;
+
+  --route: #0a7ea6;
+  --route-ink: #066a8e; /* --route as small text: ≥ 4.5:1 on every Porcelain surface */
+  --route-glow: rgba(10, 126, 166, 0.28);
+  --repeat: #d23c5a;
+  --repeat-glow: rgba(210, 60, 90, 0.25);
+  --odd: #6148d1;
+  --odd-glow: rgba(97, 72, 209, 0.25);
+  --match: #9a6d1f;
+  --required: #2c1a3a;
+  --optional: #a99db0;
+  --depot: #9a6d1f;
+  --danger: #c0334f;
+  --warning: #9a6216;
+  --success: #1d7a56;
+  --petal-1: #f3a7c4;
+  --petal-2: #f8c6d8;
+  --petal-3: #d9739e;
+
+  --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.7) inset, 0 10px 26px -14px rgba(64, 33, 76, 0.25);
+  --shadow-2: 0 26px 60px -24px rgba(64, 33, 76, 0.35);
+  --canvas-dot: rgba(64, 33, 76, 0.10);
+}

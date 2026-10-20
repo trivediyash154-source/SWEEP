@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, lint, tests, oracle, build, browser + a11y
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: |
+          pnpm install --frozen-lockfile
+          pip install -r oracle/requirements.txt
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Unit, property and integration tests
+        run: pnpm test
+      - name: Python oracle (networkx, brute force, min-cost flow, state search)
+        run: pnpm test:oracle
+      - name: Build
+        run: pnpm build
+      - name: Install Chromium for Playwright
+        run: pnpm exec playwright install --with-deps chromium
+      - name: End-to-end, responsive and accessibility tests (both themes)
+        run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: test-results/
+
+  docker:
+    name: Docker image build, health check and smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+      - name: Build runtime image
+        run: docker build --target runtime -t sweep:ci .
+      - name: Start container
+        run: docker run -d --name sweep -p 8787:8787 -e COOKIE_SECURE=false -v sweep-data:/data sweep:ci
+      - name: Wait for the health check
+        run: |
+          for i in $(seq 1 40); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' sweep)
+            [ "$status" = healthy ] && break
+            sleep 1
+          done
+          docker logs sweep
+          test "$status" = healthy
+          test "$(docker exec sweep id -u)" != 0
+      - name: Smoke test (optimise, accounts, stored scenario)
+        run: node scripts/docker-smoke.mjs http://127.0.0.1:8787 create smoke-state.json
+      - name: Restart and check persistence
+        run: |
+          docker restart sweep
+          for i in $(seq 1 40); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' sweep)" = healthy ] && break
+            sleep 1
+          done
+          node scripts/docker-smoke.mjs http://127.0.0.1:8787 check smoke-state.json
+      - name: Test target (unit and integration suites inside the image)
+        run: |
+          docker build --target test -t sweep:ci-test .
+          docker run --rm sweep:ci-test

@@ -1,0 +1,7 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature", "properties": { "name": "Ring Road" }, "geometry": { "type": "LineString", "coordinates": [[73.8400, 18.5200], [73.8410, 18.5200], [73.8410, 18.5210], [73.8400, 18.5210], [73.8400, 18.5200]] } },
+    { "type": "Feature", "properties": { "name": "Dead-end Lane", "oneway": "yes" }, "geometry": { "type": "LineString", "coordinates": [[73.8410, 18.5200], [73.8420, 18.5200]] } }
+  ]
+}

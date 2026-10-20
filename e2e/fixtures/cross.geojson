@@ -1,0 +1,8 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature", "properties": { "name": "Lakeside Road" }, "geometry": { "type": "LineString", "coordinates": [[73.8400, 18.5200], [73.8410, 18.5200], [73.8420, 18.5200], [73.8420, 18.5210], [73.8410, 18.5210], [73.8400, 18.5210], [73.8400, 18.5200]] } },
+    { "type": "Feature", "properties": { "name": "Market Cut" }, "geometry": { "type": "LineString", "coordinates": [[73.8410, 18.5200], [73.8410, 18.5210]] } },
+    { "type": "Feature", "properties": { "name": "Not a street" }, "geometry": { "type": "Point", "coordinates": [73.84, 18.52] } }
+  ]
+}

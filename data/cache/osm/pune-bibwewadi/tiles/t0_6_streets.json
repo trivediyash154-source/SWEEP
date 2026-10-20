@@ -1,0 +1,181 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.4 2390de5a",
+  "osm3s": {
+    "timestamp_osm_base": "2026-10-19T09:16:39Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "node",
+  "id": 4703162501,
+  "lat": 18.4474039,
+  "lon": 73.8879366
+},
+{
+  "type": "node",
+  "id": 4703162502,
+  "lat": 18.4470210,
+  "lon": 73.8856670
+},
+{
+  "type": "node",
+  "id": 4703162503,
+  "lat": 18.4469761,
+  "lon": 73.8866375
+},
+{
+  "type": "node",
+  "id": 4703162504,
+  "lat": 18.4468028,
+  "lon": 73.8856680
+},
+{
+  "type": "node",
+  "id": 4703162505,
+  "lat": 18.4458733,
+  "lon": 73.8867119
+},
+{
+  "type": "node",
+  "id": 4703162506,
+  "lat": 18.4457679,
+  "lon": 73.8856012
+},
+{
+  "type": "node",
+  "id": 4703162507,
+  "lat": 18.4440582,
+  "lon": 73.8873804
+},
+{
+  "type": "node",
+  "id": 4703162512,
+  "lat": 18.4435453,
+  "lon": 73.8874439
+},
+{
+  "type": "node",
+  "id": 4703162513,
+  "lat": 18.4453570,
+  "lon": 73.8872023
+},
+{
+  "type": "node",
+  "id": 7979951889,
+  "lat": 18.4463851,
+  "lon": 73.8856569
+},
+{
+  "type": "node",
+  "id": 7979951890,
+  "lat": 18.4466065,
+  "lon": 73.8871478
+},
+{
+  "type": "node",
+  "id": 10217021429,
+  "lat": 18.4485122,
+  "lon": 73.8851118
+},
+{
+  "type": "node",
+  "id": 10217021430,
+  "lat": 18.4485921,
+  "lon": 73.8862371
+},
+{
+  "type": "node",
+  "id": 10242195039,
+  "lat": 18.4453065,
+  "lon": 73.8855913
+},
+{
+  "type": "node",
+  "id": 10242195040,
+  "lat": 18.4453534,
+  "lon": 73.8861829
+},
+{
+  "type": "way",
+  "id": 476888952,
+  "nodes": [
+    4703162501,
+    4703162502
+  ],
+  "tags": {
+    "highway": "residential"
+  }
+},
+{
+  "type": "way",
+  "id": 476888953,
+  "nodes": [
+    4703162503,
+    4703162504
+  ],
+  "tags": {
+    "highway": "residential"
+  }
+},
+{
+  "type": "way",
+  "id": 476888954,
+  "nodes": [
+    4703162505,
+    4703162506
+  ],
+  "tags": {
+    "highway": "residential"
+  }
+},
+{
+  "type": "way",
+  "id": 476888959,
+  "nodes": [
+    4703162512,
+    4703162507,
+    4703162513
+  ],
+  "tags": {
+    "highway": "residential"
+  }
+},
+{
+  "type": "way",
+  "id": 855760072,
+  "nodes": [
+    7979951889,
+    7979951890
+  ],
+  "tags": {
+    "highway": "residential",
+    "source": "maxar"
+  }
+},
+{
+  "type": "way",
+  "id": 1117132860,
+  "nodes": [
+    10217021429,
+    10217021430
+  ],
+  "tags": {
+    "highway": "residential"
+  }
+},
+{
+  "type": "way",
+  "id": 1119830336,
+  "nodes": [
+    10242195039,
+    10242195040
+  ],
+  "tags": {
+    "highway": "residential"
+  }
+}
+
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@sweep/server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --tsconfig tsconfig.json src/index.ts",
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hono/node-server": "1.19.6",
+    "@sweep/engine": "workspace:*",
+    "hono": "4.10.4",
+    "zod": "4.1.12"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "tsx": "4.20.6",
+    "vitest": "4.1.12"
+  }
+}

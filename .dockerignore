@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+**/dist
+**/dist-static
+test-results
+playwright-report
+data
+# The sweep-planner unit test reads one real cached Overpass tile; keep it so the test target runs it.
+!data/cache/osm/pune-bibwewadi/tiles/t2_3_streets.json
+.git
+.env
+.env.*
+!.env.example
+docs/screenshots
+**/__pycache__
+**/.vite

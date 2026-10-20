@@ -29,7 +29,7 @@ The redesign spans 49 commits since `918dac0` (plus two merge commits): 128 file
   * `components/WebGLBoundary.tsx` around every 3D scene, and `lib/webgl.ts` no longer creates a throwaway probe context (the cause of the intermittent page-load freeze).
   * The old abstract lab moved to `/lab`.
 * **Tests and CI.**
-  * `e2e/city.spec.ts`: 15 real-data tests, each checked against independent engine runs (routing, reachability, closures, theme contrast in both themes, building identification, rectangle, circle and free-outline zones, fleets with a shift limit, several depots, turn-aware order on and off, a main-roads deadline, scenario comparisons, the route report, GPX and CSV downloads);
+  * `e2e/city.spec.ts`: 19 real-data tests, each checked against independent engine runs (routing, reachability, closures, theme contrast in both themes, building identification, rectangle, circle and free-outline zones, fleets with a shift limit, several depots, turn-aware order on and off, a main-roads deadline, scenario comparisons, the route report, GPX and CSV downloads);
   * web unit tests for zone geometry, the route sheet (on 60 real routes), the exports, formats, the cost model and the timeline;
   * `e2e/png.ts`: pixel contrast measurement;
   * Playwright now runs one worker with explicit SwiftShader;
@@ -108,10 +108,10 @@ Same-camera captures on the 55-tile bundle: `docs/screenshots/city-velvet.png` a
 | Typecheck and lint | clean (0 warnings) |
 | Engine | 178 / 178 (17 files) |
 | Server | 38 / 38 |
-| Web | 50 / 50 |
+| Web | 55 / 55 |
 | Python oracle | 661 undirected and 1,401 directed/mixed graphs; all comparisons agree |
 | Build (server and static) | passed |
-| End-to-end and axe (both themes, desktop and mobile) | 73 / 73 (10.1 min, one worker): 19 on the real Pune data, 6 on the Sweep planner, 4 on Directions |
+| End-to-end and axe (both themes, desktop and mobile) | 74 / 74 (11.4 min, one worker): 19 on the real Pune data, 7 on the Sweep planner, 4 on Directions |
 | Static build in a browser, no API server | landing, lab, city load, Route lab and a coverage plan; no console errors or failed requests |
 
 These are one full `pnpm verify` run on 2026-10-20 on the 59-tile bundle. Test expectations are computed from the bundle, never hard-coded. The intermittent page-load freeze had two causes, both fixed. A throwaway WebGL probe context stalled SwiftShader: 11 stalls in 60 loads before, 0 in 120 after. A Chromium renderer thread-pool deadlock between web-font loading and the 3D scene's script compile: 4–5 in 40 before, 0 in 120 after starting scenes once fonts settle.
@@ -175,4 +175,4 @@ docker compose up --build
 * **Turn restrictions.** None are mapped yet (the restriction query is missing), so banned-turn handling in the turn-aware order is tested on synthetic instances only.
 * **Not built.** A per-scenario travel-profile variant, earliest-start windows, and the main-roads deadline with several depots. The coverage solvers do not choose extra deadhead streets to avoid turns; only the order is turn-aware.
 * **Reference repository.** The "reverse engineering" repository mentioned at the start was never received (no URL arrived), so it has **not** been reviewed.
-* **Deployment: done.** The static build of this version is live at https://sweep-ashy.vercel.app, with the city workspace at https://sweep-ashy.vercel.app/#/workspace. It was deployed on 2026-10-19 from `fd4740d` to the existing Vercel project and checked live: city load, Route lab comparison and coverage plan, with no errors. Accounts and server-side saving need the Node server (Docker), which is not hosted publicly.
+* **Deployment: done.** The static build of this version is live at https://sweep-ashy.vercel.app, with the city workspace at https://sweep-ashy.vercel.app/#/workspace. It was redeployed on 2026-10-20 from the merged `main` (`b12da09`), also published on GitHub Pages (https://trivediyash154-source.github.io/SWEEP/), and checked live: Directions by car and bicycle on real OSRM routes, the link into the Route lab and the city workspace, with no page errors. Accounts and server-side saving need the Node server (Docker), which is not hosted publicly.

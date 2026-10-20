@@ -3,7 +3,7 @@
 **Every street. One intelligent route.**
 *Every street has a story. Every route has a proof.*
 
-SWEEP is an urban route-intelligence platform. You build, import or acquire a street network and mark the streets that need service. SWEEP then computes the **shortest closed route that covers them all**, proves that it is optimal, and drives it through a 3D city:
+SWEEP is an urban route-intelligence platform. You build, import or acquire a street network and mark the streets that need service. SWEEP then computes the **shortest closed route that covers them all**. When an exact method applies, it proves the route optimal; otherwise it reports a proven lower bound and the gap. It then drives the route through a 3D city:
 
 * undirected networks: the Chinese Postman Problem;
 * one-way and mixed networks: the directed and mixed postman problems;
@@ -22,7 +22,8 @@ Both pages use a full map of the world (OpenFreeMap vector tiles, free and witho
   * They are **not** SWEEP's own engine. SWEEP's exact algorithms run in the Pune lab and the Sweep planner.
 * **Sweep planner.**
   * Draw a rectangle or outline over **any real streets**, up to 25 km² (about 5 × 5 km).
-  * The streets are downloaded live from OpenStreetMap: one request up to 4 km², or polite tiles of at most 3.5 km² fetched one after another and merged.
+  * **One click** on "Try it now" or an example zone plans it straight away. Zones inside the bundled real Pune extract (Bibwewadi and VIT, clear of its missing tiles) plan **at once from the shipped streets, with no download**: the 1 km² VIT zone and the 4 km² Bibwewadi zone each take about a second in the browser.
+  * Elsewhere, the streets are downloaded live from OpenStreetMap: one request up to 4 km², or polite tiles of at most 3.5 km² fetched one after another and merged. "Always download live" forces this path everywhere.
   * A street is required when its midpoint lies in the zone.
   * SWEEP's exact coverage engine then plans the routes: min-cost flow when one-way streets are obeyed; exact matching, or a bounded heuristic, when they are ignored.
   * Several vehicles and shift limits use the fleet planner, and the turns are reordered.
@@ -154,10 +155,10 @@ Latest recorded run (2026-10-20, 59-tile Pune bundle): **all green**, locally an
 |---|---|
 | Engine | 178 tests |
 | Server | 38 tests |
-| Web | 50 tests |
+| Web | 55 tests |
 | Oracle, undirected | 661 graphs, checked against networkx and brute force |
 | Oracle, directed and mixed | 1,401 graphs, checked against networkx min-cost flow and a state-space search |
-| Browser | 73 end-to-end and accessibility tests, desktop and mobile, both themes, including 19 on the real Pune data checked against independent engine runs, and the Directions and Sweep planner pages |
+| Browser | 74 end-to-end and accessibility tests, desktop and mobile, both themes, including 19 on the real Pune data checked against independent engine runs, and the Directions and Sweep planner pages |
 
 Details are in [TEST_PLAN.md](TEST_PLAN.md).
 
@@ -189,4 +190,4 @@ Street data acquired or bundled from OpenStreetMap is © OpenStreetMap contribut
 * **Pune extract.** The bundled Pune data is partial: 59 of 85 tile downloads, because the public Overpass mirrors often time out and some environments block them. The region-wide turn-restriction query is among the missing downloads, so no turn restrictions are applied yet; when present, only via-node restrictions are supported.
 * **Accounts.** There is no password reset, because no email service is configured.
 * **Real-map pages.** They need the public services named above, which can be busy, rate-limited or blocked by a network. Each page says which service failed rather than showing a made-up result. Live downloads are capped at 25 km² to stay within the Overpass usage policy. Fleet plans on very large zones may be refused by the fleet planner; one vehicle always works.
-* **Hosting.** The static build of this version runs at https://sweep-ashy.vercel.app; the city workspace is at https://sweep-ashy.vercel.app/#/workspace. Everything there runs in the browser. Accounts, server-side saving and live map acquisition need the Node server. See [DEPLOYMENT.md](DEPLOYMENT.md).
+* **Hosting.** The static build of this version runs at https://sweep-ashy.vercel.app (also https://trivediyash154-source.github.io/SWEEP/); Directions is at `/#/directions`, the Sweep planner at `/#/sweep` and the city workspace at `/#/workspace`. Everything there runs in the browser. Accounts, server-side saving and live map acquisition need the Node server. See [DEPLOYMENT.md](DEPLOYMENT.md).

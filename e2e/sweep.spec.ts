@@ -160,6 +160,24 @@ test.describe('Sweep planner (any zone, live OpenStreetMap streets)', () => {
     await expect(page.getByTestId('sweep-total')).toHaveText(formatTravelDistance(exp.totals.distanceM));
   });
 
+  test('example zones over real Pune areas: one click sets the zone; the large one is tiled', async ({ page }) => {
+    await setup(page);
+    await page.getByTestId('sweep-example-centre').click();
+    await expect(page.getByTestId('sweep-zone')).toContainText('19.8');
+    await expect(page.getByTestId('sweep-tiled')).toBeVisible();
+    await expect(page.getByTestId('sweep-zone')).toContainText('fetched as');
+    await expect(page.getByTestId('sweep-run')).toBeEnabled();
+    // The 1 km² example around VIT plans end to end, exactly as the engine plans it.
+    await page.getByTestId('sweep-example-vit').click();
+    await expect(page.getByTestId('sweep-tiled')).toHaveCount(0);
+    await page.getByTestId('sweep-run').click();
+    await expect(page.getByTestId('sweep-result')).toBeVisible({ timeout: 60_000 });
+    const st = await page.evaluate(() => (window as unknown as W).__sweepPlanner.state());
+    const bb = st.zone!.kind === 'rect' ? st.zone!.bbox : [0, 0, 0, 0];
+    const exp = planSweep(conv.graph, st.zone!, [(bb[1]! + bb[3]!) / 2, (bb[0]! + bb[2]!) / 2], st.settings) as SweepPlan;
+    expect(Math.abs(st.plan!.totals.distanceM - exp.totals.distanceM)).toBeLessThan(1e-6);
+  });
+
   test('a zone too large for one polite download is refused before any request', async ({ page }) => {
     const bboxes = await setup(page);
     await page.evaluate(() => (window as unknown as W).__sweepMap.jumpTo({ center: [73.871, 18.46], zoom: 12 }));

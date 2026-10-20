@@ -22,6 +22,21 @@ const ROAD_SETS: { id: string; label: string; classes: readonly string[] }[] = [
 ];
 
 type Tool = 'none' | 'rect' | 'polygon' | 'depot';
+
+/** A square zone of `sideKm` around a point (south, west, north, east). */
+function squareZone(lat: number, lng: number, sideKm: number): Zone {
+  const dLat = (sideKm * 500) / 111_195;
+  const dLng = (sideKm * 500) / (111_195 * Math.cos((lat * Math.PI) / 180));
+  const r = (x: number): number => Math.round(x * 1e6) / 1e6;
+  return { kind: 'rect', bbox: [r(lat - dLat), r(lng - dLng), r(lat + dLat), r(lng + dLng)] };
+}
+/** Real places in Pune to try quickly; the streets are still downloaded live. */
+const EXAMPLES: { id: string; label: string; lat: number; lng: number; sideKm: number }[] = [
+  { id: 'vit', label: 'Around VIT Bibwewadi · 1 km²', lat: 18.4636, lng: 73.8682, sideKm: 1 },
+  { id: 'kothrud', label: 'Kothrud · 4 km²', lat: 18.5074, lng: 73.8077, sideKm: 2 },
+  { id: 'peths', label: 'Old city (Peths) · 9 km²', lat: 18.5167, lng: 73.8563, sideKm: 3 },
+  { id: 'centre', label: 'Pune centre · 20 km²', lat: 18.52, lng: 73.855, sideKm: 4.45 },
+];
 type Status = 'idle' | 'downloading' | 'planning' | 'done' | 'error';
 
 function expandBBox([s, w, n, e]: [number, number, number, number], m: number): [number, number, number, number] {
@@ -317,6 +332,24 @@ export default function SweepPage() {
               <button type="button" className="btn btn--ghost btn--sm" onClick={useView} data-testid="sweep-use-view">
                 ⛶ Use this view
               </button>
+            </div>
+            <div className="atlas__row" data-testid="sweep-examples">
+              <span className="atlas__note">Or try a real area:</span>
+              {EXAMPLES.map((x) => (
+                <button
+                  key={x.id}
+                  type="button"
+                  className="btn btn--ghost btn--sm"
+                  data-testid={`sweep-example-${x.id}`}
+                  onClick={() => {
+                    const z = squareZone(x.lat, x.lng, x.sideKm);
+                    finishZone(z);
+                    if (z.kind === 'rect') mapRef.current?.fitBounds([[z.bbox[1], z.bbox[0]], [z.bbox[3], z.bbox[2]]], { padding: 40, duration: 600 });
+                  }}
+                >
+                  {x.label}
+                </button>
+              ))}
             </div>
             {tool === 'polygon' && draft.length >= 3 && (
               <div className="atlas__row">

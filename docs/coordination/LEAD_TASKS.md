@@ -3,7 +3,9 @@
 Two Claude sessions build SWEEP at the same time:
 
 * **Lead session**: works on branch `claude/peaceful-cray-qmjciz` and writes ONLY this file.
-* **City-UX session**: works on branch `claude/city-ux` and writes ONLY `docs/coordination/CITY_UX_STATUS.md`.
+* **City-UX session**: works on branch `claude/city-ux` (draft PR trivediyash154-source/SWEEP#3) and writes its status ONLY in `docs/CITY_UX_NOTES.md`.
+
+**Channel (agreed):** the lead posts instructions as comments starting with `[main]` on PR #3, which the city-UX session is subscribed to. It replies with `[city-ux]` comments. This file mirrors the instructions.
 
 No file is ever written by both sessions, so nothing is overwritten. The lead merges `claude/city-ux` at the end and deploys.
 
@@ -13,7 +15,7 @@ No file is ever written by both sessions, so nothing is overwritten. The lead me
    `git fetch origin claude/peaceful-cray-qmjciz && git show origin/claude/peaceful-cray-qmjciz:docs/coordination/LEAD_TASKS.md`
 2. Bring the lead's work into your branch with a merge, never a rebase: `git merge origin/claude/peaceful-cray-qmjciz`. The files are disjoint, so this merges cleanly. If it ever conflicts, keep the lead's version of lead-owned files.
 3. After each task:
-   * update `docs/coordination/CITY_UX_STATUS.md`: what is done, test results, open questions, requests for the lead;
+   * update `docs/CITY_UX_NOTES.md`: what is done, test results, open questions, requests for the lead;
    * commit and push to `claude/city-ux`.
 4. Work the tasks in the order below. When all are done, check this file again for new tasks. If there are none, write "idle, waiting for tasks" in your status file.
 5. Never push to `claude/peaceful-cray-qmjciz`, `claude/laughing-ramanujan-wg70al` or `main`, never merge pull requests, and never deploy.
@@ -29,7 +31,7 @@ No file is ever written by both sessions, so nothing is overwritten. The lead me
 | `apps/web/src/styles/city.css`, `apps/web/src/styles/landing.css` | `apps/web/src/App.tsx`, `apps/web/src/components/SiteNav.tsx` |
 | `e2e/city.spec.ts`, `e2e/landing.spec.ts`, `e2e/a11y.spec.ts`, `e2e/responsive.spec.ts`, `playwright.config.ts` | `apps/web/package.json`, `pnpm-lock.yaml` (add no dependencies) |
 | `scripts/city-screenshots.mjs`, `docs/screenshots/city-*.png` | `README.md`, `HANDOFF.md`, `IMPLEMENTATION_STATUS.md`, `TEST_PLAN.md`, `DEPLOYMENT.md`, `MATHEMATICAL_SPEC.md`, `docs/FINAL_REPORT.md`, `.github/**` |
-| `docs/coordination/CITY_UX_STATUS.md` | `docs/coordination/LEAD_TASKS.md` (this file) |
+| `docs/CITY_UX_NOTES.md` | `docs/coordination/LEAD_TASKS.md` (this file) |
 
 Anything not listed belongs to the lead. If you need a change in a lead-owned file, write it under "Requests for the lead" in your status file.
 
@@ -63,7 +65,7 @@ Anything not listed belongs to the lead. If you need a change in a lead-owned fi
 ## Rules (the owner's)
 
 * Never fabricate data, timings or guarantees. Never call a heuristic optimal. No sign-in gate.
-* Never label the synthetic city as real, and never label real data as synthetic.
+* Show only real data, and always say where it comes from.
 * Never weaken, skip or delete tests. No model names in commits or PR text. No secrets.
 * Before every push: `pnpm typecheck && pnpm lint && pnpm test` and the e2e specs you own. Run the full `pnpm verify` before your final push.
 

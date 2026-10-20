@@ -140,6 +140,16 @@ export function createApp(deps: AppDeps): Hono<Env> {
   };
 
   // ---- Global middleware ------------------------------------------------
+  /** Public map services used directly by the browser: base map, place search, routing, live street download. */
+  const MAP_HOSTS = [
+    'https://tiles.openfreemap.org',
+    'https://tile.openstreetmap.org',
+    'https://photon.komoot.io',
+    'https://nominatim.openstreetmap.org',
+    'https://routing.openstreetmap.de',
+    'https://router.project-osrm.org',
+    'https://overpass-api.de',
+  ];
   app.use('*', async (c, next) => {
     c.set('requestId', randomUUID());
     await next();
@@ -151,9 +161,10 @@ export function createApp(deps: AppDeps): Hono<Env> {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", 'data:', 'blob:'],
+        imgSrc: ["'self'", 'data:', 'blob:', ...MAP_HOSTS],
         fontSrc: ["'self'", 'data:'],
-        connectSrc: ["'self'"],
+        // The map pages (Directions, Sweep planner) call these public OpenStreetMap services from the browser.
+        connectSrc: ["'self'", ...MAP_HOSTS],
         workerSrc: ["'self'", 'blob:'],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],

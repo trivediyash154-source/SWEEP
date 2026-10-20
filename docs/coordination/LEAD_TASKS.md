@@ -33,36 +33,31 @@ No file is ever written by both sessions, so nothing is overwritten. The lead me
 
 Anything not listed belongs to the lead. If you need a change in a lead-owned file, write it under "Requests for the lead" in your status file.
 
-## Change of plan (owner's decision, 2026-10-20)
+## Plan (owner's decision, 2026-10-20, final: REAL data only)
 
-The owner does **not** want a real-world map service. They want **our own city map to be much larger**: tens of km² instead of the 4 × 4 km Pune extract. SWEEP's algorithms must visibly solve routing and sweeping on it, for a demonstration.
+* **No synthetic city.** Ignore any earlier mention of a generated "demo-metro" city: it will not be built. Every map shows real OpenStreetMap data.
+* The Pune workspace (`/workspace`) keeps the real Pune extract (59 of 85 tiles, about 4 × 4 km around VIT Bibwewadi).
+* The lead is finishing two real-map pages:
+  * `/directions`: search any real place and get A→B routes anywhere, on a full map;
+  * `/sweep`: draw a zone over any real streets; they are downloaded live from OpenStreetMap and planned with SWEEP's exact coverage engine.
 
-* The lead is generating a **synthetic demo city** of about 10 × 10 km (100 km²): arterial grid, ring road, radial avenues, a river with bridges, dense centre streets with one-way pairs, and generated buildings. It is a normal city bundle: `apps/web/public/cities/demo-metro.json`, with an entry in `cities/index.json`, id `demo-metro`.
-* It is marked synthetic in the data: `provenance.source === 'synthetic'`. Real cities keep `'OpenStreetMap'`. The lead adds this to the `CityProvenance` type in the engine.
-* The Directions and Sweep-planner pages are parked on branch `claude/real-map-pages`. Do not link to `/directions` or `/sweep`.
+  These pages give the "big map". Link to them from the landing page; with react-router, `<Link to="/directions">` works in both builds.
 
 ## Tasks (in order)
 
-- [ ] **T1. City picker and honest labels in `/workspace`.**
-  * List the cities from `cities/index.json` in a picker in the workspace header.
-  * Default to `demo-metro` when it exists in the index, otherwise `pune-bibwewadi`.
-  * Support `?city=<id>` in the URL and remember the last choice in localStorage. Reset the route, coverage and scenario state when the city changes.
-  * When `city.provenance.source === 'synthetic'`:
-    * the header chip must read "Synthetic demo city: generated, not a real place", never "Real OpenStreetMap data";
-    * the provenance dialog, both reports, GPX/CSV exports and page titles must say the data is generated;
-    * no "OpenStreetMap" attribution, and no "Pune" or "VIT" wording, for that city.
-  * Real cities keep their current labels.
-  * e2e: the picker switches cities, the URL parameter works, and the synthetic labels appear and the OSM ones do not.
-- [ ] **T2. Performance on the big city.** Expect about 10–20 k intersections, 20–30 k segments and 20–40 k buildings.
-  * Measure: load and decode time, mesh build, first frame, and routing-worker startup (CH preprocessing grows with the graph).
-  * Fix what is slow, for example: a progress message during routing preprocessing, building level of detail or culling, and fewer draw calls.
-  * Coverage zones on the big city should stay responsive. If a zone is too large for interactive planning, say so before planning rather than freezing.
-  * Report the before/after numbers in your status file.
-- [ ] **T3. Fix the intermittent page freeze in headless Chromium** (unchanged from your first prompt). Reproduce it, find the root cause, fix it, and report the numbers. Never weaken a test.
-- [ ] **T4. Make the workspace understandable** (unchanged): a first-visit guide, plain-language labels and tooltips, and empty states that say what to click next. A clear top-down view matters more than 3D effects. It must be usable on a phone.
-- [ ] **T5. Landing page.**
-  * Present the product clearly, with calls to action to `/workspace` (the big demo city and Pune) and `/lab`.
-  * Say honestly what is real data and what is generated.
+- [ ] **T1. Fix the intermittent page freeze in headless Chromium.**
+  * Reproduce: load `/workspace` repeatedly in fresh browser contexts, wait for `networkidle`, then check the city name. About 5–15 % of loads stall while the 3D scene starts: the main thread is blocked outside JavaScript, and the scene chunks get no response.
+  * Find the root cause and fix it. Report before/after numbers. Never weaken a test.
+- [ ] **T2. Make the Pune workspace understandable.**
+  * Add a first-visit guide (dismissible, remembered) for Route lab, Coverage & fleet and Scenarios.
+  * Use plain-language labels and tooltips that explain lower bound, gap, deadhead and makespan.
+  * Make empty states say what to click next.
+  * Make a clear top-down view the default; it matters more than 3D effects.
+  * It must be usable on a phone.
+- [ ] **T3. Accept `?from=<lat>,<lng>&to=<lat>,<lng>` (and an optional `&profile=`) in `/workspace`.** The Route lab then opens with the nearest intersections as origin and destination and runs the comparison. The Directions page will link there when both points are inside the Pune extract. Add an e2e test.
+- [ ] **T4. Landing page.**
+  * Present the product clearly, with calls to action to Directions (`/directions`), Sweep planner (`/sweep`), the Pune algorithm lab (`/workspace`) and the network lab (`/lab`).
+  * Say honestly what each does, for example: "Directions are computed by the public OSRM service; SWEEP's own exact algorithms run in the Pune lab and the Sweep planner".
   * Keep the 3D hero light, with a static fallback on software rendering.
 
 ## Rules (the owner's)
@@ -74,4 +69,5 @@ The owner does **not** want a real-world map service. They want **our own city m
 
 ## Lead's log
 
-* 2026-10-20 00:40 UTC: plan changed to the synthetic big city. The demo-city bundle lands on `claude/peaceful-cray-qmjciz` within the next hours; merge it when it appears (see protocol, step 2). Until then, build the picker against `pune-bibwewadi` alone, and test the synthetic labels with a small fixture bundle written by your test.
+* 2026-10-20 00:40 UTC: the plan briefly changed to a synthetic big city.
+* 2026-10-20 00:55 UTC: **reverted by the owner: real data only, no synthetic city.** The tasks above are current. The lead restores `/directions` and `/sweep` on `claude/peaceful-cray-qmjciz`. Merge that branch into yours when you see the new commits.

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl, { type Map as MLMap, type MapMouseEvent } from 'maplibre-gl';
-import { DRIVABLE_ROAD_CLASSES, MAX_BBOX_KM2, type Graph } from '@sweep/engine';
+import { DRIVABLE_ROAD_CLASSES, MAX_BBOX_KM2, type CityModel, type Graph } from '@sweep/engine';
 import { SiteNav } from '../components/SiteNav';
 import { MapCanvas, setGeoJson, EMPTY_FC } from '../map/MapCanvas';
 import { PlaceSearch } from '../map/PlaceSearch';
@@ -9,6 +9,8 @@ import { formatTravelDistance, formatTravelTime, type LngLat } from '../lib/dire
 import { downloadText, safeFileName } from '../lib/storage';
 import { DEFAULT_SWEEP_SETTINGS, edgeGeometries, planToCsv, planToGpx, positionAt, ringAreaKm2, ringSelfIntersects, zoneBBox, zoneGraph, zoneRing, type LngLatPair, type SweepPlan, type SweepSettings, type Zone } from './plan';
 import { planInWorker } from './sweepClient';
+import { bundledCoverage, bundledStreetGraph, coversBox, type BundledCoverage } from './bundled';
+import { DEFAULT_CITY, fetchCity } from '../city/data';
 import '../styles/atlas.css';
 
 const PUNE: [number, number] = [73.8682, 18.4636];
@@ -30,14 +32,21 @@ function squareZone(lat: number, lng: number, sideKm: number): Zone {
   const r = (x: number): number => Math.round(x * 1e6) / 1e6;
   return { kind: 'rect', bbox: [r(lat - dLat), r(lng - dLng), r(lat + dLat), r(lng + dLng)] };
 }
-/** Real places in Pune to try quickly; the streets are still downloaded live. */
+/** Real places in Pune to try in one click. Zones inside the bundled extract plan at once; the others download their streets live. */
 const EXAMPLES: { id: string; label: string; lat: number; lng: number; sideKm: number }[] = [
   { id: 'vit', label: 'Around VIT Bibwewadi · 1 km²', lat: 18.4636, lng: 73.8682, sideKm: 1 },
+  { id: 'bibwewadi', label: 'Bibwewadi & VIT · 4 km²', lat: 18.4605, lng: 73.868, sideKm: 2 },
   { id: 'kothrud', label: 'Kothrud · 4 km²', lat: 18.5074, lng: 73.8077, sideKm: 2 },
   { id: 'peths', label: 'Old city (Peths) · 9 km²', lat: 18.5167, lng: 73.8563, sideKm: 3 },
   { id: 'centre', label: 'Pune centre · 20 km²', lat: 18.52, lng: 73.855, sideKm: 4.45 },
 ];
 type Status = 'idle' | 'downloading' | 'planning' | 'done' | 'error';
+/** Where the zone's streets come from: the bundled extract when it covers the zone ('auto'), or always a live download. */
+type StreetSource = 'auto' | 'live';
+interface Bundle {
+  city: CityModel;
+  cov: BundledCoverage;
+}
 
 function expandBBox([s, w, n, e]: [number, number, number, number], m: number): [number, number, number, number] {
   const dLat = m / 111_195;
@@ -66,10 +75,11 @@ function clockLabel(s: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+/** The algorithm behind a plan. Whether the plan is proven optimal is shown separately, from the plan itself. */
 const METHOD: Record<SweepPlan['method'], string> = {
-  'exact-directed-min-cost-flow': 'Exact (min-cost flow, one-way streets obeyed)',
-  'exact-undirected-edmonds-johnson': 'Exact (Edmonds–Johnson matching, one-ways ignored)',
-  'heuristic-candidate-matching': 'Heuristic with a proven lower bound (one-ways ignored)',
+  'exact-directed-min-cost-flow': 'min-cost flow, one-way streets obeyed',
+  'exact-undirected-edmonds-johnson': 'Edmonds–Johnson matching, one-ways ignored',
+  'heuristic-candidate-matching': 'candidate-matching heuristic, one-ways ignored',
 };
 
 export default function SweepPage() {
@@ -91,6 +101,25 @@ export default function SweepPage() {
   const [plan, setPlan] = useState<SweepPlan | null>(null);
   const [graph, setGraph] = useState<Graph | null>(null);
   const [source, setSource] = useState<string | null>(null);
+  const [streetSource, setStreetSource] = useState<StreetSource>('auto');
+  const [usedBundle, setUsedBundle] = useState<boolean | null>(null);
+  const resultRef = useRef<HTMLDivElement | null>(null);
+  // The bundled real Pune extract (already shipped with the site), loaded once in the background.
+  const bundleRef = useRef<Promise<Bundle | null> | null>(null);
+  const [bundle, setBundle] = useState<Bundle | null>(null);
+  const loadBundle = useCallback((): Promise<Bundle | null> => {
+    bundleRef.current ??= fetchCity({ file: `cities/${DEFAULT_CITY}.json` })
+      .then(({ city }) => {
+        const b = { city, cov: bundledCoverage(city) };
+        setBundle(b);
+        return b;
+      })
+      .catch(() => null);
+    return bundleRef.current;
+  }, []);
+  useEffect(() => {
+    void loadBundle();
+  }, [loadBundle]);
   const [planKey, setPlanKey] = useState<string | null>(null);
   const depotMarker = useRef<maplibregl.Marker | null>(null);
   // Shift playback: seconds since the shift start, and how fast the clock runs.
@@ -105,13 +134,19 @@ export default function SweepPage() {
   const tooLarge = downloadArea > MAX_TILED_KM2;
   const tileCount = downloadBox && tiled ? splitBBox(downloadBox).length : 1;
   const [progress, setProgress] = useState<string | null>(null);
-  const inputKey = JSON.stringify([zone, depot, settings, roadSet]);
+  const inputKey = JSON.stringify([zone, depot, settings, roadSet, streetSource]);
+  const instant = (box: [number, number, number, number] | null): boolean => streetSource === 'auto' && !!bundle && !!box && coversBox(bundle.cov, box);
+  const zoneInstant = instant(downloadBox);
   const stale = plan !== null && planKey !== inputKey;
 
   // Test and debugging hook (read-only state).
   useEffect(() => {
-    (window as unknown as { __sweepPlanner?: unknown }).__sweepPlanner = { state: () => ({ zone, depot, plan, graph, settings, roadClasses: ROAD_SETS.find((r) => r.id === roadSet)!.classes, status }) };
-  }, [zone, depot, plan, graph, settings, roadSet, status]);
+    (window as unknown as { __sweepPlanner?: unknown }).__sweepPlanner = { state: () => ({ zone, depot, plan, graph, settings, roadClasses: ROAD_SETS.find((r) => r.id === roadSet)!.classes, status, usedBundle }) };
+  }, [zone, depot, plan, graph, settings, roadSet, status, usedBundle]);
+  // Bring the result into view once a plan is ready.
+  useEffect(() => {
+    if (plan) resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [plan]);
 
   const finishZone = useCallback((z: Zone) => {
     const ring = zoneRing(z);
@@ -297,22 +332,36 @@ export default function SweepPage() {
     finishZone({ kind: 'rect', bbox: [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()] });
   };
 
-  const run = async () => {
-    if (!zone || !downloadBox) return;
-    if (tooLarge) return;
+  /** Get the zone's streets (bundled extract or live download) and plan. `z` lets an example plan before its state lands. */
+  const run = async (z: Zone | null = zone) => {
+    if (!z) return;
+    const box = expandBBox(zoneBBox(z), MARGIN_M);
+    const area = bboxKm2(box);
+    if (area > MAX_TILED_KM2) return;
     setError(null);
     setPlan(null);
-    setStatus('downloading');
-    const key = inputKey;
+    const key = JSON.stringify([z, depot, settings, roadSet, streetSource]);
     try {
       const classes = ROAD_SETS.find((r) => r.id === roadSet)!.classes;
-      const req = { bbox: downloadBox.map((x) => Math.round(x * 1e6) / 1e6) as [number, number, number, number], roadClasses: [...classes], name: 'Sweep planner zone' };
-      const acq = tiled ? await acquireLargeArea(req, { onProgress: (done, total) => setProgress(`Downloading streets: ${done} of ${total} tiles`) }) : await acquireMap(req);
-      setProgress(null);
-      setGraph(acq.graph);
-      setSource(`${acq.graph.source?.provider ?? 'OpenStreetMap via Overpass API'}${acq.cached ? ' (cached)' : ''}, ${acq.report.stats.ways} ways, ${(acq.report.stats.totalLength / 1000).toFixed(1)} km`);
-      setStatus('planning');
-      const res = await planInWorker(acq.graph, zone, depot ?? centroid(zoneRing(zone)), settings);
+      const b = streetSource === 'auto' ? await loadBundle() : null;
+      let streets: Graph;
+      if (b && coversBox(b.cov, box)) {
+        setStatus('planning');
+        streets = bundledStreetGraph(b.city, classes);
+        setUsedBundle(true);
+        setSource(`the bundled OpenStreetMap extract of ${b.city.name} (shipped with the site, no download), ${streets.edges.length.toLocaleString('en')} street segments`);
+      } else {
+        setStatus('downloading');
+        const req = { bbox: box.map((x) => Math.round(x * 1e6) / 1e6) as [number, number, number, number], roadClasses: [...classes], name: 'Sweep planner zone' };
+        const acq = area > MAX_BBOX_KM2 ? await acquireLargeArea(req, { onProgress: (done, total) => setProgress(`Downloading streets: ${done} of ${total} tiles`) }) : await acquireMap(req);
+        setProgress(null);
+        streets = acq.graph;
+        setUsedBundle(false);
+        setSource(`${acq.graph.source?.provider ?? 'OpenStreetMap via Overpass API'}${acq.cached ? ' (cached)' : ''}, ${acq.report.stats.ways} ways, ${(acq.report.stats.totalLength / 1000).toFixed(1)} km`);
+        setStatus('planning');
+      }
+      setGraph(streets);
+      const res = await planInWorker(streets, z, depot ?? centroid(zoneRing(z)), settings);
       if (!res.ok) {
         setStatus('error');
         setError(res.message);
@@ -326,6 +375,13 @@ export default function SweepPage() {
       setProgress(null);
       setError(err instanceof MapAcquireError ? err.message : `Planning failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+  };
+
+  const tryExample = (x: (typeof EXAMPLES)[number]) => {
+    const z = squareZone(x.lat, x.lng, x.sideKm);
+    finishZone(z);
+    if (z.kind === 'rect') mapRef.current?.fitBounds([[z.bbox[1], z.bbox[0]], [z.bbox[3], z.bbox[2]]], { padding: 40, duration: 600 });
+    void run(z);
   };
 
   const near = useCallback((): LngLat | null => {
@@ -354,7 +410,12 @@ export default function SweepPage() {
       <div className="atlas__body">
         <aside className="atlas__panel" aria-label="Street sweeping planner">
           <h1>Street sweeping planner</h1>
-          <p className="atlas__lede">Draw a zone anywhere. SWEEP downloads its streets live from OpenStreetMap and plans the shortest routes that sweep every street, with a proof of how close they are to the best possible.</p>
+          <p className="atlas__lede">
+            Pick an area of a city. SWEEP works out the shortest route a street-sweeping vehicle (or a fleet) must drive to sweep <strong>every street in it</strong>, obeying one-way streets, and proves how close that route is to the best possible. The routes are drawn on the map, and you can play the shift.
+          </p>
+          <button type="button" className="btn btn--primary btn--block" onClick={() => tryExample(EXAMPLES[0]!)} disabled={status === 'downloading' || status === 'planning'} data-testid="sweep-try">
+            Try it now: sweep the streets around VIT
+          </button>
 
           <div className="atlas__section">
             <h2>1 · Find the area</h2>
@@ -375,20 +436,18 @@ export default function SweepPage() {
               </button>
             </div>
             <div className="atlas__row" data-testid="sweep-examples">
-              <span className="atlas__note">Or try a real area:</span>
+              <span className="atlas__note">Or plan a real area in one click:</span>
               {EXAMPLES.map((x) => (
                 <button
                   key={x.id}
                   type="button"
                   className="btn btn--ghost btn--sm"
                   data-testid={`sweep-example-${x.id}`}
-                  onClick={() => {
-                    const z = squareZone(x.lat, x.lng, x.sideKm);
-                    finishZone(z);
-                    if (z.kind === 'rect') mapRef.current?.fitBounds([[z.bbox[1], z.bbox[0]], [z.bbox[3], z.bbox[2]]], { padding: 40, duration: 600 });
-                  }}
+                  onClick={() => tryExample(x)}
+                  disabled={status === 'downloading' || status === 'planning'}
                 >
                   {x.label}
+                  {instant(expandBBox(zoneBBox(squareZone(x.lat, x.lng, x.sideKm)), MARGIN_M)) ? ' · instant' : ''}
                 </button>
               ))}
             </div>
@@ -405,11 +464,13 @@ export default function SweepPage() {
             {zoneError && <p className="atlas__error" role="alert">{zoneError}</p>}
             <p className="atlas__note" data-testid="sweep-zone">
               {zone
-                ? `${zone.kind === 'rect' ? 'Rectangle' : `${zoneRing(zone).length}-point outline`}, ${zoneArea.toFixed(2)} km². Download area with a ${MARGIN_M} m margin: ${downloadArea.toFixed(2)} km²${tiled ? `, fetched as ${tileCount} tiles of at most 3.5 km² each` : ''} (limit ${MAX_TILED_KM2} km²).`
+                ? zoneInstant
+                  ? `${zone.kind === 'rect' ? 'Rectangle' : `${zoneRing(zone).length}-point outline`}, ${zoneArea.toFixed(2)} km². Its streets are in the bundled real Pune extract, so it plans at once with no download.`
+                  : `${zone.kind === 'rect' ? 'Rectangle' : `${zoneRing(zone).length}-point outline`}, ${zoneArea.toFixed(2)} km². Download area with a ${MARGIN_M} m margin: ${downloadArea.toFixed(2)} km²${tiled ? `, fetched as ${tileCount} tiles of at most 3.5 km² each` : ''} (limit ${MAX_TILED_KM2} km²).`
                 : 'No zone yet. Zoom to the streets, then draw a rectangle or an outline.'}
             </p>
             {tooLarge && <p className="atlas__error" role="alert" data-testid="sweep-too-large">This zone is too large to download live ({downloadArea.toFixed(1)} km² with the margin; the limit is {MAX_TILED_KM2} km², about 5 × 5 km, downloaded politely in tiles from the free OpenStreetMap servers). Draw a smaller zone or plan the area in parts.</p>}
-            {tiled && !tooLarge && <p className="atlas__note" data-testid="sweep-tiled">A large zone: its streets are downloaded in {tileCount} tiles, one after another, which can take a minute. Planning several vehicles on very large zones may be refused by the fleet planner; one vehicle always works.</p>}
+            {tiled && !tooLarge && !zoneInstant && <p className="atlas__note" data-testid="sweep-tiled">A large zone: its streets are downloaded in {tileCount} tiles, one after another, which can take a minute. Planning several vehicles on very large zones may be refused by the fleet planner; one vehicle always works.</p>}
           </div>
 
           <div className="atlas__section">
@@ -456,23 +517,37 @@ export default function SweepPage() {
                 ))}
               </select>
             </label>
+            <div className="segmented segmented--sm" role="group" aria-label="Street data">
+              <button type="button" aria-pressed={streetSource === 'auto'} onClick={() => setStreetSource('auto')} data-testid="sweep-source-auto">
+                Built-in Pune streets when they cover the zone
+              </button>
+              <button type="button" aria-pressed={streetSource === 'live'} onClick={() => setStreetSource('live')} data-testid="sweep-source-live">
+                Always download live
+              </button>
+            </div>
             <label className="atlas__check">
               <input type="checkbox" checked={settings.turnAware} onChange={(e) => setSettings({ ...settings, turnAware: e.target.checked })} data-testid="sweep-turns" /> Order turns to avoid U-turns and right turns (same streets, same distance)
             </label>
           </div>
 
-          <button type="button" className="btn btn--primary btn--block" onClick={() => void run()} disabled={!zone || tooLarge || status === 'downloading' || status === 'planning'} data-testid="sweep-run">
-            {status === 'downloading' ? (progress ?? 'Downloading streets…') : status === 'planning' ? 'Planning routes…' : plan && !stale ? 'Plan again' : 'Plan the sweeping routes'}
-          </button>
+          <div className="sweep-run">
+            <button type="button" className="btn btn--primary btn--block" onClick={() => void run()} disabled={!zone || tooLarge || status === 'downloading' || status === 'planning'} data-testid="sweep-run">
+              {status === 'downloading' ? (progress ?? 'Downloading streets…') : status === 'planning' ? 'Planning routes…' : plan && !stale ? 'Plan again' : 'Plan the sweeping routes'}
+            </button>
+          </div>
           {stale && <p className="atlas__note" data-testid="sweep-stale">Inputs changed since this plan: plan again to update it.</p>}
           {error && <p className="atlas__error" role="alert" data-testid="sweep-error">{error}</p>}
 
           {plan && (
-            <div className="atlas__section" data-testid="sweep-result">
+            <div className="atlas__section" data-testid="sweep-result" ref={resultRef}>
               <h2>Result</h2>
               <div>
                 <span className={`badge ${plan.optimal && plan.routes.length === 1 ? 'badge--exact' : 'badge--heuristic'}`} data-testid="sweep-method">
-                  {plan.routes.length > 1 || plan.fleetGuarantee ? `Fleet plan (heuristic) on ${METHOD[plan.method].toLowerCase()}` : plan.optimal ? `Proven optimal · ${METHOD[plan.method]}` : METHOD[plan.method]}
+                  {plan.routes.length > 1 || plan.fleetGuarantee
+                    ? `Fleet plan (heuristic) on ${METHOD[plan.method]}`
+                    : plan.optimal
+                      ? `Proven optimal · ${METHOD[plan.method]}`
+                      : `Not proven optimal: within ${pct(plan.lowerBound.gap)} of the proven bound · ${METHOD[plan.method]}`}
                 </span>
               </div>
               <div>
@@ -481,7 +556,10 @@ export default function SweepPage() {
               </div>
               <dl className="facts">
                 <dt>Sweeping</dt>
-                <dd>{formatTravelDistance(plan.totals.serviceM)}</dd>
+                <dd data-testid="sweep-service">
+                  {formatTravelDistance(plan.totals.serviceM)}
+                  {plan.direction === 'directed' ? ' (both sides of two-way streets, one pass along each one-way street)' : ' (each street once)'}
+                </dd>
                 <dt>Travel between</dt>
                 <dd data-testid="sweep-deadhead">{formatTravelDistance(plan.totals.deadheadM)} (driving without sweeping)</dd>
                 <dt>Best possible ≥</dt>

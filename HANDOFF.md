@@ -81,8 +81,8 @@ pip install -r oracle/requirements.txt && python3 -I oracle/run_oracle.py  # ind
 |---|---|
 | `pnpm typecheck` | `tsc` for every package |
 | `pnpm lint` | ESLint with `--max-warnings=0` |
-| `pnpm test` | vitest: engine 154 tests, server 38, web 26 |
-| `pnpm test:e2e` | Playwright (desktop and mobile projects; 2 workers; port 8790) |
+| `pnpm test` | vitest: engine 178 tests, server 38, web 55 |
+| `pnpm test:e2e` | Playwright (desktop and mobile projects; 1 worker; port 8790) |
 | `pnpm verify` | everything above, plus the oracle and the build. **This must exit 0 before the final report.** |
 | `pnpm bench` | engine benchmarks (`packages/engine/bench/*.ts`, including `p2p.ts` and `coverage.ts`) |
 | `pnpm city:acquire pune-bibwewadi` | resumable OSM acquisition (see §3) |
@@ -221,10 +221,10 @@ Four sessions have worked on this branch.
 ### Checks that pass (2026-10-20, 59-tile bundle)
 
 * `pnpm typecheck` ✓ and `pnpm lint` ✓ (0 warnings).
-* Unit tests: engine 178/178 (17 files), server 38/38, web 50/50 (14 files).
+* Unit tests: engine 178/178 (17 files), server 38/38, web 55/55 (15 files).
 * Both Python oracles: all comparisons agree.
 * `pnpm build` and `pnpm build:static` ✓.
-* E2E: **73 of 73 passed** in one full `pnpm verify` run (10.1 min, one worker): 19 on the real Pune data, 6 on the Sweep planner, 4 on Directions.
+* E2E: **74 of 74 passed** in one full `pnpm verify` run (11.4 min, one worker): 19 on the real Pune data, 7 on the Sweep planner, 4 on Directions.
 * The static build, served by a plain file server with no API, was checked in headless Chromium: landing page, lab, `/#/workspace` city load, the Route lab (all five algorithms agree) and a coverage plan, with no console errors or failed requests.
 
 ### Bundled dataset
@@ -371,6 +371,6 @@ The owner wants a big map. These pages give real data at any size: Directions an
 
 ## 5. Deployment note
 
-* **Deployed.** The owner asked for this work to be on Vercel. The third session deployed the static build of `fd4740d` to the existing project "sweep" on 2026-10-19 (22:56 UTC), with the Vercel CLI logged in inside its container. It is live at https://sweep-ashy.vercel.app, with the city at `/#/workspace`. Landing, lab, city load, Route lab and a coverage plan were checked on the live site, with no console errors.
+* **Deployed.** The static build of the merged `main` (`b12da09`) is live at https://sweep-ashy.vercel.app (Vercel project "sweep", 2026-10-20 08:53 UTC) and at https://trivediyash154-source.github.io/SWEEP/ (GitHub Pages workflow). Directions, the lab link and the city were checked on the live site; details and the container's proxy caveat are in DEPLOYMENT.md.
 * To redeploy after changes, follow DEPLOYMENT.md, "Static build on Vercel". A session without a Vercel login cannot deploy: the fourth session's Vercel connector was refused (HTTP 403) for the project's team. Ask the owner first, as before.
 * `pnpm build:static` produces `apps/web/dist-static/`. The city JSON is served from `public/cities/`, and `cityUrl()` respects `BASE_URL`.

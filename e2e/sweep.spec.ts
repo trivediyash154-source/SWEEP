@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { osmToGraph, mergeElements, DRIVABLE_ROAD_CLASSES, type OsmElement } from '../packages/engine/src/index';
+import { osmToGraph, mergeElements, decodeCityBundle, DRIVABLE_ROAD_CLASSES, type OsmElement } from '../packages/engine/src/index';
+import { bundledStreetGraph } from '../apps/web/src/sweep/bundled';
 import { planSweep, type SweepPlan, type SweepSettings, type Zone } from '../apps/web/src/sweep/plan';
 import { formatTravelDistance } from '../apps/web/src/lib/directions';
 
@@ -17,10 +18,14 @@ const STYLE = { version: 8, sources: {}, layers: [{ id: 'bg', type: 'background'
 
 type W = {
   __sweepMap: { jumpTo: (o: { center: [number, number]; zoom: number }) => void; project: (p: [number, number]) => { x: number; y: number }; loaded: () => boolean; isMoving: () => boolean };
-  __sweepPlanner: { state: () => { zone: Zone | null; depot: [number, number] | null; plan: SweepPlan | null; settings: SweepSettings } };
+  __sweepPlanner: { state: () => { zone: Zone | null; depot: [number, number] | null; plan: SweepPlan | null; settings: SweepSettings; usedBundle: boolean | null } };
 };
 
-async function setup(page: Page) {
+// The real Pune extract the site ships; zones it covers plan from it with no download.
+const city = decodeCityBundle(JSON.parse(readFileSync(new URL('../apps/web/public/cities/pune-bibwewadi.json', import.meta.url), 'utf8')));
+
+/** Open the planner. `live` (the default here) makes every zone download its streets, to test the download path. */
+async function setup(page: Page, { live = true }: { live?: boolean } = {}) {
   const bboxes: unknown[] = [];
   await page.route('https://tiles.openfreemap.org/**', (r) => r.fulfill({ status: 200, contentType: 'application/json', headers: CORS, body: JSON.stringify(STYLE) }));
   await page.route('https://tile.openstreetmap.org/**', (r) => r.abort());
@@ -36,6 +41,7 @@ async function setup(page: Page) {
   await page.waitForFunction(() => (window as unknown as W).__sweepMap?.loaded());
   await page.evaluate(() => (window as unknown as W).__sweepMap.jumpTo({ center: [73.871, 18.46], zoom: 16 }));
   await page.waitForFunction(() => !(window as unknown as W).__sweepMap.isMoving());
+  if (live) await page.getByTestId('sweep-source-live').click();
   return bboxes;
 }
 
@@ -88,7 +94,10 @@ test.describe('Sweep planner (any zone, live OpenStreetMap streets)', () => {
     await expect(page.getByTestId('sweep-total')).toHaveText(formatTravelDistance(exp.totals.distanceM));
     // Proven optimal only when the engine says so; otherwise the bound and gap are shown.
     if (exp.optimal) await expect(page.getByTestId('sweep-method')).toContainText('Proven optimal');
-    else await expect(page.getByTestId('sweep-method')).not.toContainText('optimal');
+    else {
+      await expect(page.getByTestId('sweep-method')).not.toContainText('Proven optimal');
+      await expect(page.getByTestId('sweep-method')).toContainText(`Not proven optimal: within ${(exp.lowerBound.gap! * 100).toFixed(1)} % of the proven bound`);
+    }
     await expect(page.getByTestId('sweep-bound')).toContainText('proven lower bound');
     for (const c of got.checks) expect(c.passed, c.detail).toBe(true);
     // Shift playback: at the end of the planned time the vehicle is back at the depot.
@@ -164,22 +173,49 @@ test.describe('Sweep planner (any zone, live OpenStreetMap streets)', () => {
     await expect(page.getByTestId('sweep-total')).toHaveText(formatTravelDistance(exp.totals.distanceM));
   });
 
-  test('example zones over real Pune areas: one click sets the zone; the large one is tiled', async ({ page }) => {
-    await setup(page);
+  test('one click plans a real Pune area at once from the bundled streets, exactly as the engine plans it', async ({ page }) => {
+    const bboxes = await setup(page, { live: false });
+    await page.getByTestId('sweep-try').click();
+    await expect(page.getByTestId('sweep-result')).toBeVisible({ timeout: 60_000 });
+    expect(bboxes).toHaveLength(0); // nothing was downloaded
+    const st = await page.evaluate(() => (window as unknown as W).__sweepPlanner.state());
+    expect(st.usedBundle).toBe(true);
+    const bb = st.zone!.kind === 'rect' ? st.zone!.bbox : [0, 0, 0, 0];
+    const exp = planSweep(bundledStreetGraph(city, classes), st.zone!, [(bb[1]! + bb[3]!) / 2, (bb[0]! + bb[2]!) / 2], st.settings) as SweepPlan;
+    expect(exp.ok).toBe(true);
+    expect(st.plan!.required).toEqual(exp.required);
+    expect(Math.abs(st.plan!.totals.distanceM - exp.totals.distanceM)).toBeLessThan(1e-6);
+    expect(st.plan!.lowerBound).toEqual(exp.lowerBound);
+    await expect(page.getByTestId('sweep-total')).toHaveText(formatTravelDistance(exp.totals.distanceM));
+    await expect(page.getByTestId('sweep-zone')).toContainText('bundled real Pune extract');
+    for (const c of st.plan!.checks) expect(c.passed, c.detail).toBe(true);
+    // The 4 km² example is covered too and plans in one click.
+    await expect(page.getByTestId('sweep-example-bibwewadi')).toContainText('instant');
+    await page.getByTestId('sweep-example-bibwewadi').click();
+    await expect(page.getByTestId('sweep-total')).not.toHaveText(formatTravelDistance(exp.totals.distanceM), { timeout: 60_000 });
+    const st2 = await page.evaluate(() => (window as unknown as W).__sweepPlanner.state());
+    expect(st2.usedBundle).toBe(true);
+    expect(st2.plan!.required.km).toBeGreaterThan(30);
+    expect(bboxes).toHaveLength(0);
+  });
+
+  test('an example outside the bundled streets is downloaded live in polite tiles', async ({ page }) => {
+    await setup(page, { live: false });
+    const requests: number[][] = [];
+    await page.route('https://overpass-api.de/api/interpreter', (r) => {
+      const q = new URLSearchParams(r.request().postData() ?? '').get('data') ?? '';
+      requests.push(/\(([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)\);/.exec(q)!.slice(1).map(Number));
+      return r.fulfill({ status: 200, contentType: 'application/json', headers: CORS, body: JSON.stringify({ elements: [] }) });
+    });
+    await expect(page.getByTestId('sweep-example-centre')).not.toContainText('instant');
     await page.getByTestId('sweep-example-centre').click();
     await expect(page.getByTestId('sweep-zone')).toContainText('19.8');
     await expect(page.getByTestId('sweep-tiled')).toBeVisible();
     await expect(page.getByTestId('sweep-zone')).toContainText('fetched as');
-    await expect(page.getByTestId('sweep-run')).toBeEnabled();
-    // The 1 km² example around VIT plans end to end, exactly as the engine plans it.
-    await page.getByTestId('sweep-example-vit').click();
-    await expect(page.getByTestId('sweep-tiled')).toHaveCount(0);
-    await page.getByTestId('sweep-run').click();
-    await expect(page.getByTestId('sweep-result')).toBeVisible({ timeout: 60_000 });
-    const st = await page.evaluate(() => (window as unknown as W).__sweepPlanner.state());
-    const bb = st.zone!.kind === 'rect' ? st.zone!.bbox : [0, 0, 0, 0];
-    const exp = planSweep(conv.graph, st.zone!, [(bb[1]! + bb[3]!) / 2, (bb[0]! + bb[2]!) / 2], st.settings) as SweepPlan;
-    expect(Math.abs(st.plan!.totals.distanceM - exp.totals.distanceM)).toBeLessThan(1e-6);
+    // The stand-in server has no streets there, so the page must say so rather than show a plan.
+    await expect(page.getByTestId('sweep-error')).toBeVisible({ timeout: 90_000 });
+    expect(requests.length).toBeGreaterThan(1);
+    await expect(page.getByTestId('sweep-result')).toHaveCount(0);
   });
 
   test('a zone too large for one polite download is refused before any request', async ({ page }) => {

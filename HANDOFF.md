@@ -371,6 +371,6 @@ The owner wants a big map. These pages give real data at any size: Directions an
 
 ## 5. Deployment note
 
-* **Deployed.** The owner asked for this work to be on Vercel. The third session deployed the static build of `fd4740d` to the existing project "sweep" on 2026-10-19 (22:56 UTC), with the Vercel CLI logged in inside its container. It is live at https://sweep-ashy.vercel.app, with the city at `/#/workspace`. Landing, lab, city load, Route lab and a coverage plan were checked on the live site, with no console errors.
+* **Deployed.** The static build of the merged `main` (`b12da09`) is live at https://sweep-ashy.vercel.app (Vercel project "sweep", 2026-10-20 08:53 UTC) and at https://trivediyash154-source.github.io/SWEEP/ (GitHub Pages workflow). Directions, the lab link and the city were checked on the live site; details and the container's proxy caveat are in DEPLOYMENT.md.
 * To redeploy after changes, follow DEPLOYMENT.md, "Static build on Vercel". A session without a Vercel login cannot deploy: the fourth session's Vercel connector was refused (HTTP 403) for the project's team. Ask the owner first, as before.
 * `pnpm build:static` produces `apps/web/dist-static/`. The city JSON is served from `public/cities/`, and `cityUrl()` respects `BASE_URL`.

@@ -491,6 +491,17 @@
 .cw-guide-show {
   margin: 0;
 }
+.cw-link-error {
+  position: absolute;
+  z-index: 18;
+  top: 92px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(560px, calc(100vw - 32px));
+}
 .cw-next {
   margin: 0;
   padding: 8px 10px;

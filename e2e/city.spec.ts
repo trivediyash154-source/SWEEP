@@ -34,13 +34,13 @@ async function attachFreezeDiagnosis(cdp: CDPSession, crashed: boolean): Promise
   await test.info().attach('freeze-diagnosis', { body: report, contentType: 'text/plain' });
 }
 
-async function openCity(page: Page, theme: 'velvet' | 'porcelain' = 'velvet'): Promise<void> {
+async function openCity(page: Page, theme: 'velvet' | 'porcelain' = 'velvet', path = '/workspace'): Promise<void> {
   let crashed = false;
   page.on('crash', () => (crashed = true));
   await page.addInitScript((t) => localStorage.setItem('sweep.theme', t), theme);
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Debugger.enable');
-  await page.goto('/workspace');
+  await page.goto(path);
   try {
     await expect(page.getByTestId('city-name')).toContainText('Pune', { timeout: 60_000 });
   } catch (e) {
@@ -167,6 +167,53 @@ test.describe('city workspace (real Pune OpenStreetMap data)', () => {
     const d = await routeState(page);
     const expD = engine.query('dijkstra', { origin: d.origin, destination: d.destination, objective: 'distance' }).result;
     expect(Math.abs(d.runs[0]!.distanceM - expD.distanceM)).toBeLessThan(1e-6);
+  });
+
+  test('a route-lab link opens the Route lab on the nearest intersections and runs the comparison for its profile', async ({ page }) => {
+    // Two real intersections with a truck route between them; the link names them by latitude,longitude, the
+    // origin about 20 m off its intersection, as a point picked on another map would be.
+    const engine = new RoutingEngine(city, 'truck');
+    const a = 10;
+    let b = Math.floor(city.nodeCount / 2);
+    while (!engine.query('dijkstra', { origin: a, destination: b, objective: 'time' }).result.found) b++;
+    const [lat, lng] = [Number((city.nodeLat[a]! + 0.00013).toFixed(6)), Number((city.nodeLon[a]! + 0.00013).toFixed(6))];
+    const from = `${lat},${lng}`;
+    const to = `${city.nodeLat[b]},${city.nodeLon[b]}`;
+    await openCity(page, 'velvet', `/workspace?from=${from}&to=${to}&profile=truck`);
+    await expect(page.getByTestId('panel-route')).toBeVisible();
+    await expect(page.getByTestId('route-results')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId('profile-truck')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('route-agreement')).toContainText('All 5 algorithms return the same optimal travel time');
+    const s = await routeState(page);
+    expect(s.destination).toBe(b);
+    // The origin is the intersection nearest the linked point: checked by great-circle distance over every node.
+    const metres = (n: number): number => {
+      const R = 6_371_008.8;
+      const rad = Math.PI / 180;
+      const dLat = (city.nodeLat[n]! - lat) * rad;
+      const dLng = (city.nodeLon[n]! - lng) * rad;
+      const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat * rad) * Math.cos(city.nodeLat[n]! * rad) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(h));
+    };
+    let nearest = Infinity;
+    for (let n = 0; n < city.nodeCount; n++) nearest = Math.min(nearest, metres(n));
+    expect(metres(s.origin)).toBeLessThan(nearest + 0.5);
+    expect(nearest).toBeLessThan(30);
+    const expected = engine.query('dijkstra', { origin: s.origin, destination: b, objective: 'time' }).result;
+    expect(expected.found).toBe(true);
+    for (const r of s.runs) expect(Math.abs(r.cost - expected.cost) / expected.cost).toBeLessThan(1e-9);
+    await expect(page.getByTestId('route-link-error')).toHaveCount(0);
+  });
+
+  test('a route-lab link to a place outside the Pune extract says so instead of snapping somewhere else', async ({ page }) => {
+    const inside = `${city.nodeLat[10]},${city.nodeLon[10]}`;
+    await openCity(page, 'velvet', `/workspace?from=19.0760,72.8777&to=${inside}`);
+    await expect(page.getByTestId('route-link-error')).toContainText('outside the bundled');
+    await expect(page.getByTestId('route-link-error')).toContainText('Directions page');
+    expect(await page.evaluate(() => (window as unknown as { __sweepCity: { route: () => { origin: number | null; destination: number | null } } }).__sweepCity.route().origin)).toBeNull();
+    await page.getByTestId('route-link-error').getByRole('button', { name: 'Dismiss' }).click();
+    await expect(page.getByTestId('route-link-error')).toHaveCount(0);
+    await expect(page.getByTestId('route-next')).toContainText('choose where to start');
   });
 
   test('reachability uses real travel times and nests 5 ⊆ 10 ⊆ 15 minutes', async ({ page }) => {

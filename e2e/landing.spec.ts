@@ -27,7 +27,7 @@ test.describe('landing page', () => {
     await expect(page.getByTestId('tools-honesty')).toContainText('Directions are computed by the public OSRM service');
     await expect(page.getByTestId('tool-directions')).toContainText('not by SWEEP');
     const sweep = page.getByTestId('tool-sweep');
-    for (const fact of ['up to 25 km²', 'downloaded live from OpenStreetMap', 'around VIT (1 km²)', 'Kothrud (4 km²)', 'the old city (9 km²)', 'the centre (about 20 km²)', 'Play the shift', 'proven lower bound and gap'])
+    for (const fact of ['up to 25 km²', 'Inside the bundled Pune extract it plans at once', 'downloaded live from OpenStreetMap', 'around VIT (1 km²)', 'Bibwewadi and VIT (4 km²)', 'Kothrud (4 km²)', 'the old city (9 km²)', 'the centre (about 20 km²)', 'Play the shift', 'proven lower bound and gap'])
       await expect(sweep).toContainText(fact);
     // A click anywhere on a card follows its link.
     for (const [id, path] of [['directions', '/directions'], ['sweep', '/sweep'], ['workspace', '/workspace'], ['lab', '/lab']] as const) {

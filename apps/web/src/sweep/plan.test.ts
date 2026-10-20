@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DRIVABLE_ROAD_CLASSES, localProjection, orderCoverageForTurns, osmToGraph, planFleet, PROFILE_SPECS, solveZoneCoverage } from '@sweep/engine';
-import { edgeGeometries, graphUnprojection, nearestVertex, planSweep, planToCsv, planToGpx, pointInRing, ringAreaKm2, ringSelfIntersects, zoneGraph, zoneRing, DEFAULT_SWEEP_SETTINGS, type SweepPlan, type Zone } from './plan';
+import { edgeGeometries, graphUnprojection, nearestVertex, planSweep, positionAt, planToCsv, planToGpx, pointInRing, ringAreaKm2, ringSelfIntersects, zoneGraph, zoneRing, DEFAULT_SWEEP_SETTINGS, type SweepPlan, type Zone } from './plan';
 
 // A real Overpass API response cached by the Pune acquisition (tile t2_3, 18.457–18.463 N, 73.868–73.874 E).
 const TILE = join(__dirname, '..', '..', '..', '..', 'data', 'cache', 'osm', 'pune-bibwewadi', 'tiles', 't2_3_streets.json');
@@ -95,6 +95,27 @@ describe.each(['directed', 'undirected'] as const)('sweep plan on real Pune stre
     const gpx = planToGpx(plan, 'test');
     expect(gpx.match(/<trk>/g)).toHaveLength(plan.routes.length);
     expect(planToCsv(plan).trim().split('\r\n')).toHaveLength(1 + plan.routes.reduce((a, r) => a + r.steps.length, 0));
+  });
+});
+
+describe('shift playback', () => {
+  it('starts and ends at the depot, progresses monotonically, and takes exactly the planned time', () => {
+    const plan = planSweep(graph, zone, centre, { ...DEFAULT_SWEEP_SETTINGS, vehicles: 2 }) as SweepPlan;
+    for (const r of plan.routes) {
+      expect(r.stepStart).toHaveLength(r.steps.length);
+      expect(positionAt(r, 0, 8, 20).at).toEqual(plan.depot);
+      let last = -1;
+      for (let k = 0; k <= 20; k++) {
+        const p = positionAt(r, (r.seconds * k) / 20, 8, 20);
+        expect(p.doneM).toBeGreaterThanOrEqual(last - 1e-9);
+        last = p.doneM;
+      }
+      const end = positionAt(r, r.seconds + 1, 8, 20);
+      expect(end.finished).toBe(true);
+      expect(end.at).toEqual(plan.depot);
+      expect(end.doneM).toBeCloseTo(r.distanceM, 6);
+      expect(positionAt(r, r.seconds - 1, 8, 20).finished).toBe(false);
+    }
   });
 });
 

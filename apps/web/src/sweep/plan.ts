@@ -188,6 +188,8 @@ export interface SweepStep {
 export interface SweepRoute {
   vehicle: number;
   coords: LngLatPair[];
+  /** Index into `coords` where each step starts (its first point is the previous step's last). */
+  stepStart: number[];
   steps: SweepStep[];
   distanceM: number;
   serviceM: number;
@@ -228,6 +230,7 @@ const TURNS: TurnOptions = { penalties: PROFILE_SPECS.truck.turns ?? { straight:
 
 function toRoute(vehicle: number, steps: readonly RouteStep[], geoms: Map<string, LngLatPair[]>, names: Map<string, string>, seconds: number, feasibleShift: boolean, edgeEnds: Map<string, [string, string]>): SweepRoute {
   const coords: LngLatPair[] = [];
+  const stepStart: number[] = [];
   const out: SweepStep[] = [];
   let distanceM = 0;
   let serviceM = 0;
@@ -235,6 +238,7 @@ function toRoute(vehicle: number, steps: readonly RouteStep[], geoms: Map<string
     const g = geoms.get(s.edgeId) ?? [];
     const [u] = edgeEnds.get(s.edgeId) ?? ['', ''];
     const pts = s.from === u ? g : [...g].reverse();
+    stepStart.push(Math.max(0, coords.length - 1));
     for (const p of pts) {
       const last = coords[coords.length - 1];
       if (!last || last[0] !== p[0] || last[1] !== p[1]) coords.push(p);
@@ -243,7 +247,7 @@ function toRoute(vehicle: number, steps: readonly RouteStep[], geoms: Map<string
     if (s.kind === 'service') serviceM += s.weight;
     out.push({ edgeId: s.edgeId, name: names.get(s.edgeId) ?? '', kind: s.kind, lengthM: s.weight, to: pts[pts.length - 1] ?? [0, 0] });
   }
-  return { vehicle, coords, steps: out, distanceM, serviceM, deadheadM: distanceM - serviceM, seconds, feasibleShift };
+  return { vehicle, coords, stepStart, steps: out, distanceM, serviceM, deadheadM: distanceM - serviceM, seconds, feasibleShift };
 }
 
 /** Plan the sweeping of `zone` from the depot nearest to `depot`, with the engine. */
@@ -337,4 +341,44 @@ export function planToCsv(plan: SweepPlan): string {
     });
   }
   return `${rows.join('\r\n')}\r\n`;
+}
+
+/** Where a vehicle is `t` seconds after the shift starts, driving its steps at the plan's speeds (sweeping or travelling). */
+export function positionAt(route: SweepRoute, t: number, serviceKmh: number, transitKmh: number): { at: LngLatPair; doneM: number; finished: boolean } {
+  const vs = serviceKmh / 3.6;
+  const vd = transitKmh / 3.6;
+  let clock = 0;
+  let doneM = 0;
+  for (let i = 0; i < route.steps.length; i++) {
+    const s = route.steps[i]!;
+    const dur = s.lengthM / (s.kind === 'service' ? vs : vd);
+    if (t < clock + dur) {
+      const f = dur > 0 ? (t - clock) / dur : 1;
+      const a = route.stepStart[i]!;
+      const b = i + 1 < route.stepStart.length ? route.stepStart[i + 1]! : route.coords.length - 1;
+      return { at: alongPolyline(route.coords, a, b, f), doneM: doneM + s.lengthM * f, finished: false };
+    }
+    clock += dur;
+    doneM += s.lengthM;
+  }
+  return { at: route.coords[route.coords.length - 1] ?? [0, 0], doneM, finished: true };
+}
+
+/** The point at fraction f (by length) of coords[a..b]. */
+function alongPolyline(coords: readonly LngLatPair[], a: number, b: number, f: number): LngLatPair {
+  if (b <= a) return coords[a] ?? coords[coords.length - 1]!;
+  const k = Math.cos(((coords[a]![1] ?? 0) * Math.PI) / 180);
+  const seg = (p: LngLatPair, q: LngLatPair): number => Math.hypot((q[0] - p[0]) * k, q[1] - p[1]);
+  let total = 0;
+  for (let i = a; i < b; i++) total += seg(coords[i]!, coords[i + 1]!);
+  let want = total * Math.min(1, Math.max(0, f));
+  for (let i = a; i < b; i++) {
+    const l = seg(coords[i]!, coords[i + 1]!);
+    if (want <= l) {
+      const t = l > 0 ? want / l : 0;
+      return [coords[i]![0] + (coords[i + 1]![0] - coords[i]![0]) * t, coords[i]![1] + (coords[i + 1]![1] - coords[i]![1]) * t];
+    }
+    want -= l;
+  }
+  return coords[b]!;
 }

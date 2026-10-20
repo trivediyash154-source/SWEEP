@@ -91,6 +91,10 @@ test.describe('Sweep planner (any zone, live OpenStreetMap streets)', () => {
     else await expect(page.getByTestId('sweep-method')).not.toContainText('optimal');
     await expect(page.getByTestId('sweep-bound')).toContainText('proven lower bound');
     for (const c of got.checks) expect(c.passed, c.detail).toBe(true);
+    // Shift playback: at the end of the planned time the vehicle is back at the depot.
+    await expect(page.getByTestId('sweep-clock')).toHaveText('06:00');
+    await page.getByTestId('sweep-scrub').fill(String(Math.ceil(got.totals.makespanSeconds)));
+    await expect(page.getByTestId('sweep-progress-1')).toContainText('100 %, back at the depot');
     // Exports follow the plan.
     const [gpx] = await Promise.all([page.waitForEvent('download'), page.getByTestId('sweep-gpx').click()]);
     expect(readFileSync((await gpx.path())!, 'utf8').match(/<trk>/g)).toHaveLength(1);

@@ -7,7 +7,7 @@ import { PlaceSearch } from '../map/PlaceSearch';
 import { acquireLargeArea, acquireMap, MapAcquireError, MAX_TILED_KM2, splitBBox } from '../lib/maps';
 import { formatTravelDistance, formatTravelTime, type LngLat } from '../lib/directions';
 import { downloadText, safeFileName } from '../lib/storage';
-import { DEFAULT_SWEEP_SETTINGS, edgeGeometries, planToCsv, planToGpx, ringAreaKm2, ringSelfIntersects, zoneBBox, zoneGraph, zoneRing, type LngLatPair, type SweepPlan, type SweepSettings, type Zone } from './plan';
+import { DEFAULT_SWEEP_SETTINGS, edgeGeometries, planToCsv, planToGpx, positionAt, ringAreaKm2, ringSelfIntersects, zoneBBox, zoneGraph, zoneRing, type LngLatPair, type SweepPlan, type SweepSettings, type Zone } from './plan';
 import { planInWorker } from './sweepClient';
 import '../styles/atlas.css';
 
@@ -58,6 +58,13 @@ function centroid(ring: LngLatPair[]): LngLatPair {
   return [x, y];
 }
 const pct = (x: number | null) => (x === null ? '–' : `${(x * 100).toFixed(1)} %`);
+/** Clock time for `s` seconds after a 06:00 shift start. */
+function clockLabel(s: number): string {
+  const total = Math.round(6 * 3600 + s);
+  const h = Math.floor(total / 3600) % 24;
+  const m = Math.floor((total % 3600) / 60);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
 
 const METHOD: Record<SweepPlan['method'], string> = {
   'exact-directed-min-cost-flow': 'Exact (min-cost flow, one-way streets obeyed)',
@@ -86,6 +93,10 @@ export default function SweepPage() {
   const [source, setSource] = useState<string | null>(null);
   const [planKey, setPlanKey] = useState<string | null>(null);
   const depotMarker = useRef<maplibregl.Marker | null>(null);
+  // Shift playback: seconds since the shift start, and how fast the clock runs.
+  const [t, setT] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(300);
 
   const zoneArea = zone ? ringAreaKm2(zoneRing(zone)) : 0;
   const downloadBox = zone ? expandBBox(zoneBBox(zone), MARGIN_M) : null;
@@ -147,14 +158,42 @@ export default function SweepPage() {
     return { type: 'FeatureCollection', features: plan.routes.map((r) => ({ type: 'Feature', properties: { color: VEHICLE_COLORS[(r.vehicle - 1) % VEHICLE_COLORS.length] }, geometry: { type: 'LineString', coordinates: r.coords } })) };
   }, [plan]);
 
-  const data = useRef({ zoneData, streetData, routeData });
-  data.current = { zoneData, streetData, routeData };
+  const vehicleState = useMemo(() => (plan ? plan.routes.map((r) => ({ r, ...positionAt(r, t, settings.serviceKmh, settings.transitKmh) })) : []), [plan, t, settings.serviceKmh, settings.transitKmh]);
+  const vehicleData = useMemo<GeoJSON.FeatureCollection>(
+    () => ({ type: 'FeatureCollection', features: vehicleState.map((v) => ({ type: 'Feature', properties: { color: VEHICLE_COLORS[(v.r.vehicle - 1) % VEHICLE_COLORS.length] }, geometry: { type: 'Point', coordinates: v.at } })) }),
+    [vehicleState],
+  );
+  useEffect(() => {
+    setT(0);
+    setPlaying(false);
+  }, [plan]);
+  useEffect(() => {
+    if (!playing || !plan) return;
+    let raf = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const dt = (now - last) / 1000;
+      last = now;
+      setT((x) => {
+        const next = Math.min(plan.totals.makespanSeconds, x + dt * speed);
+        if (next >= plan.totals.makespanSeconds) setPlaying(false);
+        return next;
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, plan, speed]);
+
+  const data = useRef({ zoneData, streetData, routeData, vehicleData });
+  data.current = { zoneData, streetData, routeData, vehicleData };
 
   const addLayers = useCallback((map: MLMap) => {
     const d = data.current;
     if (!map.getSource('sweep-zone')) map.addSource('sweep-zone', { type: 'geojson', data: d.zoneData });
     if (!map.getSource('sweep-streets')) map.addSource('sweep-streets', { type: 'geojson', data: d.streetData });
     if (!map.getSource('sweep-routes')) map.addSource('sweep-routes', { type: 'geojson', data: d.routeData });
+    if (!map.getSource('sweep-vehicles')) map.addSource('sweep-vehicles', { type: 'geojson', data: d.vehicleData });
     const add = (spec: Parameters<MLMap['addLayer']>[0]) => {
       if (!map.getLayer(spec.id)) map.addLayer(spec);
     };
@@ -164,6 +203,7 @@ export default function SweepPage() {
     add({ id: 'streets-optional', type: 'line', source: 'sweep-streets', filter: ['==', ['get', 'required'], 0], paint: { 'line-color': '#8a8f99', 'line-width': 1.5, 'line-opacity': 0.6 } });
     add({ id: 'streets-required', type: 'line', source: 'sweep-streets', filter: ['==', ['get', 'required'], 1], paint: { 'line-color': '#f0a020', 'line-width': 3, 'line-opacity': 0.85 } });
     add({ id: 'routes', type: 'line', source: 'sweep-routes', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': 4, 'line-opacity': 0.9 } });
+    add({ id: 'vehicles', type: 'circle', source: 'sweep-vehicles', paint: { 'circle-radius': 7, 'circle-color': ['get', 'color'], 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
   }, []);
 
   useEffect(() => {
@@ -172,7 +212,8 @@ export default function SweepPage() {
     setGeoJson(map, 'sweep-zone', zoneData);
     setGeoJson(map, 'sweep-streets', streetData);
     setGeoJson(map, 'sweep-routes', routeData);
-  }, [zoneData, streetData, routeData]);
+    setGeoJson(map, 'sweep-vehicles', vehicleData);
+  }, [zoneData, streetData, routeData, vehicleData]);
 
   // Depot marker: the chosen point, or the depot the plan used.
   useEffect(() => {
@@ -479,6 +520,34 @@ export default function SweepPage() {
                 )}
               </dl>
               {!plan.feasibility.ok && <p className="atlas__error">{plan.feasibility.issues.join(' ')}</p>}
+              <div className="atlas__section" data-testid="sweep-timeline">
+                <h2>Play the shift</h2>
+                <div className="atlas__row">
+                  <button type="button" className="btn btn--primary btn--sm" onClick={() => { if (t >= plan.totals.makespanSeconds) setT(0); setPlaying((p) => !p); }} data-testid="sweep-play">
+                    {playing ? '❚❚ Pause' : '▶ Play'}
+                  </button>
+                  <label className="atlas__row atlas__note">
+                    Speed
+                    <select className="input" value={speed} onChange={(e) => setSpeed(Number(e.target.value))} aria-label="Playback speed">
+                      <option value={60}>60×</option>
+                      <option value={300}>300×</option>
+                      <option value={900}>900×</option>
+                    </select>
+                  </label>
+                  <strong data-testid="sweep-clock">{clockLabel(t)}</strong>
+                  <span className="atlas__note">ends {clockLabel(plan.totals.makespanSeconds)}</span>
+                </div>
+                <input type="range" min={0} max={Math.ceil(plan.totals.makespanSeconds)} step={1} value={Math.round(t)} onChange={(e) => { setPlaying(false); setT(Number(e.target.value)); }} aria-label="Time in the shift" data-testid="sweep-scrub" />
+                <ul className="steps">
+                  {vehicleState.map((v) => (
+                    <li key={v.r.vehicle} className="atlas__row atlas__note" data-testid={`sweep-progress-${v.r.vehicle}`}>
+                      <span className="swatch" style={{ background: VEHICLE_COLORS[(v.r.vehicle - 1) % VEHICLE_COLORS.length] }} />
+                      Vehicle {v.r.vehicle}: {v.r.distanceM > 0 ? Math.round((100 * v.doneM) / v.r.distanceM) : 100} %{v.finished ? ', back at the depot' : ''}
+                    </li>
+                  ))}
+                </ul>
+                <p className="atlas__note">Shift starts 06:00; vehicles move at the sweeping speed on streets they sweep and the travel speed elsewhere, as planned. No traffic is modelled.</p>
+              </div>
               {plan.routes.length > 1 && (
                 <table className="vehicle-table" data-testid="sweep-vehicles-table">
                   <thead>

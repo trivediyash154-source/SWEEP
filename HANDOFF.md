@@ -189,7 +189,7 @@ Run `pnpm dev`, or build and then run `node scripts/e2e-server.mjs 8790` to serv
 ### Changes elsewhere in the web app
 
 * The old abstract workspace moved from `/workspace` to `/lab`. Links were updated in Landing, Report, Auth, Account, SiteNav and ReportSections.
-* The Velvet materials in the landing `three/CityScene.tsx` and the lab `three/DistrictScene.tsx` were lifted so buildings are visible.
+* The landing hero now renders the lab's lit district (`three/districtParts.tsx`, shared by `three/HeroScene.tsx` and `three/DistrictScene.tsx`): lit windows, trees and the spectral route drawing itself in true order, visible in both themes (measured in `e2e/landing.spec.ts`; see `docs/CITY_UX_NOTES.md` §6). The old `three/CityScene.tsx` and `three/cityModel.ts` were removed.
 
 ### E2E tests
 
